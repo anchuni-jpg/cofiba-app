@@ -1,0 +1,560 @@
+import axios from 'axios';
+import { CookieJar } from 'tough-cookie';
+import * as cheerio from 'cheerio';
+import https from 'node:https';
+import tls from 'node:tls';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const BASE = 'https://www.cofiba.es';
+
+// cofiba.es's server does not send its intermediate CA certificate in the TLS
+// handshake (only the leaf cert). Browsers paper over this by fetching the
+// missing intermediate themselves; Node does not, so plain axios/https fails
+// verification with "unable to verify the first certificate". We fix this
+// properly (rather than disabling verification) by trusting Node's normal CA
+// bundle *plus* the one specific intermediate this site is missing.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const cofibaIntermediate = fs.readFileSync(path.join(__dirname, 'cofiba-intermediate.pem'), 'utf8');
+const httpsAgent = new https.Agent({
+  ca: [...tls.rootCertificates, cofibaIntermediate],
+});
+
+// axios-cookiejar-support refuses to work alongside a custom httpsAgent (needed
+// above for the CA fix), so cookies are wired up manually here instead: attach
+// the jar's cookie string before each request, store any Set-Cookie after.
+export function createSession() {
+  const jar = new CookieJar();
+  const http = axios.create({
+    httpsAgent,
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CofibaVisor/1.0)' },
+    validateStatus: () => true,
+    maxRedirects: 0,
+  });
+
+  http.interceptors.request.use(async (config) => {
+    const url = new URL(config.url, BASE).toString();
+    const cookie = await jar.getCookieString(url);
+    if (cookie) config.headers.Cookie = cookie;
+    return config;
+  });
+
+  http.interceptors.response.use(async (response) => {
+    const url = new URL(response.config.url, BASE).toString();
+    const setCookie = response.headers['set-cookie'];
+    if (setCookie) {
+      await Promise.all(setCookie.map((c) => jar.setCookie(c, url).catch(() => {})));
+    }
+    // Follow redirects ourselves (maxRedirects: 0 above) so cookies set on the
+    // redirect response are captured before the next hop is fetched.
+    if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.location) {
+      const nextUrl = new URL(response.headers.location, url).toString();
+      const method = response.status === 303 ? 'get' : response.config.method;
+      return http.request({ ...response.config, url: nextUrl, method, data: method === 'get' ? undefined : response.config.data });
+    }
+    return response;
+  });
+
+  return { jar, http };
+}
+
+function absolute(href) {
+  if (!href) return null;
+  try {
+    return new URL(href, BASE).toString();
+  } catch {
+    return null;
+  }
+}
+
+// Finds the <form> wrapping a given field, reading its real action/method/inputs
+// instead of hardcoding field names we haven't been able to verify from outside.
+function describeForm($, $form, currentUrl) {
+  if (!$form || !$form.length) return null;
+  const action = absolute($form.attr('action')) || currentUrl;
+  const method = ($form.attr('method') || 'POST').toUpperCase();
+  const fields = {};
+  $form.find('input[name]').each((_, el) => {
+    const $el = $(el);
+    const type = ($el.attr('type') || 'text').toLowerCase();
+    if (type === 'submit' || type === 'button') return;
+    fields[$el.attr('name')] = $el.attr('value') || '';
+  });
+  return { action, method, fields };
+}
+
+export async function login({ http }, usuario, password) {
+  const loginUrl = `${BASE}/identificarse.html`;
+  const page1 = await http.get(loginUrl);
+  const $ = cheerio.load(page1.data);
+
+  const $form = $('input[type=password]').first().closest('form');
+  if (!$form.length) {
+    throw new Error('No se encontró el formulario de login en identificarse.html (la web pudo cambiar de estructura).');
+  }
+  const desc = describeForm($, $form, loginUrl);
+  const userField = $form.find('input[type=text], input[type=email]').first().attr('name');
+  const passField = $form.find('input[type=password]').first().attr('name');
+  if (!userField || !passField) {
+    throw new Error('No se pudieron identificar los campos de usuario/contraseña del formulario.');
+  }
+
+  const body = new URLSearchParams({ ...desc.fields, [userField]: usuario, [passField]: password });
+  const res = await http.post(desc.action, body.toString(), {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+
+  // Sanity check: after login the site should no longer show a password field.
+  const $after = cheerio.load(res.data);
+  const stillLoggedOut = $after('input[type=password]').length > 0;
+  if (stillLoggedOut) {
+    throw new Error('Usuario o contraseña incorrectos, o la web cambió el formulario de acceso.');
+  }
+  return true;
+}
+
+export async function getCategorias({ http }) {
+  const url = `${BASE}/acceso.html`;
+  const res = await http.get(url);
+  const $ = cheerio.load(res.data);
+
+  const categorias = [];
+  $('a').each((_, el) => {
+    const $a = $(el);
+    if (!/ver productos/i.test($a.text())) return;
+    const href = absolute($a.attr('href'));
+    if (!href) return;
+    const slugMatch = href.match(/categoria\/([^/]+)\//i);
+    const slug = slugMatch ? slugMatch[1] : null;
+
+    // Category name is the nearest preceding heading-ish text in the same card.
+    let nombre = $a
+      .closest('div,li,article')
+      .find('h1,h2,h3,h4,h5,strong')
+      .first()
+      .text()
+      .trim();
+    if (!nombre) {
+      nombre = $a.prevAll().first().text().trim();
+    }
+    if (slug) categorias.push({ slug, nombre: nombre || slug, href });
+  });
+
+  // De-dupe by slug in case the selector matched more than one node per card.
+  const seen = new Set();
+  return categorias.filter((c) => (seen.has(c.slug) ? false : (seen.add(c.slug), true)));
+}
+
+// Confirmed straight from cofiba.es's own dist/js/b2b.js: each product's
+// "Añadir al carrito" button carries data-articulo (the real cart item code —
+// different from the displayed "Referencia") and data-nlinea (its row index).
+// That gives us a precise, structure-independent anchor per product, instead
+// of guessing container tags.
+const PRODUCT_TEXT_RE =
+  /Referencia:\s*(\S+)\s*EAN:\s*(\S+)\s*Marca:\s*(.*?)\s*Und\.\s*de\s*venta:\s*([\d.,]+)\s*PVP:\s*([\d.,]+)\s*€\s*Dtos?:\s*([\d.,]+)\s*%\s*([\d.,]+)\s*€\s*IMPUESTOS NO INCLUIDOS/i;
+
+const NOMBRE_BLOCKLIST = /comprados recientemente|art[ií]culos con existencia|categor[ií]as|^productos$|novedades|cat[aá]logos|promociones/i;
+
+// Walks up from $el looking for the nearest ancestor whose text matches
+// `pattern`, regardless of what tag it is — cofiba.es doesn't use a
+// consistent container tag for product cards.
+function closestByText($, $el, pattern, maxDepth = 10) {
+  let $cur = $el;
+  for (let i = 0; i < maxDepth; i++) {
+    $cur = $cur.parent();
+    if (!$cur.length) return null;
+    if (pattern.test($cur.text())) return $cur;
+  }
+  return null;
+}
+
+export async function getProductos({ http }, { categoria, page = 1, query, pageUrl }) {
+  // If a real "next page" URL was computed from a previous call, follow that
+  // exact URL instead of guessing a query-string scheme cofiba.es may not use.
+  const url =
+    pageUrl ||
+    (query
+      ? `${BASE}/marca/todas/categoria/${categoria || 'todas'}/false`
+      : `${BASE}/marca/todas/categoria/${categoria}/false`);
+
+  const res = await http.get(url, { params: !pageUrl && query ? { buscar: query } : undefined });
+  const $ = cheerio.load(res.data);
+
+  // Product thumbnails: walk images and product buttons together in document
+  // order, and give each button whichever thumbnail was most recently seen
+  // before it. This is robust to stray non-product images anywhere on the
+  // page (a header logo pushed a plain positional zip off by one) since it
+  // only cares about what's immediately before each button, not a fixed index.
+  const imagenPorArticulo = new Map();
+  let ultimaImagen = null;
+  $('img[src*="BlobData"], button[data-articulo], a[data-articulo]').each((_, el) => {
+    const $el = $(el);
+    if (el.tagName === 'img') {
+      ultimaImagen = absolute($el.attr('src'));
+    } else {
+      const art = $el.attr('data-articulo');
+      if (art) imagenPorArticulo.set(art, ultimaImagen);
+    }
+  });
+
+  const productos = [];
+  $('button[data-articulo], a[data-articulo]').each((_, el) => {
+    const $btn = $(el);
+    const articulo = $btn.attr('data-articulo');
+    const nlinea = $btn.attr('data-nlinea');
+    if (!articulo) return;
+
+    const $card = closestByText($, $btn, /Referencia:/i) || $btn.parent();
+    const cardText = $card.text().replace(/\s+/g, ' ').trim();
+    const m = cardText.match(PRODUCT_TEXT_RE);
+
+    // The product name sits as plain text right before "Referencia:" (e.g.
+    // "...Añadir al carrito ABANICO ACRILICO 23CM MALLORCA... Referencia:
+    // 152407026..."), not in an alt attribute — pull it from cardText instead
+    // of relying on <img alt>, which most products here don't set.
+    const refIdx = cardText.search(/Referencia:/i);
+    const posibleNombre =
+      refIdx > 0
+        ? cardText
+            .slice(0, refIdx)
+            .replace(/.*añadir al carrito/i, '')
+            .trim()
+        : '';
+    const nombreTexto =
+      posibleNombre && posibleNombre.length < 120 && !NOMBRE_BLOCKLIST.test(posibleNombre) ? posibleNombre : null;
+    const nombreAlt =
+      $card
+        .find('img')
+        .filter((_, img) => !!$(img).attr('alt')?.trim())
+        .first()
+        .attr('alt')
+        ?.trim() || null;
+    const nombre = nombreTexto || nombreAlt;
+    const imagen = imagenPorArticulo.get(articulo) || null;
+
+    productos.push({
+      articulo,
+      nlinea: nlinea || null,
+      referencia: m?.[1] || null,
+      ean: m?.[2] || null,
+      marca: m?.[3] || null,
+      undVenta: m?.[4] || null,
+      pvp: m?.[5] || null,
+      dto: m?.[6] || null,
+      precioFinal: m?.[7] || null,
+      nombre,
+      imagen,
+    });
+  });
+
+  const normalized = $('body').text().replace(/\s+/g, ' ').trim();
+  const totalPaginasTexto = normalized.match(/P[aá]gina\s*(?:\d+\s*)?de\s*(\d+)/i)?.[1];
+
+  // Confirmed from b2b.js: pagination navigates via
+  // location.href = data-paginacion + pageNumber + "/" — no <a href> links
+  // involved at all, so we replicate that directly instead of scraping links.
+  const dataPaginacion = $('#numpage').attr('data-paginacion');
+  const paginaActual = Number($('#numpage').attr('value') || page || 1);
+  const siguientePagina =
+    dataPaginacion && paginaActual < Number(totalPaginasTexto || 0)
+      ? absolute(`${dataPaginacion}${paginaActual + 1}/`)
+      : null;
+
+  return {
+    productos,
+    totalPaginas: totalPaginasTexto ? Number(totalPaginasTexto) : null,
+    pagina: paginaActual,
+    siguientePagina,
+    debug:
+      productos.length === 0 || !dataPaginacion
+        ? { normalizedSample: normalized.slice(0, 2000) }
+        : undefined,
+  };
+}
+
+// The cart page renders each line twice (once per responsive breakpoint —
+// only one copy is visible at a time, but both exist in the DOM and both
+// show up in .text()). Anchored on the labelled "mobile card" copy, which is
+// unambiguous regardless of spacing:
+// "Código: {codigo} {descripcion}Precio: {precio}€Descuento: {dto}%Cánon: {canon}€Coste: {coste}€Importe: {importe}€"
+// When the two copies disagree (seen right after adding an item, one copy
+// keeps a stale Importe: 0,00€) we keep whichever shows the larger amount.
+const CART_LINE_RE =
+  /Código:\s*(\S+)\s*(.*?)\s*Precio:\s*([\d.,]+)€\s*Descuento:\s*([\d.,]+)%\s*Cánon:\s*([\d.,]+)€\s*Coste:\s*([\d.,]+)€\s*Importe:\s*([\d.,]+)€/g;
+
+function parseEsNumber(s) {
+  return Number(String(s).replace(/\./g, '').replace(',', '.'));
+}
+
+export async function getCarrito({ http }) {
+  const url = `${BASE}/mi-compra.html`;
+  const res = await http.get(url);
+  const $ = cheerio.load(res.data);
+  const normalized = $('body').text().replace(/\s+/g, ' ').trim();
+
+  const totales = {
+    importe: normalized.match(/\bIMPORTE\s*([\d.,]+)\s*€/)?.[1] || null,
+    descuentoProntoPago: normalized.match(/pronto pago\s*-\s*([\d.,]+)\s*€/i)?.[1] || null,
+    envio: normalized.match(/GASTOS DE ENV[IÍ]O\s*([\d.,]+)\s*€/i)?.[1] || null,
+    baseImponible: normalized.match(/Base imponible[^0-9]*([\d.,]+)\s*€/i)?.[1] || null,
+    total: normalized.match(/\bTOTAL\s*([\d.,]+)\s*€/)?.[1] || null,
+  };
+
+  const porCodigo = new Map();
+  let match;
+  CART_LINE_RE.lastIndex = 0;
+  while ((match = CART_LINE_RE.exec(normalized))) {
+    const [, codigo, descripcion, precio, dto, canon, coste, importe] = match;
+    const existente = porCodigo.get(codigo);
+    if (existente && parseEsNumber(existente.importe) >= parseEsNumber(importe)) continue;
+    porCodigo.set(codigo, { codigo, descripcion: descripcion.trim(), precio, dto, canon, coste, importe });
+  }
+
+  // The real quantity lives in a hidden/number <input>'s value attribute
+  // (e.g. id="unidades_lg_1"), which never shows up in .text(). Find it by
+  // matching the sibling "articulo_*_N" input whose value is this codigo,
+  // same id-suffix convention the cart page's own inline script relies on.
+  const $articuloInputs = $('input[id^="articulo_"]');
+  const cantidadPorCodigo = new Map();
+  $articuloInputs.each((_, el) => {
+    const $el = $(el);
+    const id = $el.attr('id') || '';
+    const m = id.match(/^articulo_(.+)$/);
+    if (!m || $el.attr('value') === undefined) return;
+    const suffix = m[1];
+    const codigoValor = $el.attr('value');
+    const $qty = $(`#unidades_${suffix}`);
+    if (codigoValor && $qty.length) {
+      cantidadPorCodigo.set(codigoValor, $qty.attr('value') || $qty.val());
+    }
+  });
+
+  const lineas = [...porCodigo.values()].map((linea) => {
+    // Product images (if the cart shows them) live in the same blob store as
+    // the catalog listing — find the one in whichever row mentions this code.
+    const $row = $(`:contains("${linea.codigo}")`)
+      .filter((_, el) => $(el).find('img[src*="BlobData"]').length > 0)
+      .last();
+    const imagen = absolute($row.find('img[src*="BlobData"]').first().attr('src'));
+    const cantidad = cantidadPorCodigo.get(linea.codigo) || null;
+    return { ...linea, imagen, cantidad };
+  });
+
+  // For debugging, anchor the sample on the actual cart content ("Tu pedido")
+  // instead of the start of the page — the page opens with a huge category
+  // sidebar that was drowning out the real cart rows in the debug output.
+  const anchorIdx = normalized.search(/Tu pedido|CÓDIGO|IMPORTE STOCK/i);
+  const sampleStart = anchorIdx >= 0 ? Math.max(0, anchorIdx - 50) : 0;
+
+  return {
+    lineas,
+    totales,
+    numProductos: lineas.length,
+    debug: lineas.length === 0 ? { normalizedSample: normalized.slice(sampleStart, sampleStart + 3000) } : undefined,
+  };
+}
+
+// The simple "accion=A&articulo=X&unidades=N" shortcut (modelled on the
+// site's own "añadir por código" feature) does register the SKU — cofiba.es
+// confirms with a real "Añadido a la cesta!" message and an incrementing
+// total_carrito — but the line then shows Importe: 0,00€ in /mi-compra.html.
+// The catalog's own "Añadir al carrito" button instead submits the *whole
+// form* around it (see #buyNormal in b2b.js: `form.serialize()`), which
+// carries extra hidden fields (multiplo/pvp/existencia) this shortcut skips
+// and which turn out to be required for the price to actually register. So
+// we replicate that exactly: fetch the category page, find this product's
+// real button via its data-articulo (now a precise, confirmed anchor), grab
+// its enclosing form, and submit all of it with the quantity field set.
+export async function anadirAlCarrito({ http }, { categoria, articulo, cantidad }) {
+  const catUrl = `${BASE}/marca/todas/categoria/${categoria}/false`;
+  const catRes = await http.get(catUrl);
+  const $ = cheerio.load(catRes.data);
+
+  const $btn = $(`[data-articulo="${articulo}"]`).first();
+  const $form = $btn.closest('form');
+  if (!$btn.length || !$form.length) {
+    const err = new Error(
+      `CALIBRATION_NEEDED: ${
+        !$btn.length
+          ? `no se encontró ningún elemento con data-articulo="${articulo}" en la categoría "${categoria}"`
+          : 'se encontró el botón pero no hay un <form> por encima en el HTML'
+      }.`
+    );
+    err.code = 'CALIBRATION_NEEDED';
+    throw err;
+  }
+
+  // The form's own action="#" is a placeholder — b2b.js's #buyNormal handler
+  // ignores it and always POSTs to /forms/carrito.php via AJAX, so we do too.
+  const desc = describeForm($, $form, catUrl);
+  const qtyFieldName = $form
+    .find('input')
+    .filter((_, el) => /unidad/i.test($(el).attr('id') || '') || /unidad/i.test($(el).attr('name') || ''))
+    .first()
+    .attr('name');
+  const body = new URLSearchParams({ ...desc.fields, ...(qtyFieldName ? { [qtyFieldName]: String(cantidad) } : {}) });
+
+  const addRes = await http.post(`${BASE}/forms/carrito.php`, body.toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      Referer: catUrl,
+    },
+  });
+  console.log('[anadirAlCarrito] action:', desc.action, 'body:', body.toString());
+  console.log('[anadirAlCarrito] status:', addRes.status, 'respuesta:', JSON.stringify(addRes.data).slice(0, 500));
+  if (addRes.status >= 400) {
+    const err = new Error(`La web respondió con error ${addRes.status} al intentar añadir el producto.`);
+    err.code = 'ADD_FAILED';
+    err.debugHtml = typeof addRes.data === 'string' ? addRes.data.slice(0, 1000) : JSON.stringify(addRes.data);
+    throw err;
+  }
+
+  // Adding the SKU alone leaves its cart line priced at 0 — /mi-compra.html's
+  // own inline script shows the *quantity input's change handler* is what
+  // actually commits the priced quantity, via a second, separate endpoint:
+  //   POST /forms/cestacarrito.php   body: tipo=C&unidades=N&articulo=X
+  // We replicate that here so the line has a real Importe without requiring
+  // the user to manually retype the quantity on the cart page.
+  const fijarRes = await http.post(
+    `${BASE}/forms/cestacarrito.php`,
+    new URLSearchParams({ tipo: 'C', unidades: String(cantidad), articulo }).toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: `${BASE}/mi-compra.html`,
+      },
+    }
+  );
+  console.log(
+    '[anadirAlCarrito] cestacarrito status:',
+    fijarRes.status,
+    'respuesta:',
+    typeof fijarRes.data === 'string' ? fijarRes.data.slice(0, 300) : JSON.stringify(fijarRes.data).slice(0, 300)
+  );
+
+  return { ok: true, respuesta: addRes.data };
+}
+
+// Same "set the real quantity" endpoint used internally by anadirAlCarrito,
+// exposed on its own so the cart screen can change quantities in place.
+export async function actualizarCantidadCarrito({ http }, { articulo, cantidad }) {
+  const res = await http.post(
+    `${BASE}/forms/cestacarrito.php`,
+    new URLSearchParams({ tipo: 'C', unidades: String(cantidad), articulo }).toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: `${BASE}/mi-compra.html`,
+      },
+    }
+  );
+  if (res.status >= 400) {
+    const err = new Error(`La web respondió con error ${res.status} al actualizar la cantidad.`);
+    err.code = 'UPDATE_FAILED';
+    throw err;
+  }
+  return { ok: true };
+}
+
+// Confirmed from b2b.js: the "eliminar producto" (.eliminarlineacarro) button
+// serializes ITS enclosing form (a small per-row form, same pattern as the
+// catalog's add-to-cart button) and posts that to /forms/carrito.php.
+export async function eliminarDelCarrito({ http }, { codigo }) {
+  const url = `${BASE}/mi-compra.html`;
+  const res = await http.get(url);
+  const $ = cheerio.load(res.data);
+
+  const $btn = $('.eliminarlineacarro')
+    .filter((_, el) => $(el).closest('tr').text().includes(codigo))
+    .first();
+  if (!$btn.length) {
+    const err = new Error(`CALIBRATION_NEEDED: no se encontró el botón de eliminar para "${codigo}" en el carrito.`);
+    err.code = 'CALIBRATION_NEEDED';
+    throw err;
+  }
+  const $form = $btn.closest('form');
+  const desc = describeForm($, $form, url);
+  const delRes = await http.post(`${BASE}/forms/carrito.php`, new URLSearchParams(desc.fields).toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      Referer: url,
+    },
+  });
+  if (delRes.status >= 400) {
+    const err = new Error(`La web respondió con error ${delRes.status} al eliminar el producto.`);
+    err.code = 'DELETE_FAILED';
+    throw err;
+  }
+  return { ok: true };
+}
+
+// Confirmed from b2b.js: "#vaciarcesta" also just serializes its enclosing
+// form and posts it to /forms/carrito.php (a hidden field there marks it as
+// the "empty everything" action, same endpoint as add/remove).
+export async function vaciarCarrito({ http }) {
+  const url = `${BASE}/mi-compra.html`;
+  const res = await http.get(url);
+  const $ = cheerio.load(res.data);
+
+  const $btn = $('#vaciarcesta').first();
+  if (!$btn.length) {
+    const err = new Error('CALIBRATION_NEEDED: no se encontró el botón "Vaciar el carrito" en la página.');
+    err.code = 'CALIBRATION_NEEDED';
+    throw err;
+  }
+  const $form = $btn.closest('form');
+  const desc = describeForm($, $form, url);
+  const vaciarRes = await http.post(`${BASE}/forms/carrito.php`, new URLSearchParams(desc.fields).toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      Referer: url,
+    },
+  });
+  if (vaciarRes.status >= 400) {
+    const err = new Error(`La web respondió con error ${vaciarRes.status} al vaciar el carrito.`);
+    err.code = 'EMPTY_FAILED';
+    throw err;
+  }
+  return { ok: true };
+}
+
+// Confirmed from b2b.js (#generarpedido / #generarpedido_top): places the
+// real order — POSTs the cart form plus an "observaciones" field to
+// /forms/pedido.php. This is a genuine, binding order against the client's
+// real account: the frontend must get explicit confirmation before calling
+// this, exactly like cofiba.es's own "¿Estás seguro de generar el pedido?".
+export async function finalizarPedido({ http }, { observaciones = '' }) {
+  const url = `${BASE}/mi-compra.html`;
+  const res = await http.get(url);
+  const $ = cheerio.load(res.data);
+
+  const $btn = $('#generarpedido, #generarpedido_top').first();
+  if (!$btn.length) {
+    const err = new Error('CALIBRATION_NEEDED: no se encontró el botón "Finalizar pedido" en la página.');
+    err.code = 'CALIBRATION_NEEDED';
+    throw err;
+  }
+  const $form = $btn.closest('form');
+  const desc = describeForm($, $form, url);
+  const body = new URLSearchParams({ ...desc.fields, observaciones });
+  const pedidoRes = await http.post(`${BASE}/forms/pedido.php`, body.toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      Referer: url,
+    },
+  });
+  if (pedidoRes.status >= 400) {
+    const err = new Error(`La web respondió con error ${pedidoRes.status} al generar el pedido.`);
+    err.code = 'ORDER_FAILED';
+    err.debugHtml = typeof pedidoRes.data === 'string' ? pedidoRes.data.slice(0, 1000) : JSON.stringify(pedidoRes.data);
+    throw err;
+  }
+  return { ok: true, respuesta: pedidoRes.data };
+}

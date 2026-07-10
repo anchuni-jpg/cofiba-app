@@ -1,0 +1,143 @@
+import { useEffect, useState } from 'react';
+import { getToken, api } from './api.js';
+import Login from './screens/Login.jsx';
+import Categorias from './screens/Categorias.jsx';
+import Productos from './screens/Productos.jsx';
+import Carrito from './screens/Carrito.jsx';
+
+function useInstallPrompt() {
+  const [deferred, setDeferred] = useState(null);
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+
+  useEffect(() => {
+    function onPrompt(e) {
+      e.preventDefault();
+      setDeferred(e);
+    }
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', onPrompt);
+  }, []);
+
+  return { deferred, isStandalone, isIos };
+}
+
+export default function App() {
+  const [loggedIn, setLoggedIn] = useState(!!getToken());
+  const [tab, setTab] = useState('categorias'); // categorias | productos | carrito
+  const [categoria, setCategoria] = useState(null);
+  const [query, setQuery] = useState(null);
+  const [cartCount, setCartCount] = useState(0);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const { deferred, isStandalone, isIos } = useInstallPrompt();
+  const [dismissedInstall, setDismissedInstall] = useState(false);
+
+  function refreshCartCount(directCount) {
+    if (Number.isFinite(directCount)) {
+      setCartCount(directCount);
+      return;
+    }
+    api
+      .carrito()
+      .then((c) => setCartCount(c.numProductos))
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    if (loggedIn) refreshCartCount();
+  }, [loggedIn]);
+
+  useEffect(() => {
+    function onExpired() {
+      setLoggedIn(false);
+      setSessionExpired(true);
+    }
+    window.addEventListener('cofiba:session-expired', onExpired);
+    return () => window.removeEventListener('cofiba:session-expired', onExpired);
+  }, []);
+
+  if (!loggedIn) {
+    return (
+      <Login
+        expiredNotice={sessionExpired}
+        onLoggedIn={() => {
+          setSessionExpired(false);
+          setLoggedIn(true);
+        }}
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="topbar">
+        <span style={{ fontWeight: 500 }}>Cofiba</span>
+        <button className="danger-text" onClick={() => (api.logout(), setLoggedIn(false))}>
+          Salir
+        </button>
+      </div>
+
+      {!isStandalone && !dismissedInstall && (
+        <div className="install-banner">
+          <span>
+            {deferred
+              ? 'Instala esta app en tu móvil para acceso rápido.'
+              : isIos
+              ? 'En Safari: pulsa Compartir → "Añadir a pantalla de inicio".'
+              : 'Instálala desde el menú del navegador.'}
+          </span>
+          {deferred ? (
+            <button
+              onClick={async () => {
+                deferred.prompt();
+                setDismissedInstall(true);
+              }}
+            >
+              Instalar
+            </button>
+          ) : (
+            <button onClick={() => setDismissedInstall(true)}>Vale</button>
+          )}
+        </div>
+      )}
+
+      {tab === 'categorias' && (
+        <Categorias
+          onOpenCategoria={(c) => {
+            setCategoria(c);
+            setQuery(null);
+            setTab('productos');
+          }}
+          onSearch={(q) => {
+            setQuery(q);
+            setCategoria(null);
+            setTab('productos');
+          }}
+        />
+      )}
+      {tab === 'productos' && (
+        <Productos
+          categoria={categoria}
+          query={query}
+          onBack={() => setTab('categorias')}
+          onCartChanged={refreshCartCount}
+          cartCount={cartCount}
+        />
+      )}
+      {tab === 'carrito' && <Carrito />}
+
+      <div className="bottomnav">
+        <button className={tab === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>
+          Categorías
+        </button>
+        <button className={tab === 'productos' ? 'active' : ''} onClick={() => setTab('productos')} disabled={!categoria && !query}>
+          Productos
+        </button>
+        <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
+          Carrito{cartCount > 0 ? <span className="badge">{cartCount}</span> : null}
+        </button>
+      </div>
+    </>
+  );
+}

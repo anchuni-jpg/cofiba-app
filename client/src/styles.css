@@ -1,0 +1,230 @@
+:root {
+  --accent: #185fa5;
+  --accent-bg: #e6f1fb;
+  --danger: #a32d2d;
+  --success: #3b6d11;
+  --surface-0: #f4f4f2;
+  --surface-1: #f1efe8;
+  --surface-2: #ffffff;
+  --text-primary: #2c2c2a;
+  --text-secondary: #5f5e5a;
+  --text-muted: #888780;
+  --border: #e2e0d8;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--surface-0);
+  color: var(--text-primary);
+}
+
+#root {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+button {
+  font: inherit;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 10px 14px;
+  cursor: pointer;
+}
+button:active {
+  transform: scale(0.98);
+}
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+button.danger-text {
+  color: var(--danger);
+  border: none;
+  background: none;
+}
+
+input {
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  z-index: 5;
+}
+
+.badge {
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.content {
+  flex: 1;
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+.card {
+  background: var(--surface-1);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.cat-tile {
+  background: var(--surface-1);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.product-row {
+  display: flex;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  align-items: center;
+}
+
+.product-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+}
+.product-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.cart-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--surface-1);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 9px;
+  overflow: hidden;
+}
+.cart-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qty-stepper button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 14px;
+}
+
+.bottomnav {
+  display: flex;
+  border-top: 1px solid var(--border);
+  position: sticky;
+  bottom: 0;
+  background: var(--surface-2);
+}
+.bottomnav button {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  border-top: 2px solid transparent;
+  background: none;
+  padding: 8px 0;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.bottomnav button.active {
+  color: var(--accent);
+  border-top-color: var(--accent);
+}
+
+.totals-table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+.totals-table td {
+  padding: 3px 0;
+}
+.totals-table td:last-child {
+  text-align: right;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.error-banner {
+  background: #fcebeb;
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.install-banner {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
