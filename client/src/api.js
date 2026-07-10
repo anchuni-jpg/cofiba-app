@@ -48,11 +48,12 @@ export const api = {
   categorias() {
     return request('/categorias');
   },
-  productos({ categoria, subcategoria, page = 1, q, pageUrl }) {
+  productos({ categoria, subcategoria, grupo, page = 1, q, pageUrl }) {
     const params = new URLSearchParams({
       categoria,
       page: String(page),
       ...(subcategoria ? { subcategoria } : {}),
+      ...(grupo ? { grupo } : {}),
       ...(q ? { q } : {}),
       ...(pageUrl ? { pageUrl } : {}),
     });
@@ -61,8 +62,8 @@ export const api = {
   carrito() {
     return request('/carrito');
   },
-  anadirAlCarrito({ categoria, articulo, cantidad }) {
-    return request('/carrito/item', { method: 'POST', body: { categoria, articulo, cantidad } });
+  anadirAlCarrito({ categoria, articulo, cantidad, origen }) {
+    return request('/carrito/item', { method: 'POST', body: { categoria, articulo, cantidad, origen } });
   },
   actualizarCantidadCarrito({ articulo, cantidad }) {
     return request('/carrito/item', { method: 'PUT', body: { articulo, cantidad } });

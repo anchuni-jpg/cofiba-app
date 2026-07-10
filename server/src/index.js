@@ -89,10 +89,12 @@ app.get('/api/categorias', requireSession, async (req, res) => {
 });
 
 app.get('/api/productos', requireSession, async (req, res) => {
-  const { categoria, subcategoria, page, q, pageUrl } = req.query;
+  const { categoria, subcategoria, grupo, page, q, pageUrl } = req.query;
   if (!categoria) return res.status(400).json({ error: 'Falta el parámetro categoria.' });
   try {
-    res.json(await getProductosAgrupados(req.cofiba, { categoria, subcategoria, page: Number(page) || 1, query: q, pageUrl }));
+    res.json(
+      await getProductosAgrupados(req.cofiba, { categoria, subcategoria, grupo, page: Number(page) || 1, query: q, pageUrl })
+    );
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -107,12 +109,12 @@ app.get('/api/carrito', requireSession, async (req, res) => {
 });
 
 app.post('/api/carrito/item', requireSession, async (req, res) => {
-  const { categoria, articulo, cantidad } = req.body || {};
+  const { categoria, articulo, cantidad, origen } = req.body || {};
   if (!categoria || !articulo || !cantidad) {
     return res.status(400).json({ error: 'Falta categoria, articulo o cantidad.' });
   }
   try {
-    const result = await anadirAlCarrito(req.cofiba, { categoria, articulo, cantidad });
+    const result = await anadirAlCarrito(req.cofiba, { categoria, articulo, cantidad, origen });
     registrarCategoria(req.usuario, articulo, categoria);
     res.json(result);
   } catch (e) {

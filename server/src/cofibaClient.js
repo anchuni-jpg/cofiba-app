@@ -209,6 +209,10 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
   const res = await http.get(url, { params: !pageUrl && query ? { buscar: query } : undefined });
   const $ = cheerio.load(res.data);
   const subcategorias = categoria && categoria !== 'todas' && !query ? extraerSubcategorias($, categoria) : [];
+  // Exact listing URL each product was seen on (with the search term inlined
+  // when it came from a search) — anadirAlCarrito re-fetches it to find the
+  // product's buy-form.
+  const origenUrl = !pageUrl && query ? `${url}?buscar=${encodeURIComponent(query)}` : url;
 
   // Product thumbnails: walk images and product buttons together in document
   // order, and give each button whichever thumbnail was most recently seen
@@ -274,6 +278,10 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
       precioFinal: m?.[7] || null,
       nombre,
       imagen,
+      // Página real donde se vio este producto: la página 1 de la categoría
+      // solo contiene los <form> de compra de sus propios 12 productos, así
+      // que añadir desde páginas interiores fallaba sin esto.
+      origen: origenUrl,
     });
   });
 
@@ -306,23 +314,27 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
 const ALFABETICO = (a, b) =>
   (a.nombre || a.referencia || '').localeCompare(b.nombre || b.referencia || '', 'es', { sensitivity: 'base' });
 
+const POR_NOMBRE = (a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' });
+
 // cofiba.es's own page size is small (12 productos/página) and fixed by its
 // template, so "más productos por página" means merging several of its real
 // pages behind the scenes into one bigger batch, rather than asking it for a
 // page size it doesn't support. Keeps following the real siguientePagina
 // chain (exactly like a user clicking "Siguiente" repeatedly) until there
-// are at least `minimo` productos or the real listing runs out.
-export async function getProductosAgrupados(session, opts, minimo = 48) {
-  let pageUrl = opts.pageUrl || null;
+// are at least `minimo` productos or the real listing runs out. `seed`
+// reuses an already-fetched first page instead of re-requesting it.
+async function mergePaginas(session, baseOpts, startPageUrl, minimo, seed = null) {
+  let pageUrl = startPageUrl || null;
   let productos = [];
   let totalPaginas = null;
   let subcategorias = null;
   let debug;
   let paginaInicio = null;
   let paginaFin = null;
+  let res = seed;
 
   while (productos.length < minimo) {
-    const res = await getProductos(session, { ...opts, pageUrl });
+    if (!res) res = await getProductos(session, { ...baseOpts, pageUrl });
     if (paginaInicio == null) paginaInicio = res.pagina;
     paginaFin = res.pagina;
     totalPaginas = res.totalPaginas;
@@ -334,11 +346,58 @@ export async function getProductosAgrupados(session, opts, minimo = 48) {
       break;
     }
     pageUrl = res.siguientePagina;
+    res = null;
   }
 
   productos.sort(ALFABETICO);
-
   return { productos, subcategorias, paginaInicio, paginaFin, totalPaginas, siguientePagina: pageUrl, debug };
+}
+
+// Dentro de una categoría, la vista "Todas" no usa el listado mezclado del
+// propio cofiba.es: recorre las subcategorías por orden alfabético, sirviendo
+// exactamente una por respuesta, para que los productos lleguen agrupados en
+// vez de desperdigados. `grupo` es la subcategoría que se está sirviendo y
+// `siguienteGrupo` la que toca cuando se agoten sus páginas; el contador de
+// páginas (paginaInicio/Fin/totalPaginas) es siempre el del grupo actual.
+export async function getProductosAgrupados(session, opts, minimo = 48) {
+  const { categoria, subcategoria, query, pageUrl, grupo } = opts;
+  const modoTodas = categoria && categoria !== 'todas' && !query && !subcategoria;
+
+  if (!modoTodas) {
+    return mergePaginas(session, { categoria, subcategoria, query }, pageUrl, minimo);
+  }
+
+  let subs = null;
+  let grupoSlug = grupo || null;
+  if (!grupoSlug) {
+    const primera = await getProductos(session, { categoria, page: 1 });
+    subs = [...(primera.subcategorias || [])].sort(POR_NOMBRE);
+    if (!subs.length) {
+      // Categoría sin subcategorías: listado plano de siempre.
+      return mergePaginas(session, { categoria }, pageUrl, minimo, pageUrl ? null : primera);
+    }
+    grupoSlug = subs[0].slug;
+  }
+
+  let r = await mergePaginas(session, { categoria, subcategoria: grupoSlug }, pageUrl, minimo);
+  const lista = [...((r.subcategorias?.length ? r.subcategorias : subs) || [])].sort(POR_NOMBRE);
+  let idx = lista.findIndex((s) => s.slug === grupoSlug);
+
+  // Salta grupos vacíos (subcategorías sin stock ahora mismo) para no servir
+  // pantallas en blanco con un botón "Siguiente".
+  while (r.productos.length === 0 && idx !== -1 && idx < lista.length - 1) {
+    idx += 1;
+    grupoSlug = lista[idx].slug;
+    r = await mergePaginas(session, { categoria, subcategoria: grupoSlug }, null, minimo);
+  }
+
+  const siguienteGrupo = !r.siguientePagina && idx !== -1 && idx < lista.length - 1 ? lista[idx + 1].slug : null;
+  return {
+    ...r,
+    subcategorias: lista,
+    grupo: lista[idx] || { slug: grupoSlug, nombre: grupoSlug },
+    siguienteGrupo,
+  };
 }
 
 // The cart page renders each line twice (once per responsive breakpoint —
@@ -434,8 +493,11 @@ export async function getCarrito({ http }) {
 // we replicate that exactly: fetch the category page, find this product's
 // real button via its data-articulo (now a precise, confirmed anchor), grab
 // its enclosing form, and submit all of it with the quantity field set.
-export async function anadirAlCarrito({ http }, { categoria, articulo, cantidad }) {
-  const catUrl = `${BASE}/marca/todas/categoria/${categoria}/false`;
+export async function anadirAlCarrito({ http }, { categoria, articulo, cantidad, origen }) {
+  // Re-fetch the exact listing page the product was seen on: category page 1
+  // only contains the buy-forms of its own 12 products, so adds from deeper
+  // pages or subcategory listings failed with CALIBRATION_NEEDED before.
+  const catUrl = origen && origen.startsWith(BASE) ? origen : `${BASE}/marca/todas/categoria/${categoria}/false`;
   const catRes = await http.get(catUrl);
   const $ = cheerio.load(catRes.data);
 

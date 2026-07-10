@@ -1,13 +1,34 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
+// "Und. de venta" llega como texto con formato español ("12,00"); se muestra
+// como tamaño de caja legible ("caja de 12 uds").
+function formatoCaja(undVenta) {
+  const n = parseFloat(String(undVenta).replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(n)) return undVenta;
+  return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
+}
+
 export default function Productos({ categoria, query, onBack, onCartChanged, cartCount }) {
+  // La navegación (subcategoría elegida, página dentro del grupo actual y
+  // pila para "Anterior") se guarda junto a la clave del contexto que la
+  // creó. Cuando cambia la categoría/búsqueda/subcategoría, la clave deja de
+  // coincidir y el estado viejo se descarta en el MISMO render — sin efectos
+  // de reseteo que llegan tarde. Antes ese desfase disparaba una petición
+  // con el pageUrl de la subcategoría anterior, y ese es el motivo de que el
+  // contador de páginas se volviera loco al cambiar de subcategoría.
+  const catKey = `${categoria?.slug || 'todas'}|${query || ''}`;
+  const [subcatSel, setSubcatSel] = useState({ key: catKey, slug: null });
+  const subcategoria = subcatSel.key === catKey ? subcatSel.slug : null;
+  const ctxKey = `${catKey}|${subcategoria || ''}`;
+  const [nav, setNav] = useState({ key: ctxKey, pageUrl: null, grupo: null, stack: [] });
+  const effNav = nav.key === ctxKey ? nav : { key: ctxKey, pageUrl: null, grupo: null, stack: [] };
+
   const [productos, setProductos] = useState([]);
   const [subcategorias, setSubcategorias] = useState([]);
-  const [subcategoria, setSubcategoria] = useState(null);
-  const [pageUrl, setPageUrl] = useState(null);
-  const [historial, setHistorial] = useState([]); // stack of previous pageUrls
+  const [grupoActual, setGrupoActual] = useState(null);
   const [siguientePagina, setSiguientePagina] = useState(null);
+  const [siguienteGrupo, setSiguienteGrupo] = useState(null);
   const [totalPaginas, setTotalPaginas] = useState(null);
   const [paginaInicio, setPaginaInicio] = useState(null);
   const [paginaFin, setPaginaFin] = useState(null);
@@ -16,52 +37,66 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState({});
   const [debugSample, setDebugSample] = useState(null);
-  const [debugPaginacion, setDebugPaginacion] = useState(null);
-  const [zoomSrc, setZoomSrc] = useState(null);
+  const [zoomProducto, setZoomProducto] = useState(null);
 
   useEffect(() => {
-    setPageUrl(null);
-    setHistorial([]);
-    setSubcategoria(null);
-  }, [categoria, query]);
-
-  useEffect(() => {
-    setPageUrl(null);
-    setHistorial([]);
-  }, [subcategoria]);
-
-  useEffect(() => {
+    // Si al llegar la respuesta ya se pidió otra cosa (cambio rápido de
+    // subcategoría o de página), se ignora: la última petición siempre gana.
+    let cancelado = false;
     setLoading(true);
     setError(null);
     setErrorDebugHtml(null);
     setDebugSample(null);
-    setDebugPaginacion(null);
     api
-      .productos({ categoria: categoria?.slug || 'todas', subcategoria, q: query, pageUrl })
+      .productos({
+        categoria: categoria?.slug || 'todas',
+        subcategoria,
+        q: query,
+        pageUrl: effNav.pageUrl,
+        grupo: effNav.grupo,
+      })
       .then((data) => {
+        if (cancelado) return;
         setProductos(data.productos);
         setSubcategorias(data.subcategorias || []);
+        setGrupoActual(data.grupo || null);
         setTotalPaginas(data.totalPaginas);
         setPaginaInicio(data.paginaInicio);
         setPaginaFin(data.paginaFin);
         setSiguientePagina(data.siguientePagina || null);
+        setSiguienteGrupo(data.siguienteGrupo || null);
         setDebugSample(data.debug?.normalizedSample || null);
-        setDebugPaginacion(data.debug?.paginacionHtml || null);
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [categoria, subcategoria, query, pageUrl]);
+      .catch((e) => {
+        if (!cancelado) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelado) setLoading(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxKey, effNav.pageUrl, effNav.grupo]);
+
+  // El servidor pudo auto-elegir el primer grupo (o saltar grupos vacíos):
+  // para paginar dentro del grupo hay que usar el que realmente sirvió.
+  const grupoEfectivo = grupoActual?.slug || effNav.grupo;
 
   function irASiguiente() {
-    setHistorial((h) => [...h, pageUrl]);
-    setPageUrl(siguientePagina);
+    const destino = siguientePagina
+      ? { pageUrl: siguientePagina, grupo: grupoEfectivo }
+      : siguienteGrupo
+      ? { pageUrl: null, grupo: siguienteGrupo }
+      : null;
+    if (!destino) return;
+    setNav({ key: ctxKey, ...destino, stack: [...effNav.stack, { pageUrl: effNav.pageUrl, grupo: effNav.grupo }] });
   }
+
   function irAAnterior() {
-    setHistorial((h) => {
-      const prev = h[h.length - 1] ?? null;
-      setPageUrl(prev);
-      return h.slice(0, -1);
-    });
+    if (!effNav.stack.length) return;
+    const prev = effNav.stack[effNav.stack.length - 1];
+    setNav({ key: ctxKey, pageUrl: prev.pageUrl, grupo: prev.grupo, stack: effNav.stack.slice(0, -1) });
   }
 
   async function añadir(p, delta) {
@@ -73,11 +108,11 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
           categoria: categoria?.slug || 'todas',
           articulo: p.articulo,
           cantidad: 1,
+          origen: p.origen,
         });
         // cofiba.es's own total_carrito counts "add events", not distinct
-        // products — clicking + twice on the same item bumps it twice even
-        // though the cart still shows one line. Always refetch our own
-        // parsed cart so the badge matches what the Carrito tab shows.
+        // products — always refetch our own parsed cart so the badge matches
+        // what the Carrito tab shows.
         onCartChanged();
       } catch (e) {
         setError(e.message);
@@ -85,6 +120,11 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
       }
     }
   }
+
+  const etiquetaPaginas = totalPaginas
+    ? `${paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`} de ${totalPaginas}`
+    : '';
+  const hayPaginacion = totalPaginas > 1 || siguienteGrupo || effNav.stack.length > 0;
 
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -110,7 +150,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
       {subcategorias.length > 0 && (
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
           <button
-            onClick={() => setSubcategoria(null)}
+            onClick={() => setSubcatSel({ key: catKey, slug: null })}
             style={{
               flexShrink: 0,
               fontSize: 11,
@@ -125,7 +165,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
           {subcategorias.map((s) => (
             <button
               key={s.slug}
-              onClick={() => setSubcategoria(s.slug)}
+              onClick={() => setSubcatSel({ key: catKey, slug: s.slug })}
               style={{
                 flexShrink: 0,
                 fontSize: 11,
@@ -155,12 +195,26 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
         </>
       )}
 
+      {!loading && productos.length > 0 && grupoActual && !subcategoria && (
+        <p
+          style={{
+            fontWeight: 600,
+            fontSize: 12,
+            color: 'var(--accent)',
+            margin: '4px 0 2px',
+            letterSpacing: 0.3,
+          }}
+        >
+          {grupoActual.nombre}
+        </p>
+      )}
+
       <div>
         {productos.map((p) => (
           <div className="product-row" key={p.articulo}>
             <div
               className="product-thumb"
-              onClick={() => p.imagen && setZoomSrc(p.imagen)}
+              onClick={() => p.imagen && setZoomProducto(p)}
               style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
             >
               {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
@@ -171,66 +225,98 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
               </p>
               <p className="muted" style={{ margin: '2px 0' }}>
                 Ref. {p.referencia || p.articulo}
-                {p.undVenta ? ` · caja ${p.undVenta}` : ''}
               </p>
               <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
               </p>
             </div>
-            <div className="qty-stepper">
-              <button onClick={() => añadir(p, -1)}>-</button>
-              <span style={{ minWidth: 14, textAlign: 'center', fontSize: 12 }}>{pending[p.articulo] ?? 0}</span>
-              <button onClick={() => añadir(p, 1)}>+</button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+              <div className="qty-stepper">
+                <button onClick={() => añadir(p, -1)}>-</button>
+                <span style={{ minWidth: 14, textAlign: 'center', fontSize: 12 }}>{pending[p.articulo] ?? 0}</span>
+                <button onClick={() => añadir(p, 1)}>+</button>
+              </div>
+              {p.undVenta && (
+                <span className="muted" style={{ fontSize: 10 }}>
+                  caja de {formatoCaja(p.undVenta)} uds
+                </span>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      {totalPaginas > 1 && (
+      {hayPaginacion && (
         <div style={{ padding: '12px 0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <button disabled={historial.length === 0} onClick={irAAnterior}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <button disabled={effNav.stack.length === 0} onClick={irAAnterior}>
               Anterior
             </button>
-            <span className="muted">
-              {paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`} de{' '}
-              {totalPaginas}
+            <span className="muted" style={{ textAlign: 'center' }}>
+              {grupoActual && !subcategoria ? grupoActual.nombre : ''}
+              {grupoActual && !subcategoria && etiquetaPaginas ? ' · ' : ''}
+              {etiquetaPaginas}
             </span>
-            <button disabled={!siguientePagina} onClick={irASiguiente}>
+            <button disabled={!siguientePagina && !siguienteGrupo} onClick={irASiguiente}>
               Siguiente
             </button>
           </div>
-          {!siguientePagina && paginaFin < totalPaginas && (
-            <p className="muted" style={{ marginTop: 6 }}>
-              Esta categoría tiene más páginas pero todavía no localizamos el enlace real de "siguiente" en la web —
-              de momento usa el buscador para llegar a productos más allá de esta página.
-              {debugPaginacion && (
-                <details style={{ marginTop: 6 }}>
-                  <summary>Ver HTML de depuración</summary>
-                  <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{debugPaginacion}</pre>
-                </details>
-              )}
-            </p>
-          )}
         </div>
       )}
 
-      {zoomSrc && (
+      {zoomProducto && (
         <div
-          onClick={() => setZoomSrc(null)}
+          onClick={() => setZoomProducto(null)}
           style={{
             position: 'fixed',
             inset: 0,
             background: 'rgba(0,0,0,0.85)',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 50,
             cursor: 'zoom-out',
-            padding: 24,
+            padding: 16,
+            gap: 12,
           }}
         >
-          <img src={zoomSrc} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+          <img
+            src={zoomProducto.imagen}
+            alt=""
+            style={{ maxWidth: '100%', maxHeight: '65%', objectFit: 'contain' }}
+          />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              cursor: 'default',
+              background: 'var(--surface-2)',
+              borderRadius: 'var(--radius)',
+              padding: '12px 14px',
+              width: '100%',
+              maxWidth: 420,
+            }}
+          >
+            <p style={{ fontSize: 13, fontWeight: 500, margin: '0 0 2px' }}>
+              {zoomProducto.nombre || zoomProducto.referencia || zoomProducto.articulo}
+            </p>
+            <p className="muted" style={{ margin: '0 0 8px' }}>
+              Ref. {zoomProducto.referencia || zoomProducto.articulo}
+              {zoomProducto.precioFinal ? ` · ${zoomProducto.precioFinal}€` : ''}
+              {zoomProducto.undVenta ? ` · caja de ${formatoCaja(zoomProducto.undVenta)} uds` : ''}
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div className="qty-stepper">
+                <button onClick={() => añadir(zoomProducto, -1)}>-</button>
+                <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
+                <button onClick={() => añadir(zoomProducto, 1)}>+</button>
+              </div>
+              <button onClick={() => setZoomProducto(null)}>Cerrar</button>
+            </div>
+            {error && (
+              <p style={{ color: 'var(--danger)', fontSize: 11, margin: '8px 0 0' }}>{error}</p>
+            )}
+          </div>
         </div>
       )}
     </div>
