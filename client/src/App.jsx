@@ -4,6 +4,7 @@ import Login from './screens/Login.jsx';
 import Categorias from './screens/Categorias.jsx';
 import Productos from './screens/Productos.jsx';
 import Carrito from './screens/Carrito.jsx';
+import Historico from './screens/Historico.jsx';
 
 function useInstallPrompt() {
   const [deferred, setDeferred] = useState(null);
@@ -25,7 +26,7 @@ function useInstallPrompt() {
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!getToken());
-  const [tab, setTab] = useState('categorias'); // categorias | productos | carrito
+  const [tab, setTab] = useState('categorias'); // categorias | productos | carrito | historico
   const [categoria, setCategoria] = useState(null);
   const [query, setQuery] = useState(null);
   const [cartCount, setCartCount] = useState(0);
@@ -126,6 +127,7 @@ export default function App() {
         />
       )}
       {tab === 'carrito' && <Carrito />}
+      {tab === 'historico' && <Historico onCartChanged={refreshCartCount} />}
 
       <div className="bottomnav">
         <button className={tab === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>
@@ -136,6 +138,9 @@ export default function App() {
         </button>
         <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
           Carrito{cartCount > 0 ? <span className="badge">{cartCount}</span> : null}
+        </button>
+        <button className={tab === 'historico' ? 'active' : ''} onClick={() => setTab('historico')}>
+          Histórico
         </button>
       </div>
     </>

@@ -75,4 +75,7 @@ export const api = {
   finalizarPedido(observaciones = '') {
     return request('/carrito/finalizar', { method: 'POST', body: { observaciones } });
   },
+  historico() {
+    return request('/historico');
+  },
 };

@@ -12,7 +12,7 @@ export default defineConfig({
         name: 'Cofiba Visor de Pedidos',
         short_name: 'Cofiba',
         description: 'Visor ágil para consultar el catálogo y hacer pedidos a Cofiba Distribuciones.',
-        theme_color: '#185fa5',
+        theme_color: '#2f4538',
         background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',

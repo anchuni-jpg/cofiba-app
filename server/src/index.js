@@ -16,6 +16,7 @@ import {
   finalizarPedido,
 } from './cofibaClient.js';
 import { saveCredentials, loadCredentials, deleteCredentials } from './credentialStore.js';
+import { registrarCategoria, registrarCompra, obtenerHistorico } from './historialStore.js';
 
 const PORT = process.env.PORT || 4000;
 const app = express();
@@ -36,6 +37,7 @@ async function requireSession(req, res, next) {
   const entry = sessions.get(token);
   if (entry) {
     req.cofiba = entry.session;
+    req.usuario = entry.usuario;
     return next();
   }
 
@@ -51,6 +53,7 @@ async function requireSession(req, res, next) {
   }
   sessions.set(token, { session, usuario: creds.usuario, createdAt: Date.now() });
   req.cofiba = session;
+  req.usuario = creds.usuario;
   next();
 }
 
@@ -110,6 +113,7 @@ app.post('/api/carrito/item', requireSession, async (req, res) => {
   }
   try {
     const result = await anadirAlCarrito(req.cofiba, { categoria, articulo, cantidad });
+    registrarCategoria(req.usuario, articulo, categoria);
     res.json(result);
   } catch (e) {
     const status = e.code === 'CALIBRATION_NEEDED' ? 501 : 502;
@@ -153,11 +157,21 @@ app.post('/api/carrito/vaciar', requireSession, async (req, res) => {
 app.post('/api/carrito/finalizar', requireSession, async (req, res) => {
   const { observaciones } = req.body || {};
   try {
-    res.json(await finalizarPedido(req.cofiba, { observaciones }));
+    // Snapshot the cart before submitting the order, so "histórico de
+    // productos comprados" reflects what was actually ordered even though
+    // finalizarPedido's own response doesn't itemize the lines.
+    const carritoAntes = await getCarrito(req.cofiba).catch(() => null);
+    const result = await finalizarPedido(req.cofiba, { observaciones });
+    if (carritoAntes?.lineas?.length) registrarCompra(req.usuario, carritoAntes.lineas);
+    res.json(result);
   } catch (e) {
     const status = e.code === 'CALIBRATION_NEEDED' ? 501 : 502;
     res.status(status).json({ error: e.message, code: e.code, debugHtml: e.debugHtml });
   }
+});
+
+app.get('/api/historico', requireSession, (req, res) => {
+  res.json(obtenerHistorico(req.usuario));
 });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
