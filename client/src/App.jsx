@@ -73,7 +73,7 @@ export default function App() {
   return (
     <>
       <div className="topbar">
-        <span style={{ fontWeight: 500 }}>Cofiba</span>
+        <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 24 }} />
         <button className="danger-text" onClick={() => (api.logout(), setLoggedIn(false))}>
           Salir
         </button>

@@ -7,7 +7,7 @@ import {
   createSession,
   login,
   getCategorias,
-  getProductos,
+  getProductosAgrupados,
   getCarrito,
   anadirAlCarrito,
   actualizarCantidadCarrito,
@@ -89,10 +89,10 @@ app.get('/api/categorias', requireSession, async (req, res) => {
 });
 
 app.get('/api/productos', requireSession, async (req, res) => {
-  const { categoria, page, q, pageUrl } = req.query;
+  const { categoria, subcategoria, page, q, pageUrl } = req.query;
   if (!categoria) return res.status(400).json({ error: 'Falta el parámetro categoria.' });
   try {
-    res.json(await getProductos(req.cofiba, { categoria, page: Number(page) || 1, query: q, pageUrl }));
+    res.json(await getProductosAgrupados(req.cofiba, { categoria, subcategoria, page: Number(page) || 1, query: q, pageUrl }));
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

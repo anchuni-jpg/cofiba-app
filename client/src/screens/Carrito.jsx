@@ -8,6 +8,7 @@ export default function Carrito() {
   const [busyCodigo, setBusyCodigo] = useState(null);
   const [observaciones, setObservaciones] = useState('');
   const [pedidoOk, setPedidoOk] = useState(null);
+  const [zoomSrc, setZoomSrc] = useState(null);
 
   function cargar() {
     setLoading(true);
@@ -104,7 +105,13 @@ export default function Carrito() {
                   opacity: busyCodigo === l.codigo ? 0.5 : 1,
                 }}
               >
-                <div className="cart-thumb">{l.imagen ? <img src={l.imagen} alt="" /> : '—'}</div>
+                <div
+                  className="cart-thumb"
+                  onClick={() => l.imagen && setZoomSrc(l.imagen)}
+                  style={{ cursor: l.imagen ? 'zoom-in' : 'default' }}
+                >
+                  {l.imagen ? <img src={l.imagen} alt="" /> : '—'}
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {l.descripcion || l.codigo}
@@ -202,6 +209,25 @@ export default function Carrito() {
             "Finalizar pedido" genera un pedido real en tu cuenta de cofiba.es con el contenido actual del carrito.
           </p>
         </>
+      )}
+
+      {zoomSrc && (
+        <div
+          onClick={() => setZoomSrc(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+            cursor: 'zoom-out',
+            padding: 24,
+          }}
+        >
+          <img src={zoomSrc} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+        </div>
       )}
     </div>
   );

@@ -143,7 +143,8 @@ export async function getCategorias({ http }) {
 
   // De-dupe by slug in case the selector matched more than one node per card.
   const seen = new Set();
-  return categorias.filter((c) => (seen.has(c.slug) ? false : (seen.add(c.slug), true)));
+  const unicas = categorias.filter((c) => (seen.has(c.slug) ? false : (seen.add(c.slug), true)));
+  return unicas.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
 }
 
 // Confirmed straight from cofiba.es's own dist/js/b2b.js: each product's
@@ -169,17 +170,45 @@ function closestByText($, $el, pattern, maxDepth = 10) {
   return null;
 }
 
-export async function getProductos({ http }, { categoria, page = 1, query, pageUrl }) {
+// Confirmed from the category page's own markup: the left-hand category tree
+// is a Bootstrap accordion, and each subcategory's button carries its real,
+// navigable target directly in onclick="location.href='/marca/todas/
+// categoria/{categoria}/{subcategoria}/false'" — top-level category buttons
+// have onclick="" (they just expand the accordion), so filtering to buttons
+// with a real href here naturally keeps only actual subcategories, and
+// matching that href's categoria segment keeps only the ones under the
+// categoria we're currently looking at.
+function extraerSubcategorias($, categoriaSlug) {
+  const subcategorias = [];
+  const seen = new Set();
+  $('h3.accordion-header button[onclick]').each((_, el) => {
+    const onclick = $(el).attr('onclick') || '';
+    const m = onclick.match(/location\.href=["']([^"']+)["']/);
+    if (!m) return;
+    const parts = m[1].match(/\/categoria\/([^/]+)\/([^/]+)\/false/i);
+    if (!parts || parts[1] !== categoriaSlug) return;
+    const slug = parts[2];
+    if (seen.has(slug)) return;
+    seen.add(slug);
+    subcategorias.push({ slug, nombre: $(el).text().trim() });
+  });
+  return subcategorias;
+}
+
+export async function getProductos({ http }, { categoria, subcategoria, page = 1, query, pageUrl }) {
   // If a real "next page" URL was computed from a previous call, follow that
   // exact URL instead of guessing a query-string scheme cofiba.es may not use.
   const url =
     pageUrl ||
     (query
       ? `${BASE}/marca/todas/categoria/${categoria || 'todas'}/false`
+      : subcategoria
+      ? `${BASE}/marca/todas/categoria/${categoria}/${subcategoria}/false`
       : `${BASE}/marca/todas/categoria/${categoria}/false`);
 
   const res = await http.get(url, { params: !pageUrl && query ? { buscar: query } : undefined });
   const $ = cheerio.load(res.data);
+  const subcategorias = categoria && categoria !== 'todas' && !query ? extraerSubcategorias($, categoria) : [];
 
   // Product thumbnails: walk images and product buttons together in document
   // order, and give each button whichever thumbnail was most recently seen
@@ -263,6 +292,7 @@ export async function getProductos({ http }, { categoria, page = 1, query, pageU
 
   return {
     productos,
+    subcategorias,
     totalPaginas: totalPaginasTexto ? Number(totalPaginasTexto) : null,
     pagina: paginaActual,
     siguientePagina,
@@ -271,6 +301,44 @@ export async function getProductos({ http }, { categoria, page = 1, query, pageU
         ? { normalizedSample: normalized.slice(0, 2000) }
         : undefined,
   };
+}
+
+const ALFABETICO = (a, b) =>
+  (a.nombre || a.referencia || '').localeCompare(b.nombre || b.referencia || '', 'es', { sensitivity: 'base' });
+
+// cofiba.es's own page size is small (12 productos/página) and fixed by its
+// template, so "más productos por página" means merging several of its real
+// pages behind the scenes into one bigger batch, rather than asking it for a
+// page size it doesn't support. Keeps following the real siguientePagina
+// chain (exactly like a user clicking "Siguiente" repeatedly) until there
+// are at least `minimo` productos or the real listing runs out.
+export async function getProductosAgrupados(session, opts, minimo = 48) {
+  let pageUrl = opts.pageUrl || null;
+  let productos = [];
+  let totalPaginas = null;
+  let subcategorias = null;
+  let debug;
+  let paginaInicio = null;
+  let paginaFin = null;
+
+  while (productos.length < minimo) {
+    const res = await getProductos(session, { ...opts, pageUrl });
+    if (paginaInicio == null) paginaInicio = res.pagina;
+    paginaFin = res.pagina;
+    totalPaginas = res.totalPaginas;
+    if (subcategorias == null) subcategorias = res.subcategorias;
+    productos = productos.concat(res.productos);
+    debug = res.debug || debug;
+    if (!res.siguientePagina) {
+      pageUrl = null;
+      break;
+    }
+    pageUrl = res.siguientePagina;
+  }
+
+  productos.sort(ALFABETICO);
+
+  return { productos, subcategorias, paginaInicio, paginaFin, totalPaginas, siguientePagina: pageUrl, debug };
 }
 
 // The cart page renders each line twice (once per responsive breakpoint —

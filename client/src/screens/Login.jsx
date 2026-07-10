@@ -23,6 +23,7 @@ export default function Login({ onLoggedIn, expiredNotice }) {
 
   return (
     <div className="content" style={{ paddingTop: 40 }}>
+      <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 36, marginBottom: 20 }} />
       <p style={{ fontWeight: 500, fontSize: 16, marginBottom: 4 }}>Acceso clientes</p>
       <p className="muted" style={{ marginBottom: 20 }}>
         Usa el mismo usuario y contraseña que en cofiba.es.
