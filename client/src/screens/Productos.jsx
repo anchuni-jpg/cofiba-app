@@ -155,12 +155,18 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
     }
   }
 
-  // "de N" solo aporta información cuando queda más detrás de lo que ya se
-  // ve (paginaFin < totalPaginas). Si ya se llegó a la última página real,
-  // repetirlo ("Páginas 1-2 de 2") es redundante y confunde.
+  // El rango de páginas reales (p.ej. "1-2 de 2") solo tiene sentido cuando
+  // pulsar "Siguiente" enseña MÁS productos de esta MISMA subcategoría
+  // (siguientePagina). Varias páginas reales de cofiba.es pueden fusionarse
+  // en una sola pantalla nuestra (p.ej. 12+3 productos en 2 páginas reales
+  // de "bolsa-compra" caben enteros en una única vista) — en ese caso,
+  // mostrar "Páginas 1-2" es confuso: el usuario ve una sola pantalla con
+  // todo, no dos. Cuando siguientePagina es null, "Siguiente" (si existe)
+  // pasa a la SIGUIENTE subcategoría, no a más de esta, así que no hay
+  // ningún número de página que enseñar.
   const rango = paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`;
-  const etiquetaPaginas = totalPaginas ? (paginaFin < totalPaginas ? `${rango} de ${totalPaginas}` : rango) : '';
-  const hayPaginacion = totalPaginas > 1 || siguienteGrupo || effNav.stack.length > 0;
+  const etiquetaPaginas = siguientePagina && totalPaginas ? `${rango} de ${totalPaginas}` : '';
+  const hayPaginacion = !!siguientePagina || !!siguienteGrupo || effNav.stack.length > 0;
 
   return (
     <div className="content" ref={contentRef} style={{ display: 'flex', flexDirection: 'column' }}>
