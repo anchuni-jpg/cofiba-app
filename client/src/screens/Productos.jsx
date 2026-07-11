@@ -105,24 +105,36 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
   }
 
   async function añadir(p, delta) {
-    const nueva = Math.max(0, (pending[p.articulo] ?? 0) + delta);
+    const anterior = pending[p.articulo] ?? 0;
+    const nueva = Math.max(0, anterior + delta);
+    if (nueva === anterior) return;
     setPending((s) => ({ ...s, [p.articulo]: nueva }));
-    if (delta > 0) {
-      try {
+    try {
+      if (anterior === 0) {
+        // Primera vez que se pulsa + para este producto: aún no está en el
+        // carrito, así que hay que añadirlo (no solo fijar su cantidad).
         await api.anadirAlCarrito({
           categoria: categoria?.slug || 'todas',
           articulo: p.articulo,
-          cantidad: 1,
+          cantidad: nueva,
           origen: p.origen,
         });
-        // cofiba.es's own total_carrito counts "add events", not distinct
-        // products — always refetch our own parsed cart so the badge matches
-        // what the Carrito tab shows.
-        onCartChanged();
-      } catch (e) {
-        setError(e.message);
-        setErrorDebugHtml(e.debugHtml || null);
+      } else if (nueva === 0) {
+        // Bajar hasta 0 ya no es "menos cantidad", es sacarlo del carrito.
+        // Antes el botón "-" solo tocaba este contador local y nunca
+        // llegaba a quitar nada del carrito real.
+        await api.eliminarDelCarrito(p.articulo);
+      } else {
+        await api.actualizarCantidadCarrito({ articulo: p.articulo, cantidad: nueva });
       }
+      // cofiba.es's own total_carrito counts "add events", not distinct
+      // products — always refetch our own parsed cart so the badge matches
+      // what the Carrito tab shows.
+      onCartChanged();
+    } catch (e) {
+      setPending((s) => ({ ...s, [p.articulo]: anterior }));
+      setError(e.message);
+      setErrorDebugHtml(e.debugHtml || null);
     }
   }
 
@@ -265,7 +277,11 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
             <button disabled={effNav.stack.length === 0} onClick={irAAnterior}>
               Anterior
             </button>
-            <span className="muted" style={{ textAlign: 'center' }}>{etiquetaPaginas}</span>
+            <span className="muted" style={{ textAlign: 'center' }}>
+              {grupoActual && !subcategoria ? grupoActual.nombre : ''}
+              {grupoActual && !subcategoria && etiquetaPaginas ? ' · ' : ''}
+              {etiquetaPaginas}
+            </span>
             <button disabled={!siguientePagina && !siguienteGrupo} onClick={irASiguiente}>
               Siguiente
             </button>
