@@ -381,22 +381,24 @@ async function mergePaginas(session, baseOpts, startPageUrl, minimo, seed = null
   return { productos, subcategorias, paginaInicio, paginaFin, totalPaginas, siguientePagina: pageUrl, debug };
 }
 
-// Dentro de una categoría, la vista "Todas" no usa el listado mezclado del
-// propio cofiba.es: recorre las subcategorías por orden alfabético, sirviendo
+// Dentro de una categoría, el listado no usa el orden mezclado del propio
+// cofiba.es: recorre las subcategorías por orden alfabético, sirviendo
 // exactamente una por respuesta, para que los productos lleguen agrupados en
-// vez de desperdigados. `grupo` es la subcategoría que se está sirviendo y
-// `siguienteGrupo` la que toca cuando se agoten sus páginas; el contador de
-// páginas (paginaInicio/Fin/totalPaginas) es siempre el del grupo actual.
+// vez de desperdigados. Si no se pide una subcategoría concreta, empieza por
+// la primera alfabética; en cualquier caso, `siguienteGrupo` dice cuál toca
+// cuando se agoten sus páginas — así da igual si llegaste aquí sin elegir
+// nada o pulsando directamente un chip de subcategoría, el recorrido
+// alfabético completo sigue funcionando igual desde ese punto en adelante.
 export async function getProductosAgrupados(session, opts, minimo = 48) {
-  const { categoria, subcategoria, query, pageUrl, grupo } = opts;
-  const modoTodas = categoria && categoria !== 'todas' && !query && !subcategoria;
+  const { categoria, subcategoria, query, pageUrl } = opts;
+  const agrupable = categoria && categoria !== 'todas' && !query;
 
-  if (!modoTodas) {
+  if (!agrupable) {
     return mergePaginas(session, { categoria, subcategoria, query }, pageUrl, minimo);
   }
 
   let subs = null;
-  let grupoSlug = grupo || null;
+  let grupoSlug = subcategoria || null;
   if (!grupoSlug) {
     const primera = await getProductos(session, { categoria, page: 1 });
     subs = [...(primera.subcategorias || [])].sort(POR_NOMBRE);

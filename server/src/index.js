@@ -90,13 +90,12 @@ app.get('/api/categorias', requireSession, async (req, res) => {
 });
 
 app.get('/api/productos', requireSession, async (req, res) => {
-  const { categoria, subcategoria, grupo, page, q, pageUrl } = req.query;
+  const { categoria, subcategoria, page, q, pageUrl } = req.query;
   if (!categoria) return res.status(400).json({ error: 'Falta el parámetro categoria.' });
   try {
     const resultado = await getProductosAgrupados(req.cofiba, {
       categoria,
       subcategoria,
-      grupo,
       page: Number(page) || 1,
       query: q,
       pageUrl,

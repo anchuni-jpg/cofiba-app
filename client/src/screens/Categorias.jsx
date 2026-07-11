@@ -6,7 +6,6 @@ export default function Categorias({ onOpenCategoria, onSearch }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [codigo, setCodigo] = useState('');
 
   useEffect(() => {
     api
@@ -28,15 +27,6 @@ export default function Categorias({ onOpenCategoria, onSearch }) {
         <button onClick={() => onSearch(q)} aria-label="Buscar">
           🔍
         </button>
-      </div>
-
-      <div className="card" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input
-          placeholder="Añadir por código..."
-          value={codigo}
-          onChange={(e) => setCodigo(e.target.value)}
-        />
-        <button onClick={() => codigo && onSearch(codigo)}>+</button>
       </div>
 
       {error && <div className="error-banner">{error}</div>}

@@ -10,19 +10,18 @@ function formatoCaja(undVenta) {
 }
 
 export default function Productos({ categoria, query, onBack, onCartChanged, cartCount }) {
-  // La navegación (subcategoría elegida, página dentro del grupo actual y
-  // pila para "Anterior") se guarda junto a la clave del contexto que la
-  // creó. Cuando cambia la categoría/búsqueda/subcategoría, la clave deja de
-  // coincidir y el estado viejo se descarta en el MISMO render — sin efectos
-  // de reseteo que llegan tarde. Antes ese desfase disparaba una petición
-  // con el pageUrl de la subcategoría anterior, y ese es el motivo de que el
-  // contador de páginas se volviera loco al cambiar de subcategoría.
-  const catKey = `${categoria?.slug || 'todas'}|${query || ''}`;
-  const [subcatSel, setSubcatSel] = useState({ key: catKey, slug: null });
-  const subcategoria = subcatSel.key === catKey ? subcatSel.slug : null;
-  const ctxKey = `${catKey}|${subcategoria || ''}`;
-  const [nav, setNav] = useState({ key: ctxKey, pageUrl: null, grupo: null, stack: [] });
-  const effNav = nav.key === ctxKey ? nav : { key: ctxKey, pageUrl: null, grupo: null, stack: [] };
+  // La navegación (subcategoría activa, página dentro de ella y pila para
+  // "Anterior") se guarda junto a la clave del contexto que la creó. Cuando
+  // cambia la categoría/búsqueda, la clave deja de coincidir y el estado
+  // viejo se descarta en el MISMO render — sin efectos de reseteo que llegan
+  // tarde. `subcategoria: null` significa "que el servidor elija la primera
+  // alfabética"; da igual si se llega así o pulsando un chip, el recorrido
+  // (Siguiente pasa a la próxima subcategoría al agotar la actual) funciona
+  // igual desde ese punto en adelante — no hace falta un botón "Todas"
+  // aparte, porque siempre empieza por la primera subcategoría de todos modos.
+  const ctxKey = `${categoria?.slug || 'todas'}|${query || ''}`;
+  const [nav, setNav] = useState({ key: ctxKey, subcategoria: null, pageUrl: null, stack: [] });
+  const effNav = nav.key === ctxKey ? nav : { key: ctxKey, subcategoria: null, pageUrl: null, stack: [] };
 
   const [productos, setProductos] = useState([]);
   const [subcategorias, setSubcategorias] = useState([]);
@@ -39,6 +38,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
   const [debugSample, setDebugSample] = useState(null);
   const [zoomProducto, setZoomProducto] = useState(null);
   const contentRef = useRef(null);
+  const chipsRef = useRef(null);
 
   useEffect(() => {
     // Si al llegar la respuesta ya se pidió otra cosa (cambio rápido de
@@ -51,10 +51,9 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
     api
       .productos({
         categoria: categoria?.slug || 'todas',
-        subcategoria,
+        subcategoria: effNav.subcategoria,
         q: query,
         pageUrl: effNav.pageUrl,
-        grupo: effNav.grupo,
       })
       .then((data) => {
         if (cancelado) return;
@@ -82,26 +81,44 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
       cancelado = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxKey, effNav.pageUrl, effNav.grupo]);
+  }, [ctxKey, effNav.pageUrl, effNav.subcategoria]);
 
-  // El servidor pudo auto-elegir el primer grupo (o saltar grupos vacíos):
-  // para paginar dentro del grupo hay que usar el que realmente sirvió.
-  const grupoEfectivo = grupoActual?.slug || effNav.grupo;
+  // El servidor pudo auto-elegir la primera subcategoría (o saltar alguna
+  // vacía): para paginar dentro de ella hay que usar la que realmente sirvió.
+  const grupoEfectivo = grupoActual?.slug || effNav.subcategoria;
+
+  // La fila de chips hace scroll horizontal propio: al avanzar de
+  // subcategoría en subcategoría el chip resaltado puede quedar fuera de la
+  // vista, así que se lleva a la vista solo (sin mover el resto de la
+  // pantalla) cada vez que cambia cuál está activo.
+  useEffect(() => {
+    if (!grupoEfectivo || !chipsRef.current) return;
+    const el = chipsRef.current.querySelector(`[data-slug="${grupoEfectivo}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [grupoEfectivo]);
 
   function irASiguiente() {
     const destino = siguientePagina
-      ? { pageUrl: siguientePagina, grupo: grupoEfectivo }
+      ? { subcategoria: effNav.subcategoria, pageUrl: siguientePagina }
       : siguienteGrupo
-      ? { pageUrl: null, grupo: siguienteGrupo }
+      ? { subcategoria: siguienteGrupo, pageUrl: null }
       : null;
     if (!destino) return;
-    setNav({ key: ctxKey, ...destino, stack: [...effNav.stack, { pageUrl: effNav.pageUrl, grupo: effNav.grupo }] });
+    setNav({
+      key: ctxKey,
+      ...destino,
+      stack: [...effNav.stack, { subcategoria: effNav.subcategoria, pageUrl: effNav.pageUrl }],
+    });
   }
 
   function irAAnterior() {
     if (!effNav.stack.length) return;
     const prev = effNav.stack[effNav.stack.length - 1];
-    setNav({ key: ctxKey, pageUrl: prev.pageUrl, grupo: prev.grupo, stack: effNav.stack.slice(0, -1) });
+    setNav({ key: ctxKey, subcategoria: prev.subcategoria, pageUrl: prev.pageUrl, stack: effNav.stack.slice(0, -1) });
+  }
+
+  function elegirSubcategoria(slug) {
+    setNav({ key: ctxKey, subcategoria: slug, pageUrl: null, stack: [] });
   }
 
   async function añadir(p, delta) {
@@ -167,29 +184,14 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
       )}
 
       {subcategorias.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
-          <button
-            onClick={() => setSubcatSel({ key: catKey, slug: null })}
-            style={{
-              flexShrink: 0,
-              fontSize: 11,
-              padding: '6px 10px',
-              background: !subcategoria && !grupoEfectivo ? 'var(--accent)' : 'var(--surface-2)',
-              color: !subcategoria && !grupoEfectivo ? '#fff' : 'var(--text-primary)',
-              borderColor: !subcategoria && !grupoEfectivo ? 'var(--accent)' : 'var(--border)',
-            }}
-          >
-            Todas
-          </button>
+        <div ref={chipsRef} style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
           {subcategorias.map((s) => {
-            // En modo "Todas" se va recorriendo un grupo detrás de otro:
-            // el chip resaltado debe seguir a ese grupo, no quedarse fijo en
-            // "Todas", para que se vea en qué subcategoría estás de verdad.
-            const activa = subcategoria === s.slug || (!subcategoria && grupoEfectivo === s.slug);
+            const activa = grupoEfectivo === s.slug;
             return (
               <button
                 key={s.slug}
-                onClick={() => setSubcatSel({ key: catKey, slug: s.slug })}
+                data-slug={s.slug}
+                onClick={() => elegirSubcategoria(s.slug)}
                 style={{
                   flexShrink: 0,
                   fontSize: 11,
@@ -220,7 +222,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
         </>
       )}
 
-      {!loading && productos.length > 0 && grupoActual && !subcategoria && (
+      {!loading && productos.length > 0 && grupoActual && (
         <p
           style={{
             fontWeight: 600,
@@ -278,8 +280,8 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
               Anterior
             </button>
             <span className="muted" style={{ textAlign: 'center' }}>
-              {grupoActual && !subcategoria ? grupoActual.nombre : ''}
-              {grupoActual && !subcategoria && etiquetaPaginas ? ' · ' : ''}
+              {grupoActual ? grupoActual.nombre : ''}
+              {grupoActual && etiquetaPaginas ? ' · ' : ''}
               {etiquetaPaginas}
             </span>
             <button disabled={!siguientePagina && !siguienteGrupo} onClick={irASiguiente}>

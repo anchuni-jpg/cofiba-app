@@ -48,12 +48,11 @@ export const api = {
   categorias() {
     return request('/categorias');
   },
-  productos({ categoria, subcategoria, grupo, page = 1, q, pageUrl }) {
+  productos({ categoria, subcategoria, page = 1, q, pageUrl }) {
     const params = new URLSearchParams({
       categoria,
       page: String(page),
       ...(subcategoria ? { subcategoria } : {}),
-      ...(grupo ? { grupo } : {}),
       ...(q ? { q } : {}),
       ...(pageUrl ? { pageUrl } : {}),
     });
