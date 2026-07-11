@@ -9,7 +9,7 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
-export default function Productos({ categoria, query, onBack, onCartChanged, cartCount }) {
+export default function Productos({ categoria, onBack, onCartChanged, cartCount }) {
   // La navegación (subcategoría activa, página dentro de ella y pila para
   // "Anterior") se guarda junto a la clave del contexto que la creó. Cuando
   // cambia la categoría/búsqueda, la clave deja de coincidir y el estado
@@ -19,7 +19,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
   // (Siguiente pasa a la próxima subcategoría al agotar la actual) funciona
   // igual desde ese punto en adelante — no hace falta un botón "Todas"
   // aparte, porque siempre empieza por la primera subcategoría de todos modos.
-  const ctxKey = `${categoria?.slug || 'todas'}|${query || ''}`;
+  const ctxKey = categoria?.slug || 'todas';
   const [nav, setNav] = useState({ key: ctxKey, subcategoria: null, pageUrl: null, stack: [] });
   const effNav = nav.key === ctxKey ? nav : { key: ctxKey, subcategoria: null, pageUrl: null, stack: [] };
 
@@ -52,7 +52,6 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
       .productos({
         categoria: categoria?.slug || 'todas',
         subcategoria: effNav.subcategoria,
-        q: query,
         pageUrl: effNav.pageUrl,
       })
       .then((data) => {
@@ -174,7 +173,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
         </button>
-        <p style={{ fontWeight: 500, margin: 0 }}>{categoria?.nombre || `Búsqueda: ${query}`}</p>
+        <p style={{ fontWeight: 500, margin: 0 }}>{categoria?.nombre}</p>
       </div>
 
       {error && (

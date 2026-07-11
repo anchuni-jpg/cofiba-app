@@ -195,50 +195,21 @@ function extraerSubcategorias($, categoriaSlug) {
   return subcategorias;
 }
 
-export async function getProductos({ http }, { categoria, subcategoria, page = 1, query, pageUrl }) {
+export async function getProductos({ http }, { categoria, subcategoria, page = 1, pageUrl }) {
   // If a real "next page" URL was computed from a previous call, follow that
   // exact URL instead of guessing a query-string scheme cofiba.es may not use.
-  // Confirmed from the search button's own onclick on the category page:
-  // location.href='/marca/todas/categoria/{categoria}/true?buscar={q}' — the
-  // toggle segment is "true" for a search, not "false" like normal browsing.
-  // Using "false" here silently ignored ?buscar= and returned the category's
-  // regular unfiltered first page instead (this was the search bug).
   const url =
     pageUrl ||
-    (query
-      ? `${BASE}/marca/todas/categoria/${categoria || 'todas'}/true`
-      : subcategoria
+    (subcategoria
       ? `${BASE}/marca/todas/categoria/${categoria}/${subcategoria}/false`
       : `${BASE}/marca/todas/categoria/${categoria}/false`);
 
-  const res = await http.get(url, { params: !pageUrl && query ? { buscar: query } : undefined });
+  const res = await http.get(url);
   const $ = cheerio.load(res.data);
-  const subcategorias = categoria && categoria !== 'todas' && !query ? extraerSubcategorias($, categoria) : [];
-
-  // The "/true" (search) listing template renders every card's own name
-  // slot (.tituloListado) empty — apparently filled in client-side by JS
-  // this scraper doesn't run. Confirmed from the search box's own inline
-  // script that /forms/search_json.php?term=...&autocomplete=true is
-  // cofiba.es's real search index and does return names, keyed by the same
-  // reference code shown in each card ("Referencia:") — so it's used here
-  // to backfill names onto the cards actually being displayed.
-  let nombrePorReferencia = null;
-  if (query) {
-    try {
-      const jsonRes = await http.get(`${BASE}/forms/search_json.php`, { params: { term: query, autocomplete: true } });
-      nombrePorReferencia = new Map(
-        (Array.isArray(jsonRes.data) ? jsonRes.data : [])
-          .filter((r) => r.value)
-          .map((r) => [r.id, r.value])
-      );
-    } catch {
-      nombrePorReferencia = new Map();
-    }
-  }
-  // Exact listing URL each product was seen on (with the search term inlined
-  // when it came from a search) — anadirAlCarrito re-fetches it to find the
+  const subcategorias = categoria && categoria !== 'todas' ? extraerSubcategorias($, categoria) : [];
+  // Exact listing URL each product was seen on — anadirAlCarrito re-fetches it to find the
   // product's buy-form.
-  const origenUrl = !pageUrl && query ? `${url}?buscar=${encodeURIComponent(query)}` : url;
+  const origenUrl = url;
 
   // Product thumbnails: walk images and product buttons together in document
   // order, and give each button whichever thumbnail was most recently seen
@@ -290,8 +261,7 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
         .attr('alt')
         ?.trim() || null;
     const referencia = m?.[1] || null;
-    const nombreBuscador = referencia && nombrePorReferencia ? nombrePorReferencia.get(referencia) : null;
-    const nombre = nombreTexto || nombreAlt || nombreBuscador || null;
+    const nombre = nombreTexto || nombreAlt || null;
     const imagen = imagenPorArticulo.get(articulo) || null;
 
     productos.push({
@@ -390,11 +360,11 @@ async function mergePaginas(session, baseOpts, startPageUrl, minimo, seed = null
 // nada o pulsando directamente un chip de subcategoría, el recorrido
 // alfabético completo sigue funcionando igual desde ese punto en adelante.
 export async function getProductosAgrupados(session, opts, minimo = 48) {
-  const { categoria, subcategoria, query, pageUrl } = opts;
-  const agrupable = categoria && categoria !== 'todas' && !query;
+  const { categoria, subcategoria, pageUrl } = opts;
+  const agrupable = categoria && categoria !== 'todas';
 
   if (!agrupable) {
-    return mergePaginas(session, { categoria, subcategoria, query }, pageUrl, minimo);
+    return mergePaginas(session, { categoria, subcategoria }, pageUrl, minimo);
   }
 
   let subs = null;
@@ -428,6 +398,104 @@ export async function getProductosAgrupados(session, opts, minimo = 48) {
     grupo: lista[idx] || { slug: grupoSlug, nombre: grupoSlug },
     siguienteGrupo,
   };
+}
+
+// Recorre el catálogo entero por sus páginas normales de categoría/
+// subcategoría (modo "false", que sí traen el nombre completo — a
+// diferencia del buscador propio de cofiba.es) para construir un índice
+// plano que luego se pueda filtrar en memoria. Es una operación pesada (todo
+// el catálogo son varios miles de productos repartidos en cientos de
+// páginas reales) pensada para ejecutarse una vez y guardarse en caché, no
+// en cada búsqueda — ver indiceStore.js. Una pequeña pausa entre peticiones
+// evita machacar el servidor de cofiba.es con cientos de peticiones seguidas.
+function esperar(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Corre `tareas` a través de `worker` con un máximo de `limite` a la vez —
+// un pool sencillo de workers que van tirando del mismo array compartido.
+async function conLimite(tareas, limite, worker) {
+  let i = 0;
+  async function siguiente() {
+    while (i < tareas.length) {
+      const idx = i++;
+      await worker(tareas[idx], idx);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limite, tareas.length) }, siguiente));
+}
+
+export async function crawlCatalogo(session, onProgreso) {
+  const categorias = (await getCategorias(session)).filter((c) => c.slug !== 'todas');
+  const indice = [];
+  function añadirProducto(item) {
+    indice.push(item);
+    // Se pasa también el producto recién añadido (no solo el contador) para
+    // que quien construye el índice pueda dejarlo buscable de inmediato,
+    // sin esperar a que termine todo el catálogo (que puede tardar bastante).
+    onProgreso?.(item, indice.length);
+  }
+
+  // Primero descubre las subcategorías de cada categoría (pocas peticiones,
+  // rápido). Guarda la propia respuesta como "semilla" para la categoría
+  // plana sin subcategorías, para no volver a pedir esa misma página.
+  const tareas = [];
+  await conLimite(categorias, 4, async (cat) => {
+    const primera = await getProductos(session, { categoria: cat.slug, page: 1 });
+    await esperar(120);
+    const brutas = primera.subcategorias?.length ? [...primera.subcategorias].sort(POR_NOMBRE) : [null];
+    // extraerSubcategorias puede devolver el mismo slug repetido (el árbol de
+    // categorías de cofiba.es no siempre es limpio) — sin deduplicar aquí,
+    // cada repetido se recorría entero otra vez desde la página 1,
+    // multiplicando el trabajo y ralentizando muchísimo el rastreo completo.
+    const vistos = new Set();
+    const subs = brutas.filter((sub) => {
+      const clave = sub?.slug || '';
+      if (vistos.has(clave)) return false;
+      vistos.add(clave);
+      return true;
+    });
+    for (const sub of subs) {
+      tareas.push({ cat, sub, seed: sub ? null : primera });
+    }
+  });
+
+  // Cada subcategoría recorre sus propias páginas en cadena (siguientePagina
+  // depende de la anterior), pero varias subcategorías/categorías distintas
+  // se hacen a la vez — cofiba.es aguanta bien unas pocas peticiones en
+  // paralelo, y así el primer índice tarda minutos en vez de más de una
+  // hora yendo petición a petición.
+  await conLimite(tareas, 4, async (t) => {
+    let pageUrl = null;
+    let r = t.seed;
+    do {
+      if (!r) {
+        r = await getProductos(session, { categoria: t.cat.slug, subcategoria: t.sub?.slug, pageUrl });
+        await esperar(120);
+      }
+      for (const p of r.productos) {
+        if (!p.nombre) continue;
+        añadirProducto({
+          articulo: p.articulo,
+          nombre: p.nombre,
+          referencia: p.referencia,
+          ean: p.ean,
+          marca: p.marca,
+          precioFinal: p.precioFinal,
+          undVenta: p.undVenta,
+          imagen: p.imagen,
+          categoria: t.cat.slug,
+          categoriaNombre: t.cat.nombre,
+          subcategoria: t.sub?.slug || null,
+          origen: p.origen,
+        });
+      }
+      pageUrl = r.siguientePagina;
+      r = null;
+    } while (pageUrl);
+  });
+
+  return indice;
 }
 
 // The cart page renders each line twice (once per responsive breakpoint —

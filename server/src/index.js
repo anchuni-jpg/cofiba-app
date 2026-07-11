@@ -18,11 +18,17 @@ import {
 import { saveCredentials, loadCredentials, deleteCredentials } from './credentialStore.js';
 import { registrarCategoria, registrarCompra, obtenerHistorico } from './historialStore.js';
 import { registrarImagenes, obtenerImagen } from './imagenStore.js';
+import { cargarDeDisco, estadoActual, indiceListo, necesitaConstruir, iniciarConstruccion, buscarEnIndice } from './indiceStore.js';
 
 const PORT = process.env.PORT || 4000;
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+
+// Recupera el índice de búsqueda de disco si ya se construyó antes (evita
+// reconstruir todo el catálogo en cada reinicio de `node --watch` durante
+// desarrollo, y en cada arranque normal del servidor).
+cargarDeDisco();
 
 // In-memory session store: appToken -> { session, usuario, createdAt }
 // This gets wiped whenever the process restarts (including every code change
@@ -90,14 +96,13 @@ app.get('/api/categorias', requireSession, async (req, res) => {
 });
 
 app.get('/api/productos', requireSession, async (req, res) => {
-  const { categoria, subcategoria, page, q, pageUrl } = req.query;
+  const { categoria, subcategoria, page, pageUrl } = req.query;
   if (!categoria) return res.status(400).json({ error: 'Falta el parámetro categoria.' });
   try {
     const resultado = await getProductosAgrupados(req.cofiba, {
       categoria,
       subcategoria,
       page: Number(page) || 1,
-      query: q,
       pageUrl,
     });
     registrarImagenes(resultado.productos);
@@ -186,6 +191,37 @@ app.post('/api/carrito/finalizar', requireSession, async (req, res) => {
 
 app.get('/api/historico', requireSession, (req, res) => {
   res.json(obtenerHistorico(req.usuario));
+});
+
+// El buscador propio de cofiba.es (categoria/todas/true?buscar=) no sirve de
+// verdad: su plantilla de resultados no manda el nombre del producto en el
+// HTML (lo rellena su propio JavaScript, que aquí no se ejecuta). En vez de
+// eso, se mantiene un índice del catálogo completo construido recorriendo
+// las páginas normales de categoría/subcategoría (esas sí traen el nombre
+// bien) — ver indiceStore.js. La primera búsqueda (o la primera después de
+// que el índice caduque) dispara la reconstrucción en segundo plano y
+// devuelve `construyendo: true` mientras tanto.
+app.get('/api/buscar', requireSession, async (req, res) => {
+  const termino = (req.query.q || '').toString().trim();
+  if (!termino) return res.json({ construyendo: false, resultados: [] });
+
+  if (necesitaConstruir()) iniciarConstruccion(req.cofiba);
+
+  const st = estadoActual();
+  if (st.estado === 'error' && !indiceListo()) {
+    return res.json({ construyendo: false, error: st.error, resultados: [] });
+  }
+  // Aunque el índice siga construyéndose, ya se busca sobre lo indexado
+  // hasta ahora — así el usuario tiene resultados útiles en cuanto su
+  // categoría se recorre, sin esperar a que termine todo el catálogo.
+  res.json({
+    construyendo: st.estado === 'construyendo',
+    parcial: st.estado === 'construyendo',
+    progreso: st.progreso,
+    resultados: buscarEnIndice(termino),
+    totalIndice: st.total,
+    actualizado: st.actualizado,
+  });
 });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

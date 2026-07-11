@@ -48,12 +48,11 @@ export const api = {
   categorias() {
     return request('/categorias');
   },
-  productos({ categoria, subcategoria, page = 1, q, pageUrl }) {
+  productos({ categoria, subcategoria, page = 1, pageUrl }) {
     const params = new URLSearchParams({
       categoria,
       page: String(page),
       ...(subcategoria ? { subcategoria } : {}),
-      ...(q ? { q } : {}),
       ...(pageUrl ? { pageUrl } : {}),
     });
     return request(`/productos?${params.toString()}`);
@@ -78,5 +77,8 @@ export const api = {
   },
   historico() {
     return request('/historico');
+  },
+  buscar(q) {
+    return request(`/buscar?q=${encodeURIComponent(q)}`);
   },
 };

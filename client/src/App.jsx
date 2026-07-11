@@ -5,6 +5,7 @@ import Categorias from './screens/Categorias.jsx';
 import Productos from './screens/Productos.jsx';
 import Carrito from './screens/Carrito.jsx';
 import Historico from './screens/Historico.jsx';
+import Busqueda from './screens/Busqueda.jsx';
 
 function useInstallPrompt() {
   const [deferred, setDeferred] = useState(null);
@@ -26,9 +27,9 @@ function useInstallPrompt() {
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!getToken());
-  const [tab, setTab] = useState('categorias'); // categorias | productos | carrito | historico
+  const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico
   const [categoria, setCategoria] = useState(null);
-  const [query, setQuery] = useState(null);
+  const [busqueda, setBusqueda] = useState(null);
   const [cartCount, setCartCount] = useState(0);
   const [sessionExpired, setSessionExpired] = useState(false);
   const { deferred, isStandalone, isIos } = useInstallPrompt();
@@ -107,24 +108,24 @@ export default function App() {
         <Categorias
           onOpenCategoria={(c) => {
             setCategoria(c);
-            setQuery(null);
             setTab('productos');
           }}
           onSearch={(q) => {
-            setQuery(q);
-            setCategoria(null);
-            setTab('productos');
+            setBusqueda(q);
+            setTab('busqueda');
           }}
         />
       )}
       {tab === 'productos' && (
         <Productos
           categoria={categoria}
-          query={query}
           onBack={() => setTab('categorias')}
           onCartChanged={refreshCartCount}
           cartCount={cartCount}
         />
+      )}
+      {tab === 'busqueda' && (
+        <Busqueda termino={busqueda} onBack={() => setTab('categorias')} onCartChanged={refreshCartCount} />
       )}
       {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} />}
       {tab === 'historico' && <Historico onCartChanged={refreshCartCount} />}
@@ -133,7 +134,7 @@ export default function App() {
         <button className={tab === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>
           Categorías
         </button>
-        <button className={tab === 'productos' ? 'active' : ''} onClick={() => setTab('productos')} disabled={!categoria && !query}>
+        <button className={tab === 'productos' ? 'active' : ''} onClick={() => setTab('productos')} disabled={!categoria}>
           Productos
         </button>
         <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
