@@ -198,10 +198,15 @@ function extraerSubcategorias($, categoriaSlug) {
 export async function getProductos({ http }, { categoria, subcategoria, page = 1, query, pageUrl }) {
   // If a real "next page" URL was computed from a previous call, follow that
   // exact URL instead of guessing a query-string scheme cofiba.es may not use.
+  // Confirmed from the search button's own onclick on the category page:
+  // location.href='/marca/todas/categoria/{categoria}/true?buscar={q}' — the
+  // toggle segment is "true" for a search, not "false" like normal browsing.
+  // Using "false" here silently ignored ?buscar= and returned the category's
+  // regular unfiltered first page instead (this was the search bug).
   const url =
     pageUrl ||
     (query
-      ? `${BASE}/marca/todas/categoria/${categoria || 'todas'}/false`
+      ? `${BASE}/marca/todas/categoria/${categoria || 'todas'}/true`
       : subcategoria
       ? `${BASE}/marca/todas/categoria/${categoria}/${subcategoria}/false`
       : `${BASE}/marca/todas/categoria/${categoria}/false`);
@@ -209,6 +214,27 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
   const res = await http.get(url, { params: !pageUrl && query ? { buscar: query } : undefined });
   const $ = cheerio.load(res.data);
   const subcategorias = categoria && categoria !== 'todas' && !query ? extraerSubcategorias($, categoria) : [];
+
+  // The "/true" (search) listing template renders every card's own name
+  // slot (.tituloListado) empty — apparently filled in client-side by JS
+  // this scraper doesn't run. Confirmed from the search box's own inline
+  // script that /forms/search_json.php?term=...&autocomplete=true is
+  // cofiba.es's real search index and does return names, keyed by the same
+  // reference code shown in each card ("Referencia:") — so it's used here
+  // to backfill names onto the cards actually being displayed.
+  let nombrePorReferencia = null;
+  if (query) {
+    try {
+      const jsonRes = await http.get(`${BASE}/forms/search_json.php`, { params: { term: query, autocomplete: true } });
+      nombrePorReferencia = new Map(
+        (Array.isArray(jsonRes.data) ? jsonRes.data : [])
+          .filter((r) => r.value)
+          .map((r) => [r.id, r.value])
+      );
+    } catch {
+      nombrePorReferencia = new Map();
+    }
+  }
   // Exact listing URL each product was seen on (with the search term inlined
   // when it came from a search) — anadirAlCarrito re-fetches it to find the
   // product's buy-form.
@@ -263,13 +289,15 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
         .first()
         .attr('alt')
         ?.trim() || null;
-    const nombre = nombreTexto || nombreAlt;
+    const referencia = m?.[1] || null;
+    const nombreBuscador = referencia && nombrePorReferencia ? nombrePorReferencia.get(referencia) : null;
+    const nombre = nombreTexto || nombreAlt || nombreBuscador || null;
     const imagen = imagenPorArticulo.get(articulo) || null;
 
     productos.push({
       articulo,
       nlinea: nlinea || null,
-      referencia: m?.[1] || null,
+      referencia,
       ean: m?.[2] || null,
       marca: m?.[3] || null,
       undVenta: m?.[4] || null,
@@ -451,22 +479,27 @@ export async function getCarrito({ http }) {
     if (!m || $el.attr('value') === undefined) return;
     const suffix = m[1];
     const codigoValor = $el.attr('value');
+    if (!codigoValor) return;
     const $qty = $(`#unidades_${suffix}`);
-    if (codigoValor && $qty.length) {
+    if ($qty.length) {
       cantidadPorCodigo.set(codigoValor, $qty.attr('value') || $qty.val());
     }
   });
 
-  const lineas = [...porCodigo.values()].map((linea) => {
-    // Product images (if the cart shows them) live in the same blob store as
-    // the catalog listing — find the one in whichever row mentions this code.
-    const $row = $(`:contains("${linea.codigo}")`)
-      .filter((_, el) => $(el).find('img[src*="BlobData"]').length > 0)
-      .last();
-    const imagen = absolute($row.find('img[src*="BlobData"]').first().attr('src'));
-    const cantidad = cantidadPorCodigo.get(linea.codigo) || null;
-    return { ...linea, imagen, cantidad };
-  });
+  // /mi-compra.html itself has no per-line product photos in its HTML — its
+  // only <img src="BlobData/..."> are the site's own header logo and footer
+  // banner (confirmed live: a cart with one real line still only showed
+  // those same two images, unrelated to the product). Trying to scrape one
+  // from this page always ends up pointing every line at whatever stray
+  // image happens to be nearby, which is exactly the "todas las líneas
+  // muestran la misma foto" bug. Images are looked up by the caller instead,
+  // from whatever was last seen for that articulo while browsing the
+  // catalog (see imagenStore.js) — cofiba.es just doesn't offer them here.
+  const lineas = [...porCodigo.values()].map((linea) => ({
+    ...linea,
+    imagen: null,
+    cantidad: cantidadPorCodigo.get(linea.codigo) || null,
+  }));
 
   // For debugging, anchor the sample on the actual cart content ("Tu pedido")
   // instead of the start of the page — the page opens with a huge category

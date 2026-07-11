@@ -17,6 +17,7 @@ import {
 } from './cofibaClient.js';
 import { saveCredentials, loadCredentials, deleteCredentials } from './credentialStore.js';
 import { registrarCategoria, registrarCompra, obtenerHistorico } from './historialStore.js';
+import { registrarImagenes, obtenerImagen } from './imagenStore.js';
 
 const PORT = process.env.PORT || 4000;
 const app = express();
@@ -92,9 +93,16 @@ app.get('/api/productos', requireSession, async (req, res) => {
   const { categoria, subcategoria, grupo, page, q, pageUrl } = req.query;
   if (!categoria) return res.status(400).json({ error: 'Falta el parámetro categoria.' });
   try {
-    res.json(
-      await getProductosAgrupados(req.cofiba, { categoria, subcategoria, grupo, page: Number(page) || 1, query: q, pageUrl })
-    );
+    const resultado = await getProductosAgrupados(req.cofiba, {
+      categoria,
+      subcategoria,
+      grupo,
+      page: Number(page) || 1,
+      query: q,
+      pageUrl,
+    });
+    registrarImagenes(resultado.productos);
+    res.json(resultado);
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -102,7 +110,12 @@ app.get('/api/productos', requireSession, async (req, res) => {
 
 app.get('/api/carrito', requireSession, async (req, res) => {
   try {
-    res.json(await getCarrito(req.cofiba));
+    const carrito = await getCarrito(req.cofiba);
+    // cofiba.es's cart page has no product photos of its own — fill each
+    // line in with whatever image was last seen for that articulo while
+    // browsing the catalog.
+    carrito.lineas = carrito.lineas.map((l) => ({ ...l, imagen: obtenerImagen(l.codigo) }));
+    res.json(carrito);
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

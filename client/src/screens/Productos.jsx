@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 
 // "Und. de venta" llega como texto con formato español ("12,00"); se muestra
@@ -38,6 +38,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
   const [pending, setPending] = useState({});
   const [debugSample, setDebugSample] = useState(null);
   const [zoomProducto, setZoomProducto] = useState(null);
+  const contentRef = useRef(null);
 
   useEffect(() => {
     // Si al llegar la respuesta ya se pidió otra cosa (cambio rápido de
@@ -66,6 +67,10 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
         setSiguientePagina(data.siguientePagina || null);
         setSiguienteGrupo(data.siguienteGrupo || null);
         setDebugSample(data.debug?.normalizedSample || null);
+        // Al llegar una página nueva, el listado empieza por arriba (tanto el
+        // contenedor con scroll propio como la ventana, según el layout).
+        contentRef.current?.scrollTo({ top: 0 });
+        window.scrollTo({ top: 0 });
       })
       .catch((e) => {
         if (!cancelado) setError(e.message);
@@ -121,13 +126,15 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
     }
   }
 
-  const etiquetaPaginas = totalPaginas
-    ? `${paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`} de ${totalPaginas}`
-    : '';
+  // "de N" solo aporta información cuando queda más detrás de lo que ya se
+  // ve (paginaFin < totalPaginas). Si ya se llegó a la última página real,
+  // repetirlo ("Páginas 1-2 de 2") es redundante y confunde.
+  const rango = paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`;
+  const etiquetaPaginas = totalPaginas ? (paginaFin < totalPaginas ? `${rango} de ${totalPaginas}` : rango) : '';
   const hayPaginacion = totalPaginas > 1 || siguienteGrupo || effNav.stack.length > 0;
 
   return (
-    <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="content" ref={contentRef} style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
@@ -155,30 +162,36 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
               flexShrink: 0,
               fontSize: 11,
               padding: '6px 10px',
-              background: !subcategoria ? 'var(--accent)' : 'var(--surface-2)',
-              color: !subcategoria ? '#fff' : 'var(--text-primary)',
-              borderColor: !subcategoria ? 'var(--accent)' : 'var(--border)',
+              background: !subcategoria && !grupoEfectivo ? 'var(--accent)' : 'var(--surface-2)',
+              color: !subcategoria && !grupoEfectivo ? '#fff' : 'var(--text-primary)',
+              borderColor: !subcategoria && !grupoEfectivo ? 'var(--accent)' : 'var(--border)',
             }}
           >
             Todas
           </button>
-          {subcategorias.map((s) => (
-            <button
-              key={s.slug}
-              onClick={() => setSubcatSel({ key: catKey, slug: s.slug })}
-              style={{
-                flexShrink: 0,
-                fontSize: 11,
-                padding: '6px 10px',
-                whiteSpace: 'nowrap',
-                background: subcategoria === s.slug ? 'var(--accent)' : 'var(--surface-2)',
-                color: subcategoria === s.slug ? '#fff' : 'var(--text-primary)',
-                borderColor: subcategoria === s.slug ? 'var(--accent)' : 'var(--border)',
-              }}
-            >
-              {s.nombre}
-            </button>
-          ))}
+          {subcategorias.map((s) => {
+            // En modo "Todas" se va recorriendo un grupo detrás de otro:
+            // el chip resaltado debe seguir a ese grupo, no quedarse fijo en
+            // "Todas", para que se vea en qué subcategoría estás de verdad.
+            const activa = subcategoria === s.slug || (!subcategoria && grupoEfectivo === s.slug);
+            return (
+              <button
+                key={s.slug}
+                onClick={() => setSubcatSel({ key: catKey, slug: s.slug })}
+                style={{
+                  flexShrink: 0,
+                  fontSize: 11,
+                  padding: '6px 10px',
+                  whiteSpace: 'nowrap',
+                  background: activa ? 'var(--accent)' : 'var(--surface-2)',
+                  color: activa ? '#fff' : 'var(--text-primary)',
+                  borderColor: activa ? 'var(--accent)' : 'var(--border)',
+                }}
+              >
+                {s.nombre}
+              </button>
+            );
+          })}
         </div>
       )}
 
