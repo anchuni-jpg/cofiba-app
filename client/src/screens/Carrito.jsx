@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
-export default function Carrito() {
+export default function Carrito({ onCartChanged }) {
   const [carrito, setCarrito] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,7 +14,13 @@ export default function Carrito() {
     setLoading(true);
     api
       .carrito()
-      .then(setCarrito)
+      .then((data) => {
+        setCarrito(data);
+        // El badge de la botonera de abajo vive en App.jsx: sin esto se
+        // quedaba con el número de antes de borrar/vaciar aunque aquí
+        // dentro sí se actualizara.
+        onCartChanged?.(data.numProductos);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }

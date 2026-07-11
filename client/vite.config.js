@@ -25,6 +25,7 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    host: true, // escucha en la red local (0.0.0.0), no solo localhost, para poder abrirlo desde el móvil por WiFi
     proxy: {
       '/api': 'http://localhost:4000',
     },

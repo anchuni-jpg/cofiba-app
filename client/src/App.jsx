@@ -126,7 +126,7 @@ export default function App() {
           cartCount={cartCount}
         />
       )}
-      {tab === 'carrito' && <Carrito />}
+      {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} />}
       {tab === 'historico' && <Historico onCartChanged={refreshCartCount} />}
 
       <div className="bottomnav">

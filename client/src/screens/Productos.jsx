@@ -265,11 +265,7 @@ export default function Productos({ categoria, query, onBack, onCartChanged, car
             <button disabled={effNav.stack.length === 0} onClick={irAAnterior}>
               Anterior
             </button>
-            <span className="muted" style={{ textAlign: 'center' }}>
-              {grupoActual && !subcategoria ? grupoActual.nombre : ''}
-              {grupoActual && !subcategoria && etiquetaPaginas ? ' · ' : ''}
-              {etiquetaPaginas}
-            </span>
+            <span className="muted" style={{ textAlign: 'center' }}>{etiquetaPaginas}</span>
             <button disabled={!siguientePagina && !siguienteGrupo} onClick={irASiguiente}>
               Siguiente
             </button>
