@@ -11,6 +11,12 @@ function formatoCaja(undVenta) {
 }
 
 export default function Busqueda({ termino, onBack, onCartChanged }) {
+  // La barra de búsqueda vive en esta misma pantalla (no solo en Categorías)
+  // para poder encadenar una búsqueda tras otra sin tener que volver atrás.
+  // `terminoActivo` es la que de verdad dispara la consulta; `campo` es solo
+  // lo que se está escribiendo, para no relanzar la búsqueda en cada tecla.
+  const [terminoActivo, setTerminoActivo] = useState(termino);
+  const [campo, setCampo] = useState(termino);
   const [resultados, setResultados] = useState(null);
   const [construyendo, setConstruyendo] = useState(false);
   const [progreso, setProgreso] = useState(0);
@@ -18,6 +24,12 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
   const [pending, setPending] = useState({});
   const [zoomProducto, setZoomProducto] = useState(null);
   const pollRef = useRef(null);
+
+  function buscarDeNuevo() {
+    const q = campo.trim();
+    if (!q || q === terminoActivo) return;
+    setTerminoActivo(q);
+  }
 
   useEffect(() => {
     let cancelado = false;
@@ -27,7 +39,7 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
 
     function consultar() {
       api
-        .buscar(termino)
+        .buscar(terminoActivo)
         .then((data) => {
           if (cancelado) return;
           if (data.error) {
@@ -51,7 +63,7 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
       cancelado = true;
       clearTimeout(pollRef.current);
     };
-  }, [termino]);
+  }, [terminoActivo]);
 
   async function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
@@ -79,7 +91,19 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
         </button>
-        <p style={{ fontWeight: 500, margin: 0 }}>Búsqueda: {termino}</p>
+        <p style={{ fontWeight: 500, margin: 0 }}>Búsqueda</p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <input
+          placeholder="Producto, referencia, código..."
+          value={campo}
+          onChange={(e) => setCampo(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && buscarDeNuevo()}
+        />
+        <button onClick={buscarDeNuevo} aria-label="Buscar">
+          🔍
+        </button>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -97,7 +121,7 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
       {resultados === null && !error && <p className="muted">Buscando…</p>}
 
       {resultados !== null && resultados.length === 0 && !construyendo && (
-        <p className="muted">No se encontraron productos para "{termino}".</p>
+        <p className="muted">No se encontraron productos para "{terminoActivo}".</p>
       )}
 
       {resultados && resultados.length > 0 && (
