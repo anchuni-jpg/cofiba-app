@@ -3,7 +3,11 @@ services:
     name: cofiba-visor
     runtime: node
     plan: free
-    buildCommand: cd client && npm install && npm run build && cd ../server && npm install
+    # --include=dev es necesario: NODE_ENV=production (abajo) se aplica también
+    # durante el build, y npm install se salta las devDependencies con esa
+    # variable puesta — ahí vive vite, la propia herramienta de compilación
+    # del cliente, así que sin esto el build falla con "vite: not found".
+    buildCommand: cd client && npm install --include=dev && npm run build && cd ../server && npm install
     startCommand: node server/src/index.js
     envVars:
       - key: NODE_ENV
