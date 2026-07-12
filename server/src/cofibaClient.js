@@ -590,90 +590,18 @@ export async function getCarrito({ http }) {
   };
 }
 
-// The simple "accion=A&articulo=X&unidades=N" shortcut (modelled on the
-// site's own "añadir por código" feature) does register the SKU — cofiba.es
-// confirms with a real "Añadido a la cesta!" message and an incrementing
-// total_carrito — but the line then shows Importe: 0,00€ in /mi-compra.html.
-// The catalog's own "Añadir al carrito" button instead submits the *whole
-// form* around it (see #buyNormal in b2b.js: `form.serialize()`), which
-// carries extra hidden fields (multiplo/pvp/existencia) this shortcut skips
-// and which turn out to be required for the price to actually register. So
-// we replicate that exactly: fetch the category page, find this product's
-// real button via its data-articulo (now a precise, confirmed anchor), grab
-// its enclosing form, and submit all of it with the quantity field set.
-export async function anadirAlCarrito({ http }, { categoria, articulo, cantidad, origen }) {
-  // Re-fetch the exact listing page the product was seen on: category page 1
-  // only contains the buy-forms of its own 12 products, so adds from deeper
-  // pages or subcategory listings failed with CALIBRATION_NEEDED before.
-  const catUrl = origen && origen.startsWith(BASE) ? origen : `${BASE}/marca/todas/categoria/${categoria}/false`;
-  const catRes = await http.get(catUrl);
-  const $ = cheerio.load(catRes.data);
-
-  const $btn = $(`[data-articulo="${articulo}"]`).first();
-  const $form = $btn.closest('form');
-  if (!$btn.length || !$form.length) {
-    const err = new Error(
-      `CALIBRATION_NEEDED: ${
-        !$btn.length
-          ? `no se encontró ningún elemento con data-articulo="${articulo}" en la categoría "${categoria}"`
-          : 'se encontró el botón pero no hay un <form> por encima en el HTML'
-      }.`
-    );
-    err.code = 'CALIBRATION_NEEDED';
-    throw err;
-  }
-
-  // The form's own action="#" is a placeholder — b2b.js's #buyNormal handler
-  // ignores it and always POSTs to /forms/carrito.php via AJAX, so we do too.
-  const desc = describeForm($, $form, catUrl);
-  const qtyFieldName = $form
-    .find('input')
-    .filter((_, el) => /unidad/i.test($(el).attr('id') || '') || /unidad/i.test($(el).attr('name') || ''))
-    .first()
-    .attr('name');
-  const body = new URLSearchParams({ ...desc.fields, ...(qtyFieldName ? { [qtyFieldName]: String(cantidad) } : {}) });
-
-  const addRes = await http.post(`${BASE}/forms/carrito.php`, body.toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'X-Requested-With': 'XMLHttpRequest',
-      Referer: catUrl,
-    },
-  });
-  console.log('[anadirAlCarrito] action:', desc.action, 'body:', body.toString());
-  console.log('[anadirAlCarrito] status:', addRes.status, 'respuesta:', JSON.stringify(addRes.data).slice(0, 500));
-  if (addRes.status >= 400) {
-    const err = new Error(`La web respondió con error ${addRes.status} al intentar añadir el producto.`);
-    err.code = 'ADD_FAILED';
-    err.debugHtml = typeof addRes.data === 'string' ? addRes.data.slice(0, 1000) : JSON.stringify(addRes.data);
-    throw err;
-  }
-
-  // Adding the SKU alone leaves its cart line priced at 0 — /mi-compra.html's
-  // own inline script shows the *quantity input's change handler* is what
-  // actually commits the priced quantity, via a second, separate endpoint:
-  //   POST /forms/cestacarrito.php   body: tipo=C&unidades=N&articulo=X
-  // We replicate that here so the line has a real Importe without requiring
-  // the user to manually retype the quantity on the cart page.
-  const fijarRes = await http.post(
-    `${BASE}/forms/cestacarrito.php`,
-    new URLSearchParams({ tipo: 'C', unidades: String(cantidad), articulo }).toString(),
-    {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Requested-With': 'XMLHttpRequest',
-        Referer: `${BASE}/mi-compra.html`,
-      },
-    }
-  );
-  console.log(
-    '[anadirAlCarrito] cestacarrito status:',
-    fijarRes.status,
-    'respuesta:',
-    typeof fijarRes.data === 'string' ? fijarRes.data.slice(0, 300) : JSON.stringify(fijarRes.data).slice(0, 300)
-  );
-
-  return { ok: true, respuesta: addRes.data };
+// Used to submit the catalog's whole "Añadir al carrito" form first, then a
+// separate call to fix the price (see git history if this ever needs
+// resurrecting) — but that always left TWO real, permanent rows for the
+// same articulo in the cart, one an eternal 0,00€ ghost the first form-post
+// creates and one with the real price from the second call. Cofiba.es never
+// merges them. Confirmed live that /forms/cestacarrito.php alone — the same
+// call actualizarCantidadCarrito already uses for quantity changes — adds a
+// brand-new articulo just fine, with the correct price, as a single clean
+// row. So adding and updating quantity are now exactly the same operation;
+// no more need to find the product's own catalog page/button/form at all.
+export async function anadirAlCarrito({ http }, { articulo, cantidad }) {
+  return actualizarCantidadCarrito({ http }, { articulo, cantidad });
 }
 
 // Same "set the real quantity" endpoint used internally by anadirAlCarrito,
