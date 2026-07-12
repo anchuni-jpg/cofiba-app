@@ -425,7 +425,12 @@ async function conLimite(tareas, limite, worker) {
   await Promise.all(Array.from({ length: Math.min(limite, tareas.length) }, siguiente));
 }
 
-export async function crawlCatalogo(session, onProgreso) {
+// `obtenerPausaExtra` (opcional) deja que quien llama frene el rastreo según
+// convenga — aquí en concreto, indiceStore.js la usa para ceder el turno
+// cuando alguien está usando la app de verdad en ese momento, en vez de
+// competir por la misma sesión/servidor de cofiba.es con peticiones reales.
+export async function crawlCatalogo(session, obtenerPausaExtra, onProgreso) {
+  const pausaBase = (ms) => esperar(ms + (obtenerPausaExtra?.() || 0));
   const categorias = (await getCategorias(session)).filter((c) => c.slug !== 'todas');
   const indice = [];
   function añadirProducto(item) {
@@ -442,7 +447,7 @@ export async function crawlCatalogo(session, onProgreso) {
   const tareas = [];
   await conLimite(categorias, 4, async (cat) => {
     const primera = await getProductos(session, { categoria: cat.slug, page: 1 });
-    await esperar(120);
+    await pausaBase(120);
     const brutas = primera.subcategorias?.length ? [...primera.subcategorias].sort(POR_NOMBRE) : [null];
     // extraerSubcategorias puede devolver el mismo slug repetido (el árbol de
     // categorías de cofiba.es no siempre es limpio) — sin deduplicar aquí,
@@ -471,7 +476,7 @@ export async function crawlCatalogo(session, onProgreso) {
     do {
       if (!r) {
         r = await getProductos(session, { categoria: t.cat.slug, subcategoria: t.sub?.slug, pageUrl });
-        await esperar(120);
+        await pausaBase(120);
       }
       for (const p of r.productos) {
         if (!p.nombre) continue;

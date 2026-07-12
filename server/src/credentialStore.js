@@ -76,3 +76,13 @@ export function deleteCredentials(token) {
   delete store[token];
   writeStore(store);
 }
+
+// Para arrancar el índice de búsqueda solo con el servidor (sin esperar a
+// que alguien busque algo primero) hace falta ALGUNA sesión autenticada con
+// la que hablar con cofiba.es. Cualquier credencial guardada sirve — el
+// índice es del catálogo general, no de un cliente en concreto.
+export function obtenerCredencialCualquiera() {
+  const store = readStore();
+  const token = Object.keys(store)[0];
+  return token ? loadCredentials(token) : null;
+}

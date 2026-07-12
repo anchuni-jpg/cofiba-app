@@ -23,6 +23,23 @@ let progreso = 0;
 let actualizado = null;
 let ultimoError = null;
 let promesaConstruccion = null;
+let ultimaActividad = 0;
+
+// El servidor marca aquí cada petición real de un cliente (ver middleware en
+// index.js). El rastreo del catálogo consulta esto entre página y página: si
+// alguien ha usado la app hace poco, se espera más antes de la siguiente
+// petición a cofiba.es, cediéndole el turno — así el rastreo de fondo no
+// compite por la misma sesión/servidor con quien está usando la app de
+// verdad en ese momento. Sin actividad reciente, va a su ritmo normal.
+export function marcarActividad() {
+  ultimaActividad = Date.now();
+}
+
+const VENTANA_ACTIVIDAD_MS = 4000;
+const PAUSA_EXTRA_MS = 600;
+function pausaExtraPorActividad() {
+  return Date.now() - ultimaActividad < VENTANA_ACTIVIDAD_MS ? PAUSA_EXTRA_MS : 0;
+}
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -72,11 +89,29 @@ export function iniciarConstruccion(session) {
   progreso = 0;
   indiceParcial = [];
   ultimoError = null;
+  let ultimoGuardado = 0;
   promesaConstruccion = (async () => {
     try {
-      const nuevo = await crawlCatalogo(session, (item, n) => {
+      const nuevo = await crawlCatalogo(session, pausaExtraPorActividad, (item, n) => {
         indiceParcial.push(item);
         progreso = n;
+        // Un rastreo completo puede tardar bastante — si el proceso se cae
+        // o se reinicia a medias (ya ha pasado), sin esto se perdía TODO lo
+        // recorrido hasta entonces porque solo se guardaba al terminar del
+        // todo. Guardando cada 200 productos, como mucho se pierde ese
+        // último tramo, no la construcción entera. `actualizado: null` dice
+        // que esto es un progreso a medias, no un índice ya terminado —
+        // `necesitaConstruir()` seguirá pidiendo un rastreo fresco de fondo
+        // aunque esto ya se pueda usar para buscar mientras tanto.
+        if (n - ultimoGuardado >= 200) {
+          ultimoGuardado = n;
+          try {
+            ensureDataDir();
+            fs.writeFileSync(STORE_FILE, JSON.stringify({ indice: indiceParcial, actualizado: null }));
+          } catch {
+            // Un fallo guardando el progreso a medias no debe tirar el rastreo.
+          }
+        }
       });
       indice = nuevo;
       actualizado = Date.now();

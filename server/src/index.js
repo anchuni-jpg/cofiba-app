@@ -15,20 +15,57 @@ import {
   vaciarCarrito,
   finalizarPedido,
 } from './cofibaClient.js';
-import { saveCredentials, loadCredentials, deleteCredentials } from './credentialStore.js';
+import { saveCredentials, loadCredentials, deleteCredentials, obtenerCredencialCualquiera } from './credentialStore.js';
 import { registrarCategoria, registrarCompra, obtenerHistorico } from './historialStore.js';
 import { registrarImagenes, obtenerImagen } from './imagenStore.js';
-import { cargarDeDisco, estadoActual, indiceListo, necesitaConstruir, iniciarConstruccion, buscarEnIndice } from './indiceStore.js';
+import {
+  cargarDeDisco,
+  estadoActual,
+  indiceListo,
+  necesitaConstruir,
+  iniciarConstruccion,
+  buscarEnIndice,
+  marcarActividad,
+} from './indiceStore.js';
 
 const PORT = process.env.PORT || 4000;
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
+// El rastreo del catálogo se frena solo cuando alguien está usando la app de
+// verdad (ver indiceStore.js) — esto es lo que le avisa de cuándo.
+app.use((req, _res, next) => {
+  marcarActividad();
+  next();
+});
+
 // Recupera el índice de búsqueda de disco si ya se construyó antes (evita
 // reconstruir todo el catálogo en cada reinicio de `node --watch` durante
 // desarrollo, y en cada arranque normal del servidor).
 cargarDeDisco();
+
+// Indexa en cuanto arranca el servidor, no solo cuando alguien busca algo
+// por primera vez — así el buscador está listo (o al menos avanzando) desde
+// el principio. Hace falta una sesión autenticada para hablar con
+// cofiba.es; se reutiliza cualquier credencial ya guardada de un login
+// anterior (el índice es del catálogo general, no de un cliente concreto).
+// Si el servidor nunca ha visto un login (instalación nueva del todo), esto
+// no puede hacer nada todavía — arrancarConstruccionSiHaceFalta() se vuelve
+// a intentar justo después del primer login real, más abajo.
+async function arrancarConstruccionSiHaceFalta() {
+  if (!necesitaConstruir()) return;
+  const creds = obtenerCredencialCualquiera();
+  if (!creds) return;
+  try {
+    const session = createSession();
+    await login(session, creds.usuario, creds.password);
+    iniciarConstruccion(session);
+  } catch (e) {
+    console.error('[indice] no se pudo autenticar para indexar al arrancar:', e.message);
+  }
+}
+arrancarConstruccionSiHaceFalta();
 
 // In-memory session store: appToken -> { session, usuario, createdAt }
 // This gets wiped whenever the process restarts (including every code change
@@ -77,6 +114,10 @@ app.post('/api/login', async (req, res) => {
   const token = crypto.randomUUID();
   sessions.set(token, { session, usuario, createdAt: Date.now() });
   saveCredentials(token, usuario, password);
+  // Cubre el caso de instalación nueva del todo: al arrancar el servidor no
+  // había ninguna credencial guardada con la que autenticarse para indexar,
+  // pero ya que alguien acaba de entrar, se reutiliza esta misma sesión.
+  if (necesitaConstruir()) iniciarConstruccion(session);
   res.json({ token });
 });
 
