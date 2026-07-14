@@ -19,16 +19,28 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
   const [campo, setCampo] = useState(termino);
   const [resultados, setResultados] = useState(null);
   const [construyendo, setConstruyendo] = useState(false);
-  const [progreso, setProgreso] = useState(0);
+  // Cuántos de `resultados` se enseñan de momento. En vez de esperar a tener
+  // la lista entera (podía tardar si el índice se estaba construyendo, o
+  // simplemente ser larga) para pintar algo, se muestran los primeros 20 en
+  // cuanto los haya, con un botón para ir revelando el resto de 20 en 20 —
+  // así el cliente nunca se queda mirando una pantalla en blanco.
+  const TANDA = 20;
+  const [visibles, setVisibles] = useState(TANDA);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState({});
   const [zoomProducto, setZoomProducto] = useState(null);
+  // `nonce` sube cada vez que se pulsa buscar aunque el término no cambie —
+  // así se puede relanzar la MISMA búsqueda (p. ej. para ver las marcas de
+  // "ya comprado" que hayan llegado mientras el histórico se rastrea de
+  // fondo), cosa que cambiar solo terminoActivo al mismo valor no haría.
+  const [nonce, setNonce] = useState(0);
   const pollRef = useRef(null);
 
   function buscarDeNuevo() {
     const q = campo.trim();
-    if (!q || q === terminoActivo) return;
+    if (!q) return;
     setTerminoActivo(q);
+    setNonce((n) => n + 1);
   }
 
   useEffect(() => {
@@ -36,6 +48,7 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
     setResultados(null);
     setError(null);
     setConstruyendo(false);
+    setVisibles(TANDA);
 
     function consultar() {
       api
@@ -47,12 +60,12 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
             return;
           }
           // Aunque siga construyéndose el índice, ya llegan resultados
-          // parciales de lo recorrido hasta ahora — se muestran igual, y se
-          // sigue consultando cada pocos segundos para completar la lista
-          // según avanza, en vez de dejar al usuario esperando en blanco.
+          // parciales de lo recorrido hasta ahora — se muestran igual (ver
+          // TANDA/visibles más abajo), y se sigue consultando cada pocos
+          // segundos para completar la lista según avanza, en vez de dejar
+          // al usuario esperando en blanco.
           setResultados(data.resultados || []);
           setConstruyendo(!!data.construyendo);
-          setProgreso(data.progreso || 0);
           if (data.construyendo) pollRef.current = setTimeout(consultar, 3000);
         })
         .catch((e) => !cancelado && setError(e.message));
@@ -63,7 +76,8 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
       cancelado = true;
       clearTimeout(pollRef.current);
     };
-  }, [terminoActivo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminoActivo, nonce]);
 
   async function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
@@ -108,16 +122,6 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
 
       {error && <div className="error-banner">{error}</div>}
 
-      {construyendo && !error && !resultados?.length && (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p style={{ margin: '0 0 4px' }}>Preparando el buscador por primera vez…</p>
-          <p className="muted" style={{ margin: 0 }}>
-            Recorriendo el catálogo de cofiba.es ({progreso} productos vistos hasta ahora). Puede tardar unos
-            minutos la primera vez; luego las búsquedas son instantáneas.
-          </p>
-        </div>
-      )}
-
       {resultados === null && !error && <p className="muted">Buscando…</p>}
 
       {resultados !== null && resultados.length === 0 && !construyendo && (
@@ -126,19 +130,20 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
 
       {resultados && resultados.length > 0 && (
         <>
-          <p className="muted" style={{ marginBottom: 8 }}>
-            {resultados.length} resultado{resultados.length === 1 ? '' : 's'}
-            {construyendo ? ' · el índice se sigue completando, puede haber más en unos segundos' : ''}
-          </p>
           <div>
-            {resultados.map((p) => (
+            {resultados.slice(0, visibles).map((p) => (
               <div className="product-row" key={p.articulo}>
                 <div
                   className="product-thumb"
                   onClick={() => p.imagen && setZoomProducto(p)}
-                  style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
+                  style={{ position: 'relative', cursor: p.imagen ? 'zoom-in' : 'default' }}
                 >
                   {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+                  {p.comprado && (
+                    <span className="comprado-badge" title="Ya lo compraste antes">
+                      ✓
+                    </span>
+                  )}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p
@@ -174,6 +179,13 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
               </div>
             ))}
           </div>
+          {resultados.length > visibles && (
+            <div style={{ padding: '12px 0', textAlign: 'center' }}>
+              <button onClick={() => setVisibles((v) => v + TANDA)} style={{ width: '100%' }}>
+                Ver más ({resultados.length - visibles} más)
+              </button>
+            </div>
+          )}
         </>
       )}
 

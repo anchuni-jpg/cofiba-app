@@ -75,8 +75,9 @@ export const api = {
   finalizarPedido(observaciones = '') {
     return request('/carrito/finalizar', { method: 'POST', body: { observaciones } });
   },
-  historico() {
-    return request('/historico');
+  historico({ pageUrl } = {}) {
+    const params = pageUrl ? `?pageUrl=${encodeURIComponent(pageUrl)}` : '';
+    return request(`/historico${params}`);
   },
   buscar(q) {
     return request(`/buscar?q=${encodeURIComponent(q)}`);

@@ -35,10 +35,39 @@ export function marcarActividad() {
   ultimaActividad = Date.now();
 }
 
-const VENTANA_ACTIVIDAD_MS = 4000;
-const PAUSA_EXTRA_MS = 600;
-function pausaExtraPorActividad() {
+// El plan gratuito de Render solo da una CPU compartida — ahí incluso una
+// pausa corta no bastaba para que la navegación normal no se notara lenta
+// mientras el rastreo corría de fondo. Ventana más larga y pausa más generosa
+// para dejarle mucho más margen real a quien está usando la app.
+const VENTANA_ACTIVIDAD_MS = 10000;
+const PAUSA_EXTRA_MS = 2500;
+// Exportada porque compradosStore.js (rastreo en segundo plano de qué
+// productos ya compró cada cliente) también necesita cederle el turno a la
+// actividad real, no solo el rastreo del catálogo de aquí.
+export function pausaExtraPorActividad() {
   return Date.now() - ultimaActividad < VENTANA_ACTIVIDAD_MS ? PAUSA_EXTRA_MS : 0;
+}
+
+// Espera hasta que lleve VENTANA_ACTIVIDAD_MS sin ninguna petición real del
+// cliente (o hasta `maxEsperaMs` como tope, para que un rastreo largo acabe
+// avanzando aunque haya tráfico constante). Clave para /consumo.html: cada
+// una de esas peticiones tarda 15-35s en el servidor de cofiba.es y este
+// serializa las de una misma cuenta, así que si el rastreo de fondo lanza
+// una mientras el cliente navega, la navegación se queda esperando DETRÁS de
+// esos 15-35s (medido: una categoría normal pasaba de <1s a ~50s). Cediendo
+// el turno así, el rastreo solo pide páginas cuando el cliente no está
+// usando la app, y navegar vuelve a ir rápido.
+export function esperarInactividad(maxEsperaMs = 45000) {
+  return new Promise((resolve) => {
+    const inicio = Date.now();
+    function comprobar() {
+      const inactivo = Date.now() - ultimaActividad >= VENTANA_ACTIVIDAD_MS;
+      const agotado = Date.now() - inicio >= maxEsperaMs;
+      if (inactivo || agotado) resolve();
+      else setTimeout(comprobar, 500);
+    }
+    comprobar();
+  });
 }
 
 function ensureDataDir() {

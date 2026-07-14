@@ -8,6 +8,11 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const BASE = 'https://www.cofiba.es';
+// cofiba.es tiene su propia sección "Comprados recientemente" — la usan tanto
+// getComprasRecientes (Histórico) como compradosStore.js (marcar en el
+// catálogo qué productos ya se compraron antes); un único sitio donde vive
+// la URL evita que se desincronicen si cambia algún día.
+export const CONSUMO_URL = `${BASE}/consumo.html`;
 
 // cofiba.es's server does not send its intermediate CA certificate in the TLS
 // handshake (only the leaf cert). Browsers paper over this by fetching the
@@ -17,8 +22,14 @@ const BASE = 'https://www.cofiba.es';
 // bundle *plus* the one specific intermediate this site is missing.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cofibaIntermediate = fs.readFileSync(path.join(__dirname, 'cofiba-intermediate.pem'), 'utf8');
+// keepAlive reutiliza la misma conexión TCP/TLS entre peticiones a cofiba.es
+// en vez de renegociar el handshake cada vez — con lo lenta que es su web
+// (sobre todo /consumo.html), ahorrarse ese handshake en cada petición
+// sucesiva es una mejora de rendimiento gratis y sin riesgo.
 const httpsAgent = new https.Agent({
   ca: [...tls.rootCertificates, cofibaIntermediate],
+  keepAlive: true,
+  maxSockets: 10,
 });
 
 // axios-cookiejar-support refuses to work alongside a custom httpsAgent (needed
@@ -196,6 +207,25 @@ function extraerSubcategorias($, categoriaSlug) {
 }
 
 export async function getProductos({ http }, { categoria, subcategoria, page = 1, pageUrl }) {
+  // pageUrl llega del cliente tal cual (es la siguientePagina que nosotros
+  // mismos le dimos antes) — pero nada impide mandar otra cosa a mano, y sin
+  // esta comprobación el servidor descargaría CUALQUIER URL que le pidan
+  // (SSRF: se le podría hacer pedir direcciones internas o de terceros).
+  // Solo se siguen URLs que estén de verdad dentro de cofiba.es.
+  if (pageUrl) {
+    let origen;
+    try {
+      origen = new URL(pageUrl).origin;
+    } catch {
+      origen = null;
+    }
+    if (origen !== BASE) {
+      const err = new Error('pageUrl no válida: solo se aceptan páginas de cofiba.es.');
+      err.code = 'PAGEURL_INVALIDA';
+      throw err;
+    }
+  }
+
   // If a real "next page" URL was computed from a previous call, follow that
   // exact URL instead of guessing a query-string scheme cofiba.es may not use.
   const url =
@@ -400,6 +430,24 @@ export async function getProductosAgrupados(session, opts, minimo = 48) {
   };
 }
 
+// cofiba.es tiene su propia sección "Comprados recientemente" (botón real en
+// el menú lateral, onclick="location.href='/consumo.html'") — una página
+// aparte del carrito, con el historial real de compras de la cuenta,
+// paginada exactamente igual que cualquier categoría (mismo data-paginacion,
+// mismas tarjetas de producto con nombre/foto/precio completos). No hace
+// falta ningún parseo nuevo: pasarle esa URL a getProductos de entrada ya
+// funciona (categoria/subcategoria quedan sin usar, pageUrl manda). Esto
+// sustituye al historial que llevábamos por nuestra cuenta (solo veía lo
+// comprado a través de la app) por el histórico real y completo de la web.
+// minimo = 12 (una sola página real por respuesta) a propósito: cada página
+// de /consumo.html tarda 15-35s en generarse en el servidor de cofiba.es,
+// así que fusionar dos por respuesta doblaba la espera hasta ver algo. Mejor
+// enseñar la primera docena en cuanto llegue y que "Ver más" vaya trayendo
+// el resto de una en una.
+export async function getComprasRecientes(session, { pageUrl } = {}, minimo = 12) {
+  return mergePaginas(session, {}, pageUrl || CONSUMO_URL, minimo);
+}
+
 // Recorre el catálogo entero por sus páginas normales de categoría/
 // subcategoría (modo "false", que sí traen el nombre completo — a
 // diferencia del buscador propio de cofiba.es) para construir un índice
@@ -469,8 +517,13 @@ export async function crawlCatalogo(session, obtenerPausaExtra, onProgreso) {
   // depende de la anterior), pero varias subcategorías/categorías distintas
   // se hacen a la vez — cofiba.es aguanta bien unas pocas peticiones en
   // paralelo, y así el primer índice tarda minutos en vez de más de una
-  // hora yendo petición a petición.
-  await conLimite(tareas, 4, async (t) => {
+  // hora yendo petición a petición. Concurrencia baja (2, no 4) a propósito:
+  // en la instancia gratuita de Render, con una sola CPU compartida, cada
+  // parseo de HTML (cheerio) de este bucle competía con las peticiones
+  // reales de quien está usando la app — el resto de la app se notaba
+  // lenta mientras el rastreo corría de fondo, incluso con la pausa por
+  // actividad ya puesta.
+  await conLimite(tareas, 2, async (t) => {
     let pageUrl = null;
     let r = t.seed;
     do {

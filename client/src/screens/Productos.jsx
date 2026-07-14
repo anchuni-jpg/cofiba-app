@@ -247,9 +247,14 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
             <div
               className="product-thumb"
               onClick={() => p.imagen && setZoomProducto(p)}
-              style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
+              style={{ position: 'relative', cursor: p.imagen ? 'zoom-in' : 'default' }}
             >
               {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+              {p.comprado && (
+                <span className="comprado-badge" title="Ya lo compraste antes">
+                  ✓
+                </span>
+              )}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: 12, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
