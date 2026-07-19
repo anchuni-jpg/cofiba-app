@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { getCache } from '../localCache.js';
 
 // Duplica formatoCaja de Productos.jsx/Busqueda.jsx — una línea, no vale la
 // pena compartir el módulo por eso.
@@ -9,39 +10,122 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
+const TANDA = 20;
+
 export default function Historico({ onCartChanged }) {
   // Esto ya no es un historial que llevemos nosotros — lee directamente la
   // sección real "Comprados recientemente" de cofiba.es (/consumo.html), así
   // que refleja TODO lo comprado en la cuenta, no solo lo hecho desde la app.
-  const [productos, setProductos] = useState([]);
+  //
+  // `paginas[i]` guarda los productos de la página real i-ésima. Se rellena
+  // por posición (nunca se concatena a ciegas) para que aplicar la misma
+  // página dos veces —una vez desde la caché local y otra con la respuesta
+  // de verdad— sustituya en vez de duplicar. El recorrido de TODAS las
+  // páginas se dispara solo con abrir la pestaña, sin esperar a que se pulse
+  // ningún botón — "Ver más" solo revela más de lo que ya se ha traído (20
+  // en 20, como en Búsqueda), nunca dispara una petición nueva por sí mismo.
+  const [paginas, setPaginas] = useState([]);
   const [totalPaginas, setTotalPaginas] = useState(null);
-  const [paginaFin, setPaginaFin] = useState(null);
-  const [siguientePagina, setSiguientePagina] = useState(null);
+  const [paginasCargadas, setPaginasCargadas] = useState(0);
+  const [cargandoTodo, setCargandoTodo] = useState(true);
+  const [visibles, setVisibles] = useState(TANDA);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [cargandoMas, setCargandoMas] = useState(false);
   const [pending, setPending] = useState({});
   const [zoomProducto, setZoomProducto] = useState(null);
 
-  // Mismo patrón que Búsqueda: "Ver más" va añadiendo al final del listado
-  // en vez de sustituirlo por una página nueva — al usuario le resulta más
-  // natural seguir bajando que tener que pulsar Anterior/Siguiente.
-  function cargar(pageUrl) {
-    const esPrimera = !pageUrl;
-    (esPrimera ? setLoading : setCargandoMas)(true);
-    api
-      .historico({ pageUrl })
-      .then((data) => {
-        setProductos((prev) => (esPrimera ? data.productos : [...prev, ...data.productos]));
-        setPaginaFin(data.paginaFin);
-        setTotalPaginas(data.totalPaginas);
-        setSiguientePagina(data.siguientePagina || null);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => (esPrimera ? setLoading : setCargandoMas)(false));
-  }
+  const productos = paginas.flat();
 
-  useEffect(() => cargar(null), []);
+  useEffect(() => {
+    let cancelado = false;
+
+    // Reconstruye al instante (sin red) todo lo que ya se había recorrido en
+    // este dispositivo, encadenando la caché por su propio siguientePagina —
+    // así reabrir Histórico no repite la espera real de páginas que ya se
+    // habían completado antes: antes, aunque la caché mostrara el dato al
+    // momento, el recorrido de fondo esperaba igualmente la respuesta real
+    // de CADA página ya conocida antes de poder avanzar a una nueva, así que
+    // "se ponía al día" desde cero cada vez que se abría la pestaña.
+    async function reconstruirDesdeCache() {
+      const paginasCache = [];
+      let totalPaginasCache = null;
+      let pageUrl = null;
+      do {
+        const cacheado = await getCache(`historico:${pageUrl || ''}`);
+        if (!cacheado) break;
+        paginasCache.push(cacheado.productos);
+        totalPaginasCache = cacheado.totalPaginas;
+        pageUrl = cacheado.siguientePagina || null;
+      } while (pageUrl);
+      return { paginasCache, totalPaginasCache, siguientePageUrl: pageUrl };
+    }
+
+    async function recorrerTodo() {
+      const { paginasCache, totalPaginasCache, siguientePageUrl } = await reconstruirDesdeCache();
+      if (cancelado) return;
+
+      if (paginasCache.length) {
+        setPaginas(paginasCache);
+        setTotalPaginas(totalPaginasCache);
+        setPaginasCargadas(paginasCache.length);
+        setLoading(false);
+      }
+
+      // Si ya no hay más "siguiente" y algo se había cacheado, es que la
+      // última vez se llegó al final del histórico real — nada que rastrear.
+      if (paginasCache.length && !siguientePageUrl) {
+        setCargandoTodo(false);
+        return;
+      }
+
+      let pageUrl = siguientePageUrl;
+      let indice = paginasCache.length;
+      do {
+        let huboCache = false;
+        const promesa = api.historicoCached({ pageUrl }, (cacheado) => {
+          if (cancelado) return;
+          huboCache = true;
+          const i = indice;
+          setPaginas((prev) => {
+            const copia = [...prev];
+            copia[i] = cacheado.productos;
+            return copia;
+          });
+          setTotalPaginas(cacheado.totalPaginas);
+          setPaginasCargadas((prev) => Math.max(prev, i + 1));
+          if (i === 0) setLoading(false);
+        });
+
+        let data;
+        try {
+          data = await promesa;
+        } catch (e) {
+          if (!cancelado && !huboCache) setError(e.message);
+          break;
+        }
+        if (cancelado) return;
+
+        const i = indice;
+        setPaginas((prev) => {
+          const copia = [...prev];
+          copia[i] = data.productos;
+          return copia;
+        });
+        setTotalPaginas(data.totalPaginas);
+        setPaginasCargadas((prev) => Math.max(prev, i + 1));
+        if (i === 0) setLoading(false);
+
+        pageUrl = data.siguientePagina || null;
+        indice += 1;
+      } while (pageUrl && !cancelado);
+      if (!cancelado) setCargandoTodo(false);
+    }
+
+    recorrerTodo();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   async function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
@@ -63,6 +147,9 @@ export default function Historico({ onCartChanged }) {
     }
   }
 
+  const visiblesLista = productos.slice(0, visibles);
+  const hayMasParaRevelar = visibles < productos.length;
+
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
       <p style={{ fontWeight: 500, marginBottom: 10 }}>Comprados recientemente</p>
@@ -76,9 +163,22 @@ export default function Historico({ onCartChanged }) {
         <p className="muted">Aún no hay compras registradas en tu cuenta de cofiba.es.</p>
       )}
 
+      {!loading && productos.length > 0 && (
+        <p className="muted" style={{ marginBottom: 8 }}>
+          {productos.length} producto{productos.length === 1 ? '' : 's'}
+          {cargandoTodo
+            ? ` · se sigue completando en segundo plano (página ${paginasCargadas} de ${totalPaginas || '…'})`
+            : ''}
+        </p>
+      )}
+
       <div>
-        {productos.map((p) => (
-          <div className="product-row" key={p.articulo}>
+        {visiblesLista.map((p, idx) => (
+          // La clave incluye la posición: el mismo artículo puede aparecer
+          // más de una vez en el histórico real (comprado en fechas
+          // distintas), y repetir solo el articulo como key confundía a
+          // React (dos filas con la misma key "se superponían" visualmente).
+          <div className="product-row" key={`${p.articulo}-${idx}`}>
             <div
               className="product-thumb"
               onClick={() => p.imagen && setZoomProducto(p)}
@@ -113,17 +213,18 @@ export default function Historico({ onCartChanged }) {
         ))}
       </div>
 
-      {siguientePagina && (
+      {hayMasParaRevelar && (
         <div style={{ padding: '12px 0', textAlign: 'center' }}>
-          <button onClick={() => cargar(siguientePagina)} disabled={cargandoMas} style={{ width: '100%' }}>
-            {cargandoMas ? 'Cargando…' : 'Ver más'}
+          <button onClick={() => setVisibles((v) => v + TANDA)} style={{ width: '100%' }}>
+            Ver más ({productos.length - visibles} más)
           </button>
-          {totalPaginas && (
-            <p className="muted" style={{ marginTop: 6 }}>
-              Página {paginaFin} de {totalPaginas}
-            </p>
-          )}
         </div>
+      )}
+
+      {!hayMasParaRevelar && cargandoTodo && productos.length > 0 && (
+        <p className="muted" style={{ textAlign: 'center', padding: '12px 0' }}>
+          Rastreando el resto de tu histórico en segundo plano…
+        </p>
       )}
 
       {zoomProducto && (

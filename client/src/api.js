@@ -1,3 +1,5 @@
+import { getCache, setCache } from './localCache.js';
+
 const TOKEN_KEY = 'cofiba_token';
 
 export function getToken() {
@@ -36,6 +38,23 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   return data;
 }
 
+// Muestra lo que haya en caché al instante (si hay algo) vía `onCacheHit`
+// mientras la petición de verdad va por detrás; cuando esta responde, se
+// guarda como la nueva caché para la próxima vez. Si la respuesta real llega
+// ANTES de que termine de leerse la caché (puede pasar, ambas son
+// asíncronas), se ignora el resultado de caché para no pisar datos frescos
+// con otros más viejos.
+async function conCache(clave, fetcher, onCacheHit) {
+  let frescoYaLlego = false;
+  getCache(clave).then((cacheado) => {
+    if (cacheado && !frescoYaLlego) onCacheHit?.(cacheado);
+  });
+  const fresco = await fetcher();
+  frescoYaLlego = true;
+  setCache(clave, fresco);
+  return fresco;
+}
+
 export const api = {
   async login(usuario, password) {
     const data = await request('/login', { method: 'POST', body: { usuario, password }, auth: false });
@@ -48,6 +67,11 @@ export const api = {
   categorias() {
     return request('/categorias');
   },
+  // Casi nunca cambian: enseñar la última lista guardada en el propio
+  // navegador mientras se confirma que sigue igual es un atajo seguro.
+  categoriasCached(onCacheHit) {
+    return conCache('categorias', () => this.categorias(), onCacheHit);
+  },
   productos({ categoria, subcategoria, page = 1, pageUrl }) {
     const params = new URLSearchParams({
       categoria,
@@ -56,6 +80,10 @@ export const api = {
       ...(pageUrl ? { pageUrl } : {}),
     });
     return request(`/productos?${params.toString()}`);
+  },
+  productosCached({ categoria, subcategoria, page = 1, pageUrl }, onCacheHit) {
+    const clave = `productos:${categoria}|${subcategoria || ''}|${pageUrl || ''}`;
+    return conCache(clave, () => this.productos({ categoria, subcategoria, page, pageUrl }), onCacheHit);
   },
   carrito() {
     return request('/carrito');
@@ -79,7 +107,22 @@ export const api = {
     const params = pageUrl ? `?pageUrl=${encodeURIComponent(pageUrl)}` : '';
     return request(`/historico${params}`);
   },
+  // /consumo.html tarda 15-35s en el servidor de cofiba.es — mostrar la
+  // última tanda vista de esta misma página mientras se repite la petición
+  // de verdad evita ese rato en blanco en visitas repetidas.
+  historicoCached({ pageUrl } = {}, onCacheHit) {
+    const clave = `historico:${pageUrl || ''}`;
+    return conCache(clave, () => this.historico({ pageUrl }), onCacheHit);
+  },
   buscar(q) {
     return request(`/buscar?q=${encodeURIComponent(q)}`);
+  },
+  // Solo tiene sentido cachear por término exacto — cambiar una letra ya es
+  // una búsqueda distinta. Rellena el hueco antes de la primera respuesta
+  // real; en cuanto esta llega, manda ella (y sus refrescos si el índice
+  // sigue construyéndose), la caché no vuelve a intervenir en esa búsqueda.
+  buscarCached(q, onCacheHit) {
+    const clave = `buscar:${q.trim().toLowerCase()}`;
+    return conCache(clave, () => this.buscar(q), onCacheHit);
   },
 };

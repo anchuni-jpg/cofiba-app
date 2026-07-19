@@ -31,6 +31,18 @@ import {
 import { asegurarComprados, comprasConocidas, registrarCompras } from './compradosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 
+// Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
+// try/catch (p. ej. en un rastreo de fondo) tumbaba TODO el servidor en vez
+// de solo fallar esa tarea — con lo lento que es un arranque en frío en el
+// plan gratuito, eso deja la app caída un buen rato hasta el próximo deploy
+// o reinicio manual. Mejor registrar el error y seguir vivo.
+process.on('unhandledRejection', (err) => {
+  console.error('[unhandledRejection]', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+
 const PORT = process.env.PORT || 4000;
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
@@ -92,36 +104,56 @@ async function requireSession(req, res, next) {
     return next();
   }
 
-  const creds = loadCredentials(token);
-  if (!creds) return res.status(401).json({ error: 'No has iniciado sesión.' });
-
-  const session = createSession();
+  // Este middleware corre delante de CASI todas las rutas — un fallo aquí
+  // sin capturar (leer/escribir credentials.json, crear la sesión) se colaba
+  // sin responder nada útil al cliente, que veía un "Error 500" en blanco
+  // viniera de la pantalla que viniera (Carrito, Productos...), no solo del
+  // login. Todo el cuerpo bajo un único try/catch, igual que en /api/login.
   try {
-    await login(session, creds.usuario, creds.password);
+    const creds = loadCredentials(token);
+    if (!creds) return res.status(401).json({ error: 'No has iniciado sesión.' });
+
+    const session = createSession();
+    try {
+      await login(session, creds.usuario, creds.password);
+    } catch (e) {
+      deleteCredentials(token);
+      return res.status(401).json({ error: 'No has iniciado sesión.' });
+    }
+    sessions.set(token, { session, usuario: creds.usuario, createdAt: Date.now() });
+    req.cofiba = session;
+    req.usuario = creds.usuario;
+    next();
   } catch (e) {
-    deleteCredentials(token);
-    return res.status(401).json({ error: 'No has iniciado sesión.' });
+    console.error('[requireSession] fallo inesperado:', e.message);
+    res.status(500).json({ error: 'Fallo inesperado comprobando la sesión. Vuelve a entrar.' });
   }
-  sessions.set(token, { session, usuario: creds.usuario, createdAt: Date.now() });
-  req.cofiba = session;
-  req.usuario = creds.usuario;
-  next();
 }
 
 app.post('/api/login', async (req, res) => {
   const { usuario, password } = req.body || {};
   if (!usuario || !password) return res.status(400).json({ error: 'Falta usuario o contraseña.' });
 
-  const session = createSession();
+  // Todo el cuerpo bajo un único try/catch: antes solo el login() propio de
+  // cofiba.es estaba protegido — un fallo en createSession/saveCredentials
+  // (p. ej. no se pudo escribir en disco) se colaba sin capturar y el
+  // cliente veía un "Error 500" sin ningún mensaje útil, en vez de un aviso
+  // claro.
   try {
-    await login(session, usuario, password);
+    const session = createSession();
+    try {
+      await login(session, usuario, password);
+    } catch (e) {
+      return res.status(401).json({ error: e.message });
+    }
+    const token = crypto.randomUUID();
+    sessions.set(token, { session, usuario, createdAt: Date.now() });
+    saveCredentials(token, usuario, password);
+    res.json({ token });
   } catch (e) {
-    return res.status(401).json({ error: e.message });
+    console.error('[login] fallo inesperado:', e.message);
+    res.status(500).json({ error: 'Fallo inesperado iniciando sesión. Inténtalo de nuevo.' });
   }
-  const token = crypto.randomUUID();
-  sessions.set(token, { session, usuario, createdAt: Date.now() });
-  saveCredentials(token, usuario, password);
-  res.json({ token });
 });
 
 app.post('/api/logout', requireSession, (req, res) => {

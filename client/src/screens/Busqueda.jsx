@@ -45,18 +45,29 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
 
   useEffect(() => {
     let cancelado = false;
+    let huboCache = false;
     setResultados(null);
     setError(null);
     setConstruyendo(false);
     setVisibles(TANDA);
 
-    function consultar() {
-      api
-        .buscar(terminoActivo)
+    function consultar(primera) {
+      // Solo la primera consulta de esta búsqueda mira la caché local (rellena
+      // el hueco antes de tener respuesta real, sobre todo si el término ya
+      // se buscó antes en este dispositivo); los reintentos mientras el
+      // índice se sigue construyendo van directos al servidor, que es quien
+      // manda a partir de ahí.
+      const promesa = primera
+        ? api.buscarCached(terminoActivo, (cacheado) => {
+            huboCache = true;
+            if (!cancelado) setResultados(cacheado.resultados || []);
+          })
+        : api.buscar(terminoActivo);
+      promesa
         .then((data) => {
           if (cancelado) return;
           if (data.error) {
-            setError(`No se pudo preparar el buscador: ${data.error}`);
+            if (!huboCache) setError(`No se pudo preparar el buscador: ${data.error}`);
             return;
           }
           // Aunque siga construyéndose el índice, ya llegan resultados
@@ -66,11 +77,13 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
           // al usuario esperando en blanco.
           setResultados(data.resultados || []);
           setConstruyendo(!!data.construyendo);
-          if (data.construyendo) pollRef.current = setTimeout(consultar, 3000);
+          if (data.construyendo) pollRef.current = setTimeout(() => consultar(false), 3000);
         })
-        .catch((e) => !cancelado && setError(e.message));
+        // Con la caché ya mostrando resultados válidos, un fallo de red de
+        // fondo no debe taparlos con un banner de error confuso.
+        .catch((e) => !cancelado && !huboCache && setError(e.message));
     }
-    consultar();
+    consultar(true);
 
     return () => {
       cancelado = true;

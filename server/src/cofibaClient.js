@@ -454,11 +454,7 @@ export async function getComprasRecientes(session, { pageUrl } = {}, minimo = 12
 // plano que luego se pueda filtrar en memoria. Es una operación pesada (todo
 // el catálogo son varios miles de productos repartidos en cientos de
 // páginas reales) pensada para ejecutarse una vez y guardarse en caché, no
-// en cada búsqueda — ver indiceStore.js. Una pequeña pausa entre peticiones
-// evita machacar el servidor de cofiba.es con cientos de peticiones seguidas.
-function esperar(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+// en cada búsqueda — ver indiceStore.js.
 
 // Corre `tareas` a través de `worker` con un máximo de `limite` a la vez —
 // un pool sencillo de workers que van tirando del mismo array compartido.
@@ -473,12 +469,15 @@ async function conLimite(tareas, limite, worker) {
   await Promise.all(Array.from({ length: Math.min(limite, tareas.length) }, siguiente));
 }
 
-// `obtenerPausaExtra` (opcional) deja que quien llama frene el rastreo según
-// convenga — aquí en concreto, indiceStore.js la usa para ceder el turno
-// cuando alguien está usando la app de verdad en ese momento, en vez de
-// competir por la misma sesión/servidor de cofiba.es con peticiones reales.
-export async function crawlCatalogo(session, obtenerPausaExtra, onProgreso) {
-  const pausaBase = (ms) => esperar(ms + (obtenerPausaExtra?.() || 0));
+// `esperarTurno` (opcional) es una función async que quien llama usa para
+// cederle el turno de verdad a la actividad real antes de cada petición —
+// probado que cofiba.es serializa TODAS las peticiones de una misma cuenta
+// (no solo /consumo.html: hasta las páginas normales de categoría se ponen
+// en cola en su servidor si van a la vez), así que un rastreo "concurrente"
+// no gana nada en velocidad y sí compite de verdad con quien esté navegando
+// en ese momento. indiceStore.esperarInactividad cumple ese papel.
+export async function crawlCatalogo(session, esperarTurno, onProgreso) {
+  const turno = () => esperarTurno?.() || Promise.resolve();
   const categorias = (await getCategorias(session)).filter((c) => c.slug !== 'todas');
   const indice = [];
   function añadirProducto(item) {
@@ -489,13 +488,13 @@ export async function crawlCatalogo(session, obtenerPausaExtra, onProgreso) {
     onProgreso?.(item, indice.length);
   }
 
-  // Primero descubre las subcategorías de cada categoría (pocas peticiones,
-  // rápido). Guarda la propia respuesta como "semilla" para la categoría
-  // plana sin subcategorías, para no volver a pedir esa misma página.
+  // Primero descubre las subcategorías de cada categoría (pocas peticiones).
+  // Guarda la propia respuesta como "semilla" para la categoría plana sin
+  // subcategorías, para no volver a pedir esa misma página.
   const tareas = [];
-  await conLimite(categorias, 4, async (cat) => {
+  await conLimite(categorias, 1, async (cat) => {
+    await turno();
     const primera = await getProductos(session, { categoria: cat.slug, page: 1 });
-    await pausaBase(120);
     const brutas = primera.subcategorias?.length ? [...primera.subcategorias].sort(POR_NOMBRE) : [null];
     // extraerSubcategorias puede devolver el mismo slug repetido (el árbol de
     // categorías de cofiba.es no siempre es limpio) — sin deduplicar aquí,
@@ -513,23 +512,21 @@ export async function crawlCatalogo(session, obtenerPausaExtra, onProgreso) {
     }
   });
 
-  // Cada subcategoría recorre sus propias páginas en cadena (siguientePagina
-  // depende de la anterior), pero varias subcategorías/categorías distintas
-  // se hacen a la vez — cofiba.es aguanta bien unas pocas peticiones en
-  // paralelo, y así el primer índice tarda minutos en vez de más de una
-  // hora yendo petición a petición. Concurrencia baja (2, no 4) a propósito:
-  // en la instancia gratuita de Render, con una sola CPU compartida, cada
-  // parseo de HTML (cheerio) de este bucle competía con las peticiones
-  // reales de quien está usando la app — el resto de la app se notaba
-  // lenta mientras el rastreo corría de fondo, incluso con la pausa por
-  // actividad ya puesta.
-  await conLimite(tareas, 2, async (t) => {
+  // Secuencial a propósito: probado que cofiba.es serializa TODAS las
+  // peticiones de una misma cuenta en su propio servidor (hasta páginas de
+  // categoría normales, no solo /consumo.html), así que pedir varias "a la
+  // vez" no adelantaba nada — el servidor de cofiba.es las ponía en cola
+  // igualmente — y encima competía con la navegación real del cliente
+  // (que también usa esa misma cuenta/sesión) más de lo necesario. Yendo
+  // una a una, y cediendo el turno de verdad antes de cada una
+  // (esperarTurno), el rastreo deja hueco real a quien esté usando la app.
+  await conLimite(tareas, 1, async (t) => {
     let pageUrl = null;
     let r = t.seed;
     do {
       if (!r) {
+        await turno();
         r = await getProductos(session, { categoria: t.cat.slug, subcategoria: t.sub?.slug, pageUrl });
-        await pausaBase(120);
       }
       for (const p of r.productos) {
         if (!p.nombre) continue;

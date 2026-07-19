@@ -8,10 +8,17 @@ export default function Categorias({ onOpenCategoria, onSearch }) {
   const [q, setQ] = useState('');
 
   useEffect(() => {
+    let huboCache = false;
     api
-      .categorias()
+      .categoriasCached((cacheado) => {
+        huboCache = true;
+        setCategorias(cacheado);
+        setLoading(false);
+      })
       .then(setCategorias)
-      .catch((e) => setError(e.message))
+      // Con la caché ya mostrando algo válido, un fallo de red de fondo no
+      // debe tapar esos datos con un banner de error confuso.
+      .catch((e) => !huboCache && setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 

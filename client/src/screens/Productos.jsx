@@ -44,34 +44,45 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
     // Si al llegar la respuesta ya se pidió otra cosa (cambio rápido de
     // subcategoría o de página), se ignora: la última petición siempre gana.
     let cancelado = false;
+    let huboCache = false;
     setLoading(true);
     setError(null);
     setErrorDebugHtml(null);
     setDebugSample(null);
+
+    function aplicar(data) {
+      if (cancelado) return;
+      setProductos(data.productos);
+      setSubcategorias(data.subcategorias || []);
+      setGrupoActual(data.grupo || null);
+      setTotalPaginas(data.totalPaginas);
+      setPaginaInicio(data.paginaInicio);
+      setPaginaFin(data.paginaFin);
+      setSiguientePagina(data.siguientePagina || null);
+      setSiguienteGrupo(data.siguienteGrupo || null);
+      setDebugSample(data.debug?.normalizedSample || null);
+      // Al llegar una página nueva, el listado empieza por arriba (tanto el
+      // contenedor con scroll propio como la ventana, según el layout).
+      contentRef.current?.scrollTo({ top: 0 });
+      window.scrollTo({ top: 0 });
+    }
+
     api
-      .productos({
-        categoria: categoria?.slug || 'todas',
-        subcategoria: effNav.subcategoria,
-        pageUrl: effNav.pageUrl,
-      })
-      .then((data) => {
-        if (cancelado) return;
-        setProductos(data.productos);
-        setSubcategorias(data.subcategorias || []);
-        setGrupoActual(data.grupo || null);
-        setTotalPaginas(data.totalPaginas);
-        setPaginaInicio(data.paginaInicio);
-        setPaginaFin(data.paginaFin);
-        setSiguientePagina(data.siguientePagina || null);
-        setSiguienteGrupo(data.siguienteGrupo || null);
-        setDebugSample(data.debug?.normalizedSample || null);
-        // Al llegar una página nueva, el listado empieza por arriba (tanto el
-        // contenedor con scroll propio como la ventana, según el layout).
-        contentRef.current?.scrollTo({ top: 0 });
-        window.scrollTo({ top: 0 });
-      })
+      .productosCached(
+        { categoria: categoria?.slug || 'todas', subcategoria: effNav.subcategoria, pageUrl: effNav.pageUrl },
+        (cacheado) => {
+          huboCache = true;
+          aplicar(cacheado);
+          if (!cancelado) setLoading(false);
+        }
+      )
+      .then(aplicar)
       .catch((e) => {
-        if (!cancelado) setError(e.message);
+        // Si ya se pudo enseñar algo de la caché, un fallo de la petición de
+        // verdad (p. ej. el servidor reiniciándose) no debe tapar esos datos
+        // ya válidos con un banner de error confuso — se queda como está y
+        // ya se reintentará solo la próxima vez que se entre aquí.
+        if (!cancelado && !huboCache) setError(e.message);
       })
       .finally(() => {
         if (!cancelado) setLoading(false);

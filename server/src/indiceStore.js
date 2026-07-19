@@ -35,18 +35,13 @@ export function marcarActividad() {
   ultimaActividad = Date.now();
 }
 
-// El plan gratuito de Render solo da una CPU compartida — ahí incluso una
-// pausa corta no bastaba para que la navegación normal no se notara lenta
-// mientras el rastreo corría de fondo. Ventana más larga y pausa más generosa
-// para dejarle mucho más margen real a quien está usando la app.
+// El plan gratuito de Render solo da una CPU compartida, y confirmado que
+// cofiba.es serializa TODAS las peticiones de una misma cuenta en su propio
+// servidor (no solo /consumo.html) — así que una simple pausa corta no
+// bastaba para que la navegación normal no se notara lenta mientras el
+// rastreo corría de fondo. Ventana de inactividad real (ver
+// esperarInactividad) en vez de una pausa fija.
 const VENTANA_ACTIVIDAD_MS = 10000;
-const PAUSA_EXTRA_MS = 2500;
-// Exportada porque compradosStore.js (rastreo en segundo plano de qué
-// productos ya compró cada cliente) también necesita cederle el turno a la
-// actividad real, no solo el rastreo del catálogo de aquí.
-export function pausaExtraPorActividad() {
-  return Date.now() - ultimaActividad < VENTANA_ACTIVIDAD_MS ? PAUSA_EXTRA_MS : 0;
-}
 
 // Espera hasta que lleve VENTANA_ACTIVIDAD_MS sin ninguna petición real del
 // cliente (o hasta `maxEsperaMs` como tope, para que un rastreo largo acabe
@@ -121,7 +116,7 @@ export function iniciarConstruccion(session) {
   let ultimoGuardado = 0;
   promesaConstruccion = (async () => {
     try {
-      const nuevo = await crawlCatalogo(session, pausaExtraPorActividad, (item, n) => {
+      const nuevo = await crawlCatalogo(session, esperarInactividad, (item, n) => {
         indiceParcial.push(item);
         progreso = n;
         // Un rastreo completo puede tardar bastante — si el proceso se cae
@@ -165,15 +160,24 @@ function normalizar(s) {
     .toLowerCase();
 }
 
-export function buscarEnIndice(termino, limite = 200) {
+export function buscarEnIndice(termino) {
   const t = normalizar(termino);
   if (!t) return [];
-  // Con el índice ya listo se busca sobre él; mientras se está construyendo
-  // (puede tardar varios minutos en un catálogo grande) se busca sobre lo
-  // que se ha visto hasta ahora, para no dejar al usuario sin nada durante
-  // todo ese rato — el propio "construyendo: true" en la respuesta avisa de
-  // que puede haber más resultados según avance.
-  const fuente = estado === 'listo' ? indice : indiceParcial;
+  // Se busca sobre lo que haya más completo: `indice` (el último rastreo
+  // terminado del todo) o `indiceParcial` (el que está en marcha ahora
+  // mismo, que arranca vacío y va creciendo). Antes esto se decidía por
+  // `estado === 'listo'` — pero en cuanto el índice caduca (6h) y arranca un
+  // rastreo nuevo, `estado` pasa a 'construyendo' e `indiceParcial` se
+  // resetea a cero, así que la búsqueda se quedaba dando 0 resultados
+  // durante TODO el rato que tardara el rastreo nuevo (puede ser una hora),
+  // aunque el índice anterior siguiera siendo perfectamente válido para
+  // buscar mientras tanto. Comparando tamaños en vez de mirar el estado, se
+  // sigue sirviendo el índice viejo hasta que el nuevo lo supere de verdad.
+  //
+  // Sin límite de resultados a propósito (antes se cortaba en 200): el
+  // cliente ya pagina esta lista en tandas (Busqueda.jsx), así que recortarla
+  // aquí solo escondía coincidencias reales sin necesidad.
+  const fuente = indiceParcial.length > indice.length ? indiceParcial : indice;
   return fuente
     .filter(
       (p) =>
@@ -182,6 +186,5 @@ export function buscarEnIndice(termino, limite = 200) {
         normalizar(p.ean).includes(t) ||
         normalizar(p.marca).includes(t)
     )
-    .sort((a, b) => normalizar(a.nombre).localeCompare(normalizar(b.nombre)))
-    .slice(0, limite);
+    .sort((a, b) => normalizar(a.nombre).localeCompare(normalizar(b.nombre)));
 }
