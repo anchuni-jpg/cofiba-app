@@ -573,11 +573,14 @@ export async function getCarrito({ http }) {
   const $ = cheerio.load(res.data);
   const normalized = $('body').text().replace(/\s+/g, ' ').trim();
 
+  // "Dto. pronto pago"/"Envío" no correspondían a nada real de esta página
+  // (confirmado mirando el HTML crudo con un carrito con productos reales:
+  // esas etiquetas no existen aquí) — lo que sí hay es el IVA, con el
+  // recargo de equivalencia delante cuando aplica ("REC 5,2% IVA 21%").
+  const ivaMatch = normalized.match(/((?:REC\s*[\d.,]+%\s*)?IVA\s*[\d.,]+%)\s*([\d.,]+)\s*€/i);
   const totales = {
     importe: normalized.match(/\bIMPORTE\s*([\d.,]+)\s*€/)?.[1] || null,
-    descuentoProntoPago: normalized.match(/pronto pago\s*-\s*([\d.,]+)\s*€/i)?.[1] || null,
-    envio: normalized.match(/GASTOS DE ENV[IÍ]O\s*([\d.,]+)\s*€/i)?.[1] || null,
-    baseImponible: normalized.match(/Base imponible[^0-9]*([\d.,]+)\s*€/i)?.[1] || null,
+    iva: ivaMatch ? { etiqueta: ivaMatch[1].replace(/\s+/g, ' ').trim(), valor: ivaMatch[2] } : null,
     total: normalized.match(/\bTOTAL\s*([\d.,]+)\s*€/)?.[1] || null,
   };
 
@@ -637,6 +640,45 @@ export async function getCarrito({ http }) {
     totales,
     numProductos: lineas.length,
     debug: lineas.length === 0 ? { normalizedSample: normalized.slice(sampleStart, sampleStart + 3000) } : undefined,
+  };
+}
+
+// /mi-cuenta.html tiene tres paneles reales (confirmado mirando el HTML
+// crudo): "Datos fiscales", "Información de contacto" y "Datos financieros"
+// (esta última con cuenta bancaria/línea de crédito — de momento no se
+// expone, es más de lo que hace falta para un vistazo rápido de quién está
+// logeado). Cada panel es una lista de <p><b>Etiqueta:</b> valor</p>, así
+// que se devuelven tal cual como pares etiqueta→valor en vez de inventar
+// nombres de campo en inglés — así se ve siempre exactamente lo que pone la
+// propia cofiba.es, aunque cambie algún texto con el tiempo.
+function extraerPanel($, tituloPanel) {
+  const datos = {};
+  $('.panel').each((_, panel) => {
+    const $panel = $(panel);
+    const titulo = $panel.find('.panel-heading h4').first().text().trim();
+    if (titulo.toLowerCase() !== tituloPanel.toLowerCase()) return;
+    $panel.find('.panel-body p').each((_, p) => {
+      const $p = $(p);
+      const etiqueta = $p.find('b').first().text().replace(':', '').trim();
+      if (!etiqueta) return;
+      const $clone = $p.clone();
+      $clone.find('b').remove();
+      // Los <br> (p. ej. entre la calle y el CP/población en "Dirección") se
+      // pierden al leer .text() — sin esto, "CIUDAD DE REUS 19, SALOU" y
+      // "43724 - TARRAGONA" quedaban pegados sin espacio entre medio.
+      $clone.find('br').replaceWith(' ');
+      datos[etiqueta] = $clone.text().replace(/\s+/g, ' ').trim() || null;
+    });
+  });
+  return datos;
+}
+
+export async function getMiCuenta({ http }) {
+  const res = await http.get(`${BASE}/mi-cuenta.html`);
+  const $ = cheerio.load(res.data);
+  return {
+    datosFiscales: extraerPanel($, 'Datos fiscales'),
+    contacto: extraerPanel($, 'Información de contacto'),
   };
 }
 

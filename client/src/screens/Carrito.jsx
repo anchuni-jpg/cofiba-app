@@ -173,14 +173,8 @@ export default function Carrito({ onCartChanged }) {
                   <td>{carrito.totales.importe ? `${carrito.totales.importe}€` : '—'}</td>
                 </tr>
                 <tr>
-                  <td className="muted">Dto. pronto pago</td>
-                  <td style={{ color: 'var(--success)' }}>
-                    {carrito.totales.descuentoProntoPago ? `-${carrito.totales.descuentoProntoPago}€` : '—'}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="muted">Envío</td>
-                  <td>{carrito.totales.envio ? `${carrito.totales.envio}€` : '—'}</td>
+                  <td className="muted">{carrito.totales.iva?.etiqueta || 'IVA'}</td>
+                  <td>{carrito.totales.iva?.valor ? `${carrito.totales.iva.valor}€` : '—'}</td>
                 </tr>
                 <tr>
                   <td style={{ fontWeight: 500, borderTop: '1px solid var(--border)', paddingTop: 6 }}>TOTAL</td>
@@ -191,6 +185,11 @@ export default function Carrito({ onCartChanged }) {
               </tbody>
             </table>
           </div>
+
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Pedido mínimo para envío: 100€ (entregas en Mallorca) · 200€ (resto de islas y península). Por debajo de
+            ese importe, cofiba.es informa por email del coste del transporte antes de prepararlo.
+          </p>
 
           <label className="muted">Observaciones del pedido (opcional)</label>
           <textarea

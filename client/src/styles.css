@@ -139,24 +139,17 @@ input {
   object-fit: contain;
 }
 
-/* Casillero que marca los productos que el cliente ya compró antes (según
-   /consumo.html en cofiba.es) mientras navega por categorías/búsqueda, sin
-   tener que entrar en Histórico para saberlo. */
-.comprado-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--surface-2);
+/* Marca los productos que el cliente ya compró antes (según /consumo.html en
+   cofiba.es) mientras navega por categorías/búsqueda, sin tener que entrar en
+   Histórico para saberlo. Colorea toda la fila (antes solo un tick pequeño
+   sobre la foto, poco visible) — los botones +/- quedan fuera porque tienen
+   su propio fondo opaco (ver `button` más arriba), así que no se tiñen. */
+.product-row-comprado {
+  background: var(--accent-bg);
+  border-radius: var(--radius);
+  border-top-color: transparent;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .cart-thumb {

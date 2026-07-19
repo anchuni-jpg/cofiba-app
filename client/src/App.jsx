@@ -34,6 +34,7 @@ export default function App() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const { deferred, isStandalone, isIos } = useInstallPrompt();
   const [dismissedInstall, setDismissedInstall] = useState(false);
+  const [cuenta, setCuenta] = useState(null);
 
   function refreshCartCount(directCount) {
     if (Number.isFinite(directCount)) {
@@ -48,6 +49,20 @@ export default function App() {
 
   useEffect(() => {
     if (loggedIn) refreshCartCount();
+  }, [loggedIn]);
+
+  // Vive aquí (no en Categorías) porque la barra superior es la misma en
+  // todas las pantallas — así el nombre del cliente logeado queda siempre
+  // visible, no solo al entrar en Categorías.
+  useEffect(() => {
+    if (!loggedIn) return;
+    api
+      .miCuentaCached((cacheado) => setCuenta(cacheado))
+      .then(setCuenta)
+      .catch(() => {
+        // Silencioso a propósito: es un dato complementario, no algo que
+        // deba impedir usar el resto de la app si falla puntualmente.
+      });
   }, [loggedIn]);
 
   useEffect(() => {
@@ -74,8 +89,25 @@ export default function App() {
   return (
     <>
       <div className="topbar">
-        <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 24 }} />
-        <button className="danger-text" onClick={() => (api.logout(), setLoggedIn(false))}>
+        <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 24, flexShrink: 0 }} />
+        {cuenta?.datosFiscales?.Nombre && (
+          <p
+            className="muted"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              margin: '0 10px',
+              textAlign: 'center',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={cuenta.datosFiscales.Nombre}
+          >
+            {cuenta.datosFiscales.Nombre}
+          </p>
+        )}
+        <button className="danger-text" style={{ flexShrink: 0 }} onClick={() => (api.logout(), setLoggedIn(false))}>
           Salir
         </button>
       </div>

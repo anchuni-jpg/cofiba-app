@@ -11,6 +11,7 @@ import {
   getProductosAgrupados,
   getComprasRecientes,
   getCarrito,
+  getMiCuenta,
   anadirAlCarrito,
   actualizarCantidadCarrito,
   eliminarDelCarrito,
@@ -211,6 +212,26 @@ app.get('/api/carrito', requireSession, async (req, res) => {
     // browsing the catalog.
     carrito.lineas = carrito.lineas.map((l) => ({ ...l, imagen: obtenerImagen(l.codigo) }));
     res.json(carrito);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// Los datos de la cuenta (CIF, nombre, dirección, contacto...) casi nunca
+// cambian — se cachean por usuario un rato para no re-scrapear /mi-cuenta.html
+// en cada visita a la pantalla de Categorías.
+const CACHE_CUENTA_MS = 30 * 60 * 1000;
+const cuentaCache = new Map(); // usuario -> { datos, cuando }
+
+app.get('/api/mi-cuenta', requireSession, async (req, res) => {
+  const cacheado = cuentaCache.get(req.usuario);
+  if (cacheado && Date.now() - cacheado.cuando < CACHE_CUENTA_MS) {
+    return res.json(cacheado.datos);
+  }
+  try {
+    const datos = await getMiCuenta(req.cofiba);
+    cuentaCache.set(req.usuario, { datos, cuando: Date.now() });
+    res.json(datos);
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

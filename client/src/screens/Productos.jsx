@@ -254,18 +254,13 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
 
       <div>
         {productos.map((p) => (
-          <div className="product-row" key={p.articulo}>
+          <div className={`product-row${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
             <div
               className="product-thumb"
               onClick={() => p.imagen && setZoomProducto(p)}
-              style={{ position: 'relative', cursor: p.imagen ? 'zoom-in' : 'default' }}
+              style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
             >
               {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
-              {p.comprado && (
-                <span className="comprado-badge" title="Ya lo compraste antes">
-                  ✓
-                </span>
-              )}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: 12, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -273,6 +268,7 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
               </p>
               <p className="muted" style={{ margin: '2px 0' }}>
                 Ref. {p.referencia || p.articulo}
+                {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
               </p>
               <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}

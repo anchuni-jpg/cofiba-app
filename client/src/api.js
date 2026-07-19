@@ -88,6 +88,13 @@ export const api = {
   carrito() {
     return request('/carrito');
   },
+  miCuenta() {
+    return request('/mi-cuenta');
+  },
+  // CIF, dirección, contacto... casi nunca cambia entre visitas.
+  miCuentaCached(onCacheHit) {
+    return conCache('mi-cuenta', () => this.miCuenta(), onCacheHit);
+  },
   anadirAlCarrito({ categoria, articulo, cantidad, origen }) {
     return request('/carrito/item', { method: 'POST', body: { categoria, articulo, cantidad, origen } });
   },
