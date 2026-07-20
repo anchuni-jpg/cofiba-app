@@ -723,6 +723,16 @@ export async function getMiCuenta({ http }) {
 // "Pedidos pendientes" (#pills-pedidos): es la que de verdad corresponde a
 // "copias de pedido" — cada fila trae un enlace de descarga a
 // /visor.php?...&tipo=ped&id=... que devuelve el PDF real de ese pedido.
+// "DD/MM/AAAA" tal cual la da cofiba.es — Date.parse no la entiende bien
+// (la confunde con MM/DD), así que se parsea a mano para poder ordenar por
+// fecha de verdad y no por el texto (que dejaría "04/03" antes que "20/03"
+// pero también antes que "04/12", por ejemplo).
+function parsearFechaEs(fecha) {
+  const [d, m, y] = (fecha || '').split('/').map(Number);
+  if (!d || !m || !y) return 0;
+  return new Date(y, m - 1, d).getTime();
+}
+
 export async function getPedidosPendientes({ http }) {
   const res = await http.get(`${BASE}/mi-cuenta.html`);
   const $ = cheerio.load(res.data);
@@ -736,6 +746,9 @@ export async function getPedidosPendientes({ http }) {
     const href = $tds.eq(3).find('a').attr('href') || null;
     if (numero && href) pedidos.push({ numero, fecha, importe, href });
   });
+  // Los más nuevos primero — cofiba.es los da en el orden de su propia
+  // tabla, que no siempre es cronológico.
+  pedidos.sort((a, b) => parsearFechaEs(b.fecha) - parsearFechaEs(a.fecha));
   return pedidos;
 }
 
