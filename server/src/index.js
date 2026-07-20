@@ -128,6 +128,11 @@ async function requireSession(req, res, next) {
     sessions.set(token, { session, usuario: creds.usuario, createdAt: Date.now() });
     req.cofiba = session;
     req.usuario = creds.usuario;
+    // Mismo motivo que en /api/login: esta rama es la re-autenticación
+    // silenciosa tras un reinicio del servidor, así que también puede ser
+    // el primer momento con una sesión válida desde que arrancó — adelanta
+    // el rastreo del índice del catálogo igual que ahí.
+    if (necesitaConstruir()) iniciarConstruccion(session);
     next();
   } catch (e) {
     console.error('[requireSession] fallo inesperado:', e.message);
@@ -154,6 +159,14 @@ app.post('/api/login', async (req, res) => {
     const token = crypto.randomUUID();
     sessions.set(token, { session, usuario, createdAt: Date.now() });
     saveCredentials(token, usuario, password);
+    // El plan gratuito no tiene disco persistente: cada despliegue nuevo
+    // (o reinicio) empieza con el índice del catálogo vacío del todo, y
+    // antes no se rastreaba hasta que alguien buscaba algo — así que recién
+    // desplegado, "Ver más" (Histórico) y las fotos de respaldo del carrito
+    // no tenían de dónde salir hasta la primera búsqueda de alguien.
+    // Arrancarlo aquí, nada más entrar, adelanta ese primer rastreo en vez
+    // de esperar a una acción concreta del cliente.
+    if (necesitaConstruir()) iniciarConstruccion(session);
     res.json({ token });
   } catch (e) {
     console.error('[login] fallo inesperado:', e.message);
