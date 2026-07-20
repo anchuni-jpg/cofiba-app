@@ -8,6 +8,31 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png'],
+      workbox: {
+        runtimeCaching: [
+          {
+            // Fotos de producto: vienen directas de cofiba.es (BlobData/*.dat),
+            // no de nuestro servidor, y no cambian una vez subidas — se
+            // guardan en el propio dispositivo del usuario (Cache Storage del
+            // navegador, vía el service worker de esta PWA) para que, una vez
+            // vistas, se sirvan de ahí sin volver a pedirlas cada vez. No hace
+            // falta "instalar" la app para esto: el service worker se activa
+            // igual con solo abrir la web.
+            urlPattern: /^https:\/\/www\.cofiba\.es\/BlobData\/.*\.dat$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'cofiba-fotos-producto',
+              expiration: {
+                maxEntries: 3000,
+                maxAgeSeconds: 60 * 60 * 24 * 60, // 60 días
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'Cofiba Visor de Pedidos',
         short_name: 'Cofiba',
