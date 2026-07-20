@@ -193,19 +193,7 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
                 </div>
               </div>
             ))}
-            {carrito.lineas.length === 0 && (
-              <>
-                <p className="muted">El carrito está vacío.</p>
-                {carrito.debug?.normalizedSample && (
-                  <details style={{ marginTop: 8 }}>
-                    <summary className="muted">Ver texto crudo recibido (para depurar)</summary>
-                    <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {carrito.debug.normalizedSample}
-                    </pre>
-                  </details>
-                )}
-              </>
-            )}
+            {carrito.lineas.length === 0 && <p className="muted">El carrito está vacío.</p>}
           </div>
 
           <div className="card" style={{ marginBottom: 12 }}>

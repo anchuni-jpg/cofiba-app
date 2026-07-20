@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import CarritoIcon from '../components/CarritoIcon.jsx';
+import { filtrarPorIsla } from '../filtroIsla.js';
 
 // "Und. de venta" llega como texto con formato español ("12,00"); se muestra
 // como tamaño de caja legible ("caja de 12 uds"). Duplica formatoCaja de
@@ -26,7 +28,7 @@ function combinarResultados(anteriores, frescos) {
   return [...actualizados, ...nuevos];
 }
 
-export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarrito, codigosSesion }) {
+export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarrito, codigosSesion, islaFiltro }) {
   // La barra de búsqueda vive en esta misma pantalla (no solo en Categorías)
   // para poder encadenar una búsqueda tras otra sin tener que volver atrás.
   // `terminoActivo` es la que de verdad dispara la consulta; `campo` es solo
@@ -35,6 +37,8 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
   const [campo, setCampo] = useState(termino);
   const [resultados, setResultados] = useState(null);
   const [construyendo, setConstruyendo] = useState(false);
+  const [progreso, setProgreso] = useState(null);
+  const [totalIndice, setTotalIndice] = useState(null);
   // Cuántos de `resultados` se enseñan de momento. En vez de esperar a tener
   // la lista entera (podía tardar si el índice se estaba construyendo, o
   // simplemente ser larga) para pintar algo, se muestran los primeros 20 en
@@ -65,6 +69,8 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
     setResultados(null);
     setError(null);
     setConstruyendo(false);
+    setProgreso(null);
+    setTotalIndice(null);
     setVisibles(TANDA);
 
     function consultar(primera) {
@@ -93,6 +99,8 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
           // al usuario esperando en blanco.
           setResultados((prev) => combinarResultados(prev, data.resultados || []));
           setConstruyendo(!!data.construyendo);
+          setProgreso(data.progreso ?? null);
+          setTotalIndice(data.totalIndice ?? null);
           if (data.construyendo) pollRef.current = setTimeout(() => consultar(false), 3000);
         })
         // Con la caché ya mostrando resultados válidos, un fallo de red de
@@ -135,6 +143,8 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
     }
   }
 
+  const resultadosFiltrados = resultados ? filtrarPorIsla(resultados, islaFiltro) : resultados;
+
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -169,14 +179,29 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
 
       {resultados === null && !error && <p className="muted">Buscando…</p>}
 
+      {/* Antes, mientras el índice se construía y todavía no había NINGÚN
+          resultado, esto no pintaba nada (ni "Buscando…", ni el listado, ni
+          "no se encontraron") — la pantalla se quedaba completamente en
+          blanco, indistinguible de un buscador roto. */}
+      {resultados !== null && resultados.length === 0 && construyendo && (
+        <p className="muted">
+          Preparando el buscador por primera vez, puede tardar unos minutos…
+          {totalIndice ? ` (${progreso || 0} de ${totalIndice} productos revisados)` : ''}
+        </p>
+      )}
+
       {resultados !== null && resultados.length === 0 && !construyendo && (
         <p className="muted">No se encontraron productos para "{terminoActivo}".</p>
       )}
 
-      {resultados && resultados.length > 0 && (
+      {resultados && resultados.length > 0 && resultadosFiltrados.length === 0 && (
+        <p className="muted">Ningún resultado es de la isla seleccionada.</p>
+      )}
+
+      {resultadosFiltrados && resultadosFiltrados.length > 0 && (
         <>
           <div>
-            {resultados.slice(0, visibles).map((p) => (
+            {resultadosFiltrados.slice(0, visibles).map((p) => (
               <div className={`product-row${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
                 <div
                   className="product-thumb"
@@ -204,8 +229,8 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
                   <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                     {p.precioFinal ? `${p.precioFinal}€` : '—'}
                     {enCarritoOSesion(p.articulo) && (
-                      <span title="En el carrito o pedido en esta sesión" style={{ marginLeft: 5 }}>
-                        🛒
+                      <span style={{ marginLeft: 5 }}>
+                        <CarritoIcon />
                       </span>
                     )}
                   </p>
@@ -225,10 +250,10 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
               </div>
             ))}
           </div>
-          {resultados.length > visibles && (
+          {resultadosFiltrados.length > visibles && (
             <div style={{ padding: '12px 0', textAlign: 'center' }}>
               <button onClick={() => setVisibles((v) => v + TANDA)} style={{ width: '100%' }}>
-                Ver más ({resultados.length - visibles} más)
+                Ver más ({resultadosFiltrados.length - visibles} más)
               </button>
             </div>
           )}

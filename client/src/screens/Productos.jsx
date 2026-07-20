@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import CarritoIcon from '../components/CarritoIcon.jsx';
+import { filtrarPorIsla } from '../filtroIsla.js';
 
 // "Und. de venta" llega como texto con formato español ("12,00"); se muestra
 // como tamaño de caja legible ("caja de 12 uds").
@@ -27,7 +29,16 @@ function combinarProductos(anteriores, frescos) {
   return [...actualizados, ...nuevos];
 }
 
-export default function Productos({ categoria, onBack, onCartChanged, cartCount, codigosEnCarrito, codigosSesion }) {
+export default function Productos({
+  categoria,
+  subcategoriaInicial,
+  onBack,
+  onCartChanged,
+  cartCount,
+  codigosEnCarrito,
+  codigosSesion,
+  islaFiltro,
+}) {
   // La navegación (subcategoría activa, página dentro de ella y pila para
   // "Anterior") se guarda junto a la clave del contexto que la creó. Cuando
   // cambia la categoría/búsqueda, la clave deja de coincidir y el estado
@@ -37,8 +48,12 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount,
   // (Siguiente pasa a la próxima subcategoría al agotar la actual) funciona
   // igual desde ese punto en adelante — no hace falta un botón "Todas"
   // aparte, porque siempre empieza por la primera subcategoría de todos modos.
+  // `subcategoriaInicial` (viene de "Ver en catálogo" en Histórico) solo se
+  // usa como valor de arranque de este useState — de ahí en adelante manda
+  // `nav` como siempre, así que un cambio posterior de subcategoría dentro
+  // de esta misma pantalla no se ve pisado por él.
   const ctxKey = categoria?.slug || 'todas';
-  const [nav, setNav] = useState({ key: ctxKey, subcategoria: null, pageUrl: null, stack: [] });
+  const [nav, setNav] = useState({ key: ctxKey, subcategoria: subcategoriaInicial || null, pageUrl: null, stack: [] });
   const effNav = nav.key === ctxKey ? nav : { key: ctxKey, subcategoria: null, pageUrl: null, stack: [] };
 
   const [productos, setProductos] = useState([]);
@@ -212,6 +227,7 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount,
   const rango = paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`;
   const etiquetaPaginas = siguientePagina && totalPaginas ? `${rango} de ${totalPaginas}` : '';
   const hayPaginacion = !!siguientePagina || !!siguienteGrupo || effNav.stack.length > 0;
+  const productosFiltrados = filtrarPorIsla(productos, islaFiltro);
 
   return (
     <div className="content" ref={contentRef} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -272,6 +288,9 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount,
           )}
         </>
       )}
+      {!loading && productos.length > 0 && productosFiltrados.length === 0 && (
+        <p className="muted">Ningún producto de esta pantalla es de la isla seleccionada.</p>
+      )}
 
       {!loading && productos.length > 0 && grupoActual && (
         <p
@@ -288,7 +307,7 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount,
       )}
 
       <div>
-        {productos.map((p) => (
+        {productosFiltrados.map((p) => (
           <div className={`product-row${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
             <div
               className="product-thumb"
@@ -308,8 +327,8 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount,
               <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
                 {enCarritoOSesion(p.articulo) && (
-                  <span title="En el carrito o pedido en esta sesión" style={{ marginLeft: 5 }}>
-                    🛒
+                  <span style={{ marginLeft: 5 }}>
+                    <CarritoIcon />
                   </span>
                 )}
               </p>

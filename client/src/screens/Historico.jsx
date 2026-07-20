@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { getCache } from '../localCache.js';
+import CarritoIcon from '../components/CarritoIcon.jsx';
+import { filtrarPorIsla } from '../filtroIsla.js';
 
 // Duplica formatoCaja de Productos.jsx/Busqueda.jsx — una línea, no vale la
 // pena compartir el módulo por eso.
@@ -10,9 +12,21 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
+// Insensible a acentos/mayúsculas — duplica normalizar() de indiceStore.js
+// del lado del servidor, para filtrar aquí lo que ya se cargó sin ir y
+// volver al servidor por cada tecla.
+function normalizar(s) {
+  return (s || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
 const TANDA = 20;
 
-export default function Historico({ onCartChanged }) {
+export default function Historico({ onCartChanged, codigosEnCarrito, codigosSesion, onIrACategoria, islaFiltro }) {
+  const [filtro, setFiltro] = useState('');
   // Esto ya no es un historial que llevemos nosotros — lee directamente la
   // sección real "Comprados recientemente" de cofiba.es (/consumo.html), así
   // que refleja TODO lo comprado en la cuenta, no solo lo hecho desde la app.
@@ -147,12 +161,36 @@ export default function Historico({ onCartChanged }) {
     }
   }
 
-  const visiblesLista = productos.slice(0, visibles);
-  const hayMasParaRevelar = visibles < productos.length;
+  // Icono de carrito: distinto de estar en esta pantalla (que ya significa
+  // "comprado alguna vez") — este marca lo que está en el carrito AHORA o se
+  // pidió en esta sesión, igual que en Productos/Búsqueda.
+  function enCarritoOSesion(articulo) {
+    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo));
+  }
+
+  const productosPorTexto = filtro.trim()
+    ? productos.filter((p) => {
+        const t = normalizar(filtro);
+        return normalizar(p.nombre).includes(t) || normalizar(p.referencia || p.articulo).includes(t);
+      })
+    : productos;
+  const productosFiltrados = filtrarPorIsla(productosPorTexto, islaFiltro);
+  const visiblesLista = productosFiltrados.slice(0, visibles);
+  const hayMasParaRevelar = visibles < productosFiltrados.length;
 
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
       <p style={{ fontWeight: 500, marginBottom: 10 }}>Comprados recientemente</p>
+
+      <input
+        placeholder="Buscar en tu histórico..."
+        value={filtro}
+        onChange={(e) => {
+          setFiltro(e.target.value);
+          setVisibles(TANDA);
+        }}
+        style={{ marginBottom: 10 }}
+      />
 
       {error && <div className="error-banner">{error}</div>}
       {loading && (
@@ -161,6 +199,13 @@ export default function Historico({ onCartChanged }) {
 
       {!loading && productos.length === 0 && !error && (
         <p className="muted">Aún no hay compras registradas en tu cuenta de cofiba.es.</p>
+      )}
+
+      {!loading && productos.length > 0 && productosPorTexto.length === 0 && filtro.trim() && (
+        <p className="muted">Ningún producto de tu histórico coincide con "{filtro}".</p>
+      )}
+      {!loading && productos.length > 0 && productosPorTexto.length > 0 && productosFiltrados.length === 0 && (
+        <p className="muted">Ningún producto {filtro.trim() ? 'de esta búsqueda' : 'de tu histórico'} es de la isla seleccionada.</p>
       )}
 
       {!loading && productos.length > 0 && (
@@ -195,7 +240,20 @@ export default function Historico({ onCartChanged }) {
               </p>
               <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
+                {enCarritoOSesion(p.articulo) && (
+                  <span style={{ marginLeft: 5 }}>
+                    <CarritoIcon />
+                  </span>
+                )}
               </p>
+              {p.categoria && (
+                <button
+                  onClick={() => onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
+                  style={{ fontSize: 10, padding: '3px 8px', marginTop: 3 }}
+                >
+                  Ver más
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
               <div className="qty-stepper">
@@ -216,7 +274,7 @@ export default function Historico({ onCartChanged }) {
       {hayMasParaRevelar && (
         <div style={{ padding: '12px 0', textAlign: 'center' }}>
           <button onClick={() => setVisibles((v) => v + TANDA)} style={{ width: '100%' }}>
-            Ver más ({productos.length - visibles} más)
+            Ver más ({productosFiltrados.length - visibles} más)
           </button>
         </div>
       )}

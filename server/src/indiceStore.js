@@ -173,6 +173,24 @@ export function buscarPorArticulo(articulo) {
   return fuente.find((p) => p.articulo === articulo) || null;
 }
 
+// Las subcategorías que se muestran como chips vienen del menú lateral de
+// cofiba.es (categoriaClient.js/extraerSubcategorias) — esa lista trae TODAS
+// las que existen ahí, aunque alguna esté sin stock ahora mismo (un chip que
+// lleva a una pantalla vacía). Este índice ya sabe, por haber recorrido el
+// catálogo entero, qué subcategorías tienen de verdad al menos un producto —
+// se usa para quitar esos chips muertos. Devuelve un Set vacío si el índice
+// no tiene todavía ningún dato de esta categoría (recién arrancando el
+// rastreo): en ese caso el que llama no debe filtrar nada, para no ocultar
+// subcategorías que sí tienen productos solo porque aún no se han recorrido.
+export function subcategoriasConProductos(categoriaSlug) {
+  const fuente = indiceParcial.length > indice.length ? indiceParcial : indice;
+  const set = new Set();
+  for (const p of fuente) {
+    if (p.categoria === categoriaSlug && p.subcategoria) set.add(p.subcategoria);
+  }
+  return set;
+}
+
 export function buscarEnIndice(termino) {
   const t = normalizar(termino);
   if (!t) return [];

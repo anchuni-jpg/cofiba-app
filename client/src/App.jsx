@@ -47,7 +47,18 @@ export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!getToken());
   const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico
   const [categoria, setCategoria] = useState(null);
+  // Solo se rellena al venir del botón "Ver más" de Histórico — le dice a
+  // Productos en qué subcategoría entrar directamente en vez de la primera
+  // alfabética de siempre. Se limpia en cuanto se abre una categoría por el
+  // camino normal (tocando un tile en Categorías), para que no se cuele en
+  // una navegación que no tiene nada que ver.
+  const [subcategoriaInicial, setSubcategoriaInicial] = useState(null);
   const [busqueda, setBusqueda] = useState(null);
+  // Filtro global de isla (Mallorca/Ibiza/Formentera) — se activa desde
+  // Categorías pero afecta a Productos/Búsqueda/Histórico por igual, así que
+  // vive aquí arriba. Persistido en localStorage (no sessionStorage): es una
+  // preferencia del dispositivo, tiene sentido que sobreviva a cerrar la app.
+  const [islaFiltro, setIslaFiltro] = useState(() => localStorage.getItem('cofiba:isla-filtro') || null);
   const [cartCount, setCartCount] = useState(0);
   const [codigosEnCarrito, setCodigosEnCarrito] = useState(new Set());
   const [codigosSesion, setCodigosSesion] = useState(cargarCompradosSesion);
@@ -81,6 +92,18 @@ export default function App() {
       codigos.forEach((c) => combinado.add(c));
       sessionStorage.setItem(CLAVE_SESION, JSON.stringify([...combinado]));
       return combinado;
+    });
+  }
+
+  // Pulsar la isla ya activa la desactiva (vuelve a enseñar todo) — sin esto
+  // no habría forma de quitar el filtro una vez puesto salvo borrando datos
+  // del navegador.
+  function cambiarIsla(valor) {
+    setIslaFiltro((actual) => {
+      const nuevo = actual === valor ? null : valor;
+      if (nuevo) localStorage.setItem('cofiba:isla-filtro', nuevo);
+      else localStorage.removeItem('cofiba:isla-filtro');
+      return nuevo;
     });
   }
 
@@ -177,22 +200,27 @@ export default function App() {
         <Categorias
           onOpenCategoria={(c) => {
             setCategoria(c);
+            setSubcategoriaInicial(null);
             setTab('productos');
           }}
           onSearch={(q) => {
             setBusqueda(q);
             setTab('busqueda');
           }}
+          islaFiltro={islaFiltro}
+          onCambiarIsla={cambiarIsla}
         />
       )}
       {tab === 'productos' && (
         <Productos
           categoria={categoria}
+          subcategoriaInicial={subcategoriaInicial}
           onBack={() => setTab('categorias')}
           onCartChanged={refreshCartCount}
           cartCount={cartCount}
           codigosEnCarrito={codigosEnCarrito}
           codigosSesion={codigosSesion}
+          islaFiltro={islaFiltro}
         />
       )}
       {tab === 'busqueda' && (
@@ -202,10 +230,23 @@ export default function App() {
           onCartChanged={refreshCartCount}
           codigosEnCarrito={codigosEnCarrito}
           codigosSesion={codigosSesion}
+          islaFiltro={islaFiltro}
         />
       )}
       {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
-      {tab === 'historico' && <Historico onCartChanged={refreshCartCount} />}
+      {tab === 'historico' && (
+        <Historico
+          onCartChanged={refreshCartCount}
+          codigosEnCarrito={codigosEnCarrito}
+          codigosSesion={codigosSesion}
+          islaFiltro={islaFiltro}
+          onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
+            setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
+            setSubcategoriaInicial(subcategoriaSlug || null);
+            setTab('productos');
+          }}
+        />
+      )}
 
       <div className="bottomnav">
         <button className={tab === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>

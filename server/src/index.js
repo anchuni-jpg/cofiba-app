@@ -30,6 +30,7 @@ import {
   iniciarConstruccion,
   buscarEnIndice,
   buscarPorArticulo,
+  subcategoriasConProductos,
   marcarActividad,
 } from './indiceStore.js';
 import { asegurarComprados, comprasConocidas, registrarCompras } from './compradosStore.js';
@@ -200,7 +201,31 @@ app.get('/api/productos', requireSession, async (req, res) => {
       pageUrl,
     });
     registrarImagenes(resultado.productos);
+    // Antes esto no se llamaba aquí (solo en Buscar/Histórico) para no
+    // competir por la única CPU del plan gratuito mientras alguien solo
+    // navegaba el catálogo — pero eso dejaba las marcas de "Comprado" sin
+    // aparecer nunca si el cliente entraba directo a Productos sin pasar
+    // antes por Buscar o Histórico. asegurarComprados no hace nada si ya hay
+    // un rastreo en curso o uno reciente, así que llamarlo aquí también es
+    // barato y asegura que las marcas siempre acaban apareciendo.
+    asegurarComprados(req.usuario, req.cofiba);
     resultado.productos = marcarComprados(req.usuario, resultado.productos);
+    // Quita de los chips las subcategorías que el índice del catálogo ya
+    // sabe que no tienen ningún producto — antes se enseñaban todas (vienen
+    // tal cual del menú lateral de cofiba.es) y algunas llevaban a una
+    // pantalla vacía con solo un botón "Siguiente". Si el índice todavía no
+    // tiene datos de esta categoría, subcategoriasConProductos devuelve un
+    // Set vacío y no se filtra nada (mejor enseñar de más que ocultar de
+    // más). La subcategoría que se está viendo ahora mismo nunca se quita,
+    // aunque el índice no la conozca todavía.
+    if (resultado.subcategorias?.length) {
+      const conProductos = subcategoriasConProductos(categoria);
+      if (conProductos.size) {
+        resultado.subcategorias = resultado.subcategorias.filter(
+          (s) => conProductos.has(s.slug) || s.slug === resultado.grupo?.slug
+        );
+      }
+    }
     res.json(resultado);
   } catch (e) {
     res.status(e.code === 'PAGEURL_INVALIDA' ? 400 : 502).json({ error: e.message });
@@ -390,6 +415,22 @@ app.get('/api/historico', requireSession, async (req, res) => {
     // que lo arrancan; el otro es buscar).
     registrarCompras(req.usuario, resultado.productos);
     asegurarComprados(req.usuario, req.cofiba);
+    // /consumo.html (de donde sale el histórico) no trae categoría ni
+    // subcategoría de cada producto — solo nombre/precio/foto. Para el botón
+    // "Ver en catálogo" hace falta saber a qué subcategoría pertenece cada
+    // uno; el índice del catálogo completo ya lo sabe (lo recorrió por sus
+    // páginas normales de categoría), así que se rellena desde ahí cuando ya
+    // se conoce. Si el índice aún no ha llegado a ese artículo, queda `null`
+    // y el botón simplemente no se muestra para esa fila.
+    resultado.productos = resultado.productos.map((p) => {
+      const indexado = buscarPorArticulo(p.articulo);
+      return {
+        ...p,
+        categoria: indexado?.categoria || null,
+        categoriaNombre: indexado?.categoriaNombre || null,
+        subcategoria: indexado?.subcategoria || null,
+      };
+    });
     // No merece la pena cachear una respuesta vacía: es casi seguro la
     // carrera descrita arriba, no que la cuenta no tenga compras — así la
     // siguiente petición vuelve a intentarlo de verdad en vez de repetir el

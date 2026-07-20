@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { ISLAS } from '../filtroIsla.js';
 
 // Datos propios de Cofiba (no de la cuenta del cliente) — verificados a mano
 // en /contacto.html y el pie de página de cofiba.es (Port de Cariño 16 A,
@@ -14,9 +15,28 @@ const CONTACTO_COFIBA = {
   emails: ['pedidos@cofiba.es', 'info@cofiba.es'],
 };
 
-const APP_VERSION = '0.7';
+const APP_VERSION = '0.8';
 
-export default function Categorias({ onOpenCategoria, onSearch }) {
+// Cofiba no da un icono por categoría — esto es solo decorativo, para que la
+// rejilla se reconozca de un vistazo. Por palabra clave en el slug (no
+// coincidencia exacta) para que aguante si cofiba.es renombra alguna
+// categoría ligeramente; 📦 de reserva para cualquiera que no encaje.
+function iconoCategoria(slug) {
+  const s = slug || '';
+  if (s.includes('playa')) return '🏖️';
+  if (s.includes('fumador')) return '🚬';
+  if (s.includes('juguete')) return '🧸';
+  if (s.includes('juego')) return '🎲';
+  if (s.includes('textil')) return '👕';
+  if (s.includes('postal')) return '📮';
+  if (s.includes('pila')) return '🔋';
+  if (s.includes('arte')) return '🎨';
+  if (s.includes('souvenir')) return '🎁';
+  if (s.includes('multiprecio')) return '🏷️';
+  return '📦';
+}
+
+export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCambiarIsla }) {
   const [categorias, setCategorias] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -69,19 +89,64 @@ export default function Categorias({ onOpenCategoria, onSearch }) {
       </p>
       <div className="cat-grid">
         {categorias.map((c) => (
-          <button key={c.slug} className="cat-tile" onClick={() => onOpenCategoria(c)}>
+          <button
+            key={c.slug}
+            className="cat-tile"
+            onClick={() => onOpenCategoria(c)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <span style={{ fontSize: 26, lineHeight: 1, flexShrink: 0 }}>{iconoCategoria(c.slug)}</span>
             {c.nombre}
           </button>
         ))}
+      </div>
+
+      {/* Filtro global de isla: al activar una, Productos/Búsqueda/Histórico
+          esconden lo que su nombre diga claramente de otra isla distinta —
+          ver filtroIsla.js. Pulsar la ya activa la quita (vuelve a enseñar
+          todo). */}
+      <div
+        style={{
+          display: 'flex',
+          marginTop: 16,
+          borderRadius: 'var(--radius)',
+          overflow: 'hidden',
+          border: '1px solid var(--border)',
+        }}
+      >
+        {ISLAS.map((isla, idx) => {
+          const activa = islaFiltro === isla.valor;
+          return (
+            <button
+              key={isla.valor}
+              onClick={() => onCambiarIsla(isla.valor)}
+              style={{
+                flex: 1,
+                borderRadius: 0,
+                border: 'none',
+                borderLeft: idx > 0 ? '1px solid var(--border)' : 'none',
+                background: activa ? 'var(--accent)' : 'var(--surface-1)',
+                color: activa ? '#fff' : 'var(--text-primary)',
+                padding: '14px 4px',
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              {isla.nombre}
+            </button>
+          );
+        })}
       </div>
 
       <a
         href="https://www.cofiba.es"
         target="_blank"
         rel="noopener noreferrer"
-        style={{ display: 'block', marginTop: 16 }}
+        style={{ display: 'block', marginTop: 8 }}
       >
-        <button style={{ width: '100%' }}>Ver página original de cofiba.es ↗</button>
+        <button className="primary" style={{ width: '100%' }}>
+          Página oficial ↗
+        </button>
       </a>
 
       <div className="card" style={{ marginTop: 12, marginBottom: 12 }}>

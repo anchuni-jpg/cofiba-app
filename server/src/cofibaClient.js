@@ -772,8 +772,24 @@ export async function getCopiaDocumento({ http }, { href }) {
 // brand-new articulo just fine, with the correct price, as a single clean
 // row. So adding and updating quantity are now exactly the same operation;
 // no more need to find the product's own catalog page/button/form at all.
+// La app cachea listados de productos (localStorage/IndexedDB en el
+// cliente, caché en memoria del servidor) para ir rápido — pero eso significa
+// que se puede intentar añadir un artículo que YA NO existe de verdad en
+// cofiba.es (dado de baja, referencia cambiada...). cestacarrito.php responde
+// 200 igual en ese caso (confirmado en vivo: cuerpo vacío, sin error), así
+// que un simple status<400 no basta para saber si de verdad se añadió — hay
+// que comprobar el carrito real después y, si el artículo no aparece,
+// avisar en vez de dar un falso éxito.
 export async function anadirAlCarrito({ http }, { articulo, cantidad }) {
-  return actualizarCantidadCarrito({ http }, { articulo, cantidad });
+  await actualizarCantidadCarrito({ http }, { articulo, cantidad });
+  const carrito = await getCarrito({ http });
+  const linea = carrito.lineas.find((l) => l.codigo === articulo);
+  if (!linea || !(Number(linea.cantidad) > 0)) {
+    const err = new Error('Este producto ya no está disponible en cofiba.es — no se ha añadido al carrito.');
+    err.code = 'ARTICULO_NO_DISPONIBLE';
+    throw err;
+  }
+  return { ok: true };
 }
 
 // Same "set the real quantity" endpoint used internally by anadirAlCarrito,
