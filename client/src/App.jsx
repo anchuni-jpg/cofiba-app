@@ -25,26 +25,63 @@ function useInstallPrompt() {
   return { deferred, isStandalone, isIos };
 }
 
+// Qué está "comprado" (Histórico) y qué está "en el carrito ahora mismo o
+// pedido en esta sesión" son dos cosas distintas: lo primero viene de las
+// compras reales pasadas en la cuenta de cofiba.es (compradosStore.js en el
+// servidor); lo segundo es un icono de carrito que solo depende de la
+// actividad de AHORA — así el usuario ve de un vistazo qué ya tiene metido
+// sin confundirlo con lo que compró en el pasado. sessionStorage (no
+// localStorage) porque "esta sesión" debe olvidarse al cerrar la pestaña,
+// pero sobrevivir a una recarga de la página mientras tanto.
+const CLAVE_SESION = 'cofiba:comprados-sesion';
+
+function cargarCompradosSesion() {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(CLAVE_SESION) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!getToken());
   const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico
   const [categoria, setCategoria] = useState(null);
   const [busqueda, setBusqueda] = useState(null);
   const [cartCount, setCartCount] = useState(0);
+  const [codigosEnCarrito, setCodigosEnCarrito] = useState(new Set());
+  const [codigosSesion, setCodigosSesion] = useState(cargarCompradosSesion);
   const [sessionExpired, setSessionExpired] = useState(false);
   const { deferred, isStandalone, isIos } = useInstallPrompt();
   const [dismissedInstall, setDismissedInstall] = useState(false);
   const [cuenta, setCuenta] = useState(null);
 
-  function refreshCartCount(directCount) {
+  function refreshCartCount(directCount, directCodigos) {
     if (Number.isFinite(directCount)) {
       setCartCount(directCount);
+      if (directCodigos) setCodigosEnCarrito(new Set(directCodigos));
       return;
     }
     api
       .carrito()
-      .then((c) => setCartCount(c.numProductos))
+      .then((c) => {
+        setCartCount(c.numProductos);
+        setCodigosEnCarrito(new Set(c.lineas.map((l) => l.codigo)));
+      })
       .catch(() => {});
+  }
+
+  // Se llama justo después de finalizar un pedido con éxito, con los
+  // artículos que llevaba el carrito en ese momento — el carrito real se
+  // vacía al finalizar, así que sin esto el icono de carrito desaparecería
+  // de golpe aunque el usuario lo acabara de comprar en esta misma sesión.
+  function marcarCompradosSesion(codigos) {
+    setCodigosSesion((anteriores) => {
+      const combinado = new Set(anteriores);
+      codigos.forEach((c) => combinado.add(c));
+      sessionStorage.setItem(CLAVE_SESION, JSON.stringify([...combinado]));
+      return combinado;
+    });
   }
 
   useEffect(() => {
@@ -154,12 +191,20 @@ export default function App() {
           onBack={() => setTab('categorias')}
           onCartChanged={refreshCartCount}
           cartCount={cartCount}
+          codigosEnCarrito={codigosEnCarrito}
+          codigosSesion={codigosSesion}
         />
       )}
       {tab === 'busqueda' && (
-        <Busqueda termino={busqueda} onBack={() => setTab('categorias')} onCartChanged={refreshCartCount} />
+        <Busqueda
+          termino={busqueda}
+          onBack={() => setTab('categorias')}
+          onCartChanged={refreshCartCount}
+          codigosEnCarrito={codigosEnCarrito}
+          codigosSesion={codigosSesion}
+        />
       )}
-      {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} />}
+      {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
       {tab === 'historico' && <Historico onCartChanged={refreshCartCount} />}
 
       <div className="bottomnav">

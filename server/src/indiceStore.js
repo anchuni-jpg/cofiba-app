@@ -160,6 +160,19 @@ function normalizar(s) {
     .toLowerCase();
 }
 
+// El carrito real de cofiba.es no trae fotos (mi-compra.html no las tiene en
+// absoluto — solo el logo del header/footer), así que las líneas del
+// carrito se rellenan con la última imagen vista para ese artículo
+// navegando el catálogo (ver imagenStore.js). Pero un artículo añadido
+// directamente en la web real (no desde nuestra app) puede no haberse visto
+// nunca así — para esos casos, este índice del catálogo entero es la
+// segunda fuente: aunque no se haya navegado recientemente, si el rastreo ya
+// pasó por ese artículo alguna vez, aquí sigue teniendo su foto guardada.
+export function buscarPorArticulo(articulo) {
+  const fuente = indiceParcial.length > indice.length ? indiceParcial : indice;
+  return fuente.find((p) => p.articulo === articulo) || null;
+}
+
 export function buscarEnIndice(termino) {
   const t = normalizar(termino);
   if (!t) return [];

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
-export default function Carrito({ onCartChanged }) {
+export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
   const [carrito, setCarrito] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -9,6 +9,42 @@ export default function Carrito({ onCartChanged }) {
   const [observaciones, setObservaciones] = useState('');
   const [pedidoOk, setPedidoOk] = useState(null);
   const [zoomSrc, setZoomSrc] = useState(null);
+  const [pedidos, setPedidos] = useState([]);
+  const [pedidosError, setPedidosError] = useState(null);
+  const [descargando, setDescargando] = useState(null);
+
+  // Copias de pedido: viven en mi-cuenta.html (pestaña "Pedidos pendientes"
+  // de cofiba.es), no en el carrito — se cargan aparte para no bloquear ni
+  // depender de la carga del carrito en sí.
+  useEffect(() => {
+    api
+      .pedidosPendientes()
+      .then(setPedidos)
+      .catch((e) => setPedidosError(e.message));
+  }, []);
+
+  async function verCopia(pedido) {
+    // La pestaña se abre YA, antes de esperar el PDF: si se abre después del
+    // await, el navegador ya no lo asocia con el clic del usuario y algunos
+    // (Safari sobre todo) la bloquean como pop-up. Abriéndola en blanco aquí
+    // mismo y rellenándola luego con el PDF de verdad evita eso.
+    const ventana = window.open('', '_blank');
+    setDescargando(pedido.href);
+    try {
+      const blob = await api.copiaPedido(pedido.href);
+      const url = URL.createObjectURL(blob);
+      if (ventana && !ventana.closed) ventana.location = url;
+      else window.open(url, '_blank');
+      // Da tiempo a que la pestaña termine de cargar el PDF antes de liberar
+      // el object URL — revocarlo antes de tiempo la dejaría en blanco.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      ventana?.close();
+      setPedidosError(e.message);
+    } finally {
+      setDescargando(null);
+    }
+  }
 
   function cargar() {
     setLoading(true);
@@ -18,8 +54,9 @@ export default function Carrito({ onCartChanged }) {
         setCarrito(data);
         // El badge de la botonera de abajo vive en App.jsx: sin esto se
         // quedaba con el número de antes de borrar/vaciar aunque aquí
-        // dentro sí se actualizara.
-        onCartChanged?.(data.numProductos);
+        // dentro sí se actualizara. Los códigos también, para el icono de
+        // "en el carrito" en Productos/Búsqueda.
+        onCartChanged?.(data.numProductos, data.lineas.map((l) => l.codigo));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -76,9 +113,15 @@ export default function Carrito({ onCartChanged }) {
     }
     setError(null);
     setPedidoOk(null);
+    // El carrito se vacía en cofiba.es al finalizar, así que hay que guardar
+    // qué artículos llevaba ANTES de que eso pase — si no, el icono de "en
+    // el carrito o comprado en esta sesión" desaparecería de golpe justo
+    // después de comprar, cuando es precisamente cuando más sentido tiene.
+    const codigos = carrito?.lineas.map((l) => l.codigo) || [];
     try {
       await api.finalizarPedido(observaciones);
       setPedidoOk('Pedido generado correctamente.');
+      onPedidoFinalizado?.(codigos);
       cargar();
     } catch (e) {
       setError(e.message);
@@ -173,7 +216,7 @@ export default function Carrito({ onCartChanged }) {
                   <td>{carrito.totales.importe ? `${carrito.totales.importe}€` : '—'}</td>
                 </tr>
                 <tr>
-                  <td className="muted">{carrito.totales.iva?.etiqueta || 'IVA'}</td>
+                  <td className="muted">IVA{carrito.totales.iva?.rate ? ` (${carrito.totales.iva.rate}%)` : ''}</td>
                   <td>{carrito.totales.iva?.valor ? `${carrito.totales.iva.valor}€` : '—'}</td>
                 </tr>
                 <tr>
@@ -215,6 +258,41 @@ export default function Carrito({ onCartChanged }) {
           </p>
         </>
       )}
+
+      {/* Copias de pedido: documentos reales de tu cuenta de cofiba.es (mi-
+          cuenta.html, pestaña "Pedidos pendientes"), no algo que generemos
+          nosotros — por eso van aparte, debajo de todo lo del carrito. */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <p style={{ fontWeight: 500, marginBottom: 8 }}>Copias de pedido</p>
+        {pedidosError && <div className="error-banner">{pedidosError}</div>}
+        {!pedidosError && pedidos.length === 0 && <p className="muted">No hay pedidos pendientes en tu cuenta.</p>}
+        {pedidos.map((p) => (
+          <div
+            key={p.href}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              padding: '8px 0',
+              borderTop: '1px solid var(--border)',
+              fontSize: 12,
+            }}
+          >
+            <div>
+              <p style={{ margin: 0 }}>
+                Pedido {p.numero} · {p.fecha}
+              </p>
+              <p className="muted" style={{ margin: '2px 0 0' }}>
+                {p.importe}€
+              </p>
+            </div>
+            <button disabled={descargando === p.href} onClick={() => verCopia(p)}>
+              {descargando === p.href ? 'Abriendo…' : 'Ver copia'}
+            </button>
+          </div>
+        ))}
+      </div>
 
       {zoomSrc && (
         <div

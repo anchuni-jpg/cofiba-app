@@ -44,28 +44,55 @@ export function createSession() {
     maxRedirects: 0,
   });
 
+  // cofiba.es serializa en su propio servidor todas las peticiones de una
+  // misma cuenta — confirmado en vivo que si dos peticiones de esta misma
+  // sesión salen a la vez de verdad (p. ej. el rastreo del catálogo de fondo
+  // pidiendo una página de categoría justo cuando el usuario le da a "+" para
+  // añadir algo al carrito), una de las dos puede responder 200 con el
+  // cuerpo vacío SIN llegar a tener efecto real (el "añadir" se perdía en
+  // silencio: la respuesta parecía un éxito pero el artículo nunca aparecía
+  // en el carrito de verdad). Como su servidor ya asume que esto no pasa,
+  // en vez de fiarnos de que lo maneje bien, se serializa aquí también, del
+  // lado del cliente: cada petición de esta sesión espera a que termine la
+  // anterior antes de salir, así nunca hay dos peticiones de la misma cuenta
+  // realmente en vuelo a la vez.
+  let colaFin = Promise.resolve();
+
   http.interceptors.request.use(async (config) => {
+    const miTurno = colaFin;
+    let liberar;
+    colaFin = new Promise((r) => (liberar = r));
+    config.__liberarTurno = liberar;
+    await miTurno;
+
     const url = new URL(config.url, BASE).toString();
     const cookie = await jar.getCookieString(url);
     if (cookie) config.headers.Cookie = cookie;
     return config;
   });
 
-  http.interceptors.response.use(async (response) => {
-    const url = new URL(response.config.url, BASE).toString();
-    const setCookie = response.headers['set-cookie'];
-    if (setCookie) {
-      await Promise.all(setCookie.map((c) => jar.setCookie(c, url).catch(() => {})));
+  http.interceptors.response.use(
+    async (response) => {
+      response.config.__liberarTurno?.();
+      const url = new URL(response.config.url, BASE).toString();
+      const setCookie = response.headers['set-cookie'];
+      if (setCookie) {
+        await Promise.all(setCookie.map((c) => jar.setCookie(c, url).catch(() => {})));
+      }
+      // Follow redirects ourselves (maxRedirects: 0 above) so cookies set on the
+      // redirect response are captured before the next hop is fetched.
+      if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.location) {
+        const nextUrl = new URL(response.headers.location, url).toString();
+        const method = response.status === 303 ? 'get' : response.config.method;
+        return http.request({ ...response.config, url: nextUrl, method, data: method === 'get' ? undefined : response.config.data });
+      }
+      return response;
+    },
+    (error) => {
+      error.config?.__liberarTurno?.();
+      return Promise.reject(error);
     }
-    // Follow redirects ourselves (maxRedirects: 0 above) so cookies set on the
-    // redirect response are captured before the next hop is fetched.
-    if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.location) {
-      const nextUrl = new URL(response.headers.location, url).toString();
-      const method = response.status === 303 ? 'get' : response.config.method;
-      return http.request({ ...response.config, url: nextUrl, method, data: method === 'get' ? undefined : response.config.data });
-    }
-    return response;
-  });
+  );
 
   return { jar, http };
 }
@@ -576,11 +603,18 @@ export async function getCarrito({ http }) {
   // "Dto. pronto pago"/"Envío" no correspondían a nada real de esta página
   // (confirmado mirando el HTML crudo con un carrito con productos reales:
   // esas etiquetas no existen aquí) — lo que sí hay es el IVA, con el
-  // recargo de equivalencia delante cuando aplica ("REC 5,2% IVA 21%").
-  const ivaMatch = normalized.match(/((?:REC\s*[\d.,]+%\s*)?IVA\s*[\d.,]+%)\s*([\d.,]+)\s*€/i);
+  // recargo de equivalencia delante cuando aplica ("REC 5,2% IVA 21%"), pero
+  // OJO: cofiba.es solo da UN importe combinado para los dos conceptos, no
+  // un desglose real. Probado en vivo con varios importes: ese único número
+  // coincide siempre exactamente con base×IVA% (nunca con base×(IVA%+REC%)),
+  // así que el recargo no se está cobrando aparte de verdad para esta
+  // cuenta, aunque la etiqueta lo mencione — se muestra tal cual como IVA del
+  // 21%, sin inventar una línea de recargo que en la práctica no se cobra.
+  const ivaRecMatch = normalized.match(/(?:REC\s*[\d.,]+%\s*)?IVA\s*([\d.,]+)%\s*([\d.,]+)\s*€/i);
+  const iva = ivaRecMatch ? { rate: parseEsNumber(ivaRecMatch[1]), valor: ivaRecMatch[2] } : null;
   const totales = {
     importe: normalized.match(/\bIMPORTE\s*([\d.,]+)\s*€/)?.[1] || null,
-    iva: ivaMatch ? { etiqueta: ivaMatch[1].replace(/\s+/g, ' ').trim(), valor: ivaMatch[2] } : null,
+    iva,
     total: normalized.match(/\bTOTAL\s*([\d.,]+)\s*€/)?.[1] || null,
   };
 
@@ -680,6 +714,52 @@ export async function getMiCuenta({ http }) {
     datosFiscales: extraerPanel($, 'Datos fiscales'),
     contacto: extraerPanel($, 'Información de contacto'),
   };
+}
+
+// mi-cuenta.html tiene, debajo de los datos fiscales, una fila de pestañas
+// (Presupuestos / Pedidos pendientes / Albaranes / Facturas / Efectos) — las
+// cinco vienen ya en el HTML estático (Bootstrap solo las muestra/oculta con
+// CSS, cheerio las ve todas), cada una con su propia tabla. Solo se lee
+// "Pedidos pendientes" (#pills-pedidos): es la que de verdad corresponde a
+// "copias de pedido" — cada fila trae un enlace de descarga a
+// /visor.php?...&tipo=ped&id=... que devuelve el PDF real de ese pedido.
+export async function getPedidosPendientes({ http }) {
+  const res = await http.get(`${BASE}/mi-cuenta.html`);
+  const $ = cheerio.load(res.data);
+  const pedidos = [];
+  $('#pills-pedidos table tbody tr').each((_, tr) => {
+    const $tds = $(tr).find('td');
+    if ($tds.length < 4) return;
+    const numero = $tds.eq(0).text().trim();
+    const fecha = $tds.eq(1).text().trim();
+    const importe = $tds.eq(2).text().replace(/[^\d.,]/g, '').trim();
+    const href = $tds.eq(3).find('a').attr('href') || null;
+    if (numero && href) pedidos.push({ numero, fecha, importe, href });
+  });
+  return pedidos;
+}
+
+// El enlace de descarga de cada pedido (y de albaranes/facturas, con la
+// misma pinta) apunta a visor.php con parámetros de la sesión de cofiba.es —
+// el navegador del cliente no tiene esa sesión (solo la tiene este backend),
+// así que hay que traerse el PDF aquí y reenviarlo, no enlazar directo.
+export async function getCopiaDocumento({ http }, { href }) {
+  const url = new URL(href, BASE);
+  // Solo se permite reenviar visor.php: es un proxy autenticado hacia
+  // cofiba.es, así que limitar la ruta evita que se use para pedir
+  // cualquier otra cosa de su web con nuestra sesión.
+  if (url.origin !== BASE || url.pathname !== '/visor.php') {
+    const err = new Error('Enlace de documento no válido.');
+    err.code = 'INVALID_DOC_URL';
+    throw err;
+  }
+  const res = await http.get(url.toString(), { responseType: 'arraybuffer' });
+  if (res.status >= 400) {
+    const err = new Error(`La web respondió con error ${res.status} al pedir el documento.`);
+    err.code = 'DOC_FAILED';
+    throw err;
+  }
+  return { contentType: res.headers['content-type'] || 'application/pdf', data: res.data };
 }
 
 // Used to submit the catalog's whole "Añadir al carrito" form first, then a

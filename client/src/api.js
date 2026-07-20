@@ -121,6 +121,23 @@ export const api = {
     const clave = `historico:${pageUrl || ''}`;
     return conCache(clave, () => this.historico({ pageUrl }), onCacheHit);
   },
+  pedidosPendientes() {
+    return request('/pedidos-pendientes');
+  },
+  // El PDF no puede enlazarse directo (necesita nuestra sesión, no la del
+  // navegador) — se trae como blob autenticado y quien llama decide qué
+  // hacer con él (abrirlo, descargarlo).
+  async copiaPedido(href) {
+    const token = getToken();
+    const res = await fetch(`/api/pedido-copia?href=${encodeURIComponent(href)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Error ${res.status}`);
+    }
+    return res.blob();
+  },
   buscar(q) {
     return request(`/buscar?q=${encodeURIComponent(q)}`);
   },

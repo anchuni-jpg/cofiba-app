@@ -14,6 +14,8 @@ const CONTACTO_COFIBA = {
   emails: ['pedidos@cofiba.es', 'info@cofiba.es'],
 };
 
+const APP_VERSION = '0.7';
+
 export default function Categorias({ onOpenCategoria, onSearch }) {
   const [categorias, setCategorias] = useState([]);
   const [error, setError] = useState(null);
@@ -37,17 +39,27 @@ export default function Categorias({ onOpenCategoria, onSearch }) {
 
   return (
     <div className="content">
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+      {/* <form onSubmit> en vez de solo onKeyDown==='Enter': en el teclado
+          virtual de algunos móviles (sobre todo Android) el botón "Ir"/
+          "Buscar" no siempre dispara un keydown con key==='Enter' que
+          React pueda leer, así que se quedaba sin efecto — el submit del
+          formulario sí es fiable en cualquier dispositivo. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSearch(q);
+        }}
+        style={{ display: 'flex', gap: 8, marginBottom: 10 }}
+      >
         <input
           placeholder="Producto, referencia, código..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && onSearch(q)}
         />
-        <button onClick={() => onSearch(q)} aria-label="Buscar">
+        <button type="submit" aria-label="Buscar">
           🔍
         </button>
-      </div>
+      </form>
 
       {error && <div className="error-banner">{error}</div>}
       {loading && <p className="muted">Cargando categorías…</p>}
@@ -81,6 +93,10 @@ export default function Categorias({ onOpenCategoria, onSearch }) {
         </p>
         <p className="muted" style={{ margin: '2px 0 0' }}>{CONTACTO_COFIBA.emails.join(' · ')}</p>
       </div>
+
+      <p className="muted" style={{ textAlign: 'center', fontSize: 11, margin: '4px 0 12px' }}>
+        Versión {APP_VERSION}
+      </p>
     </div>
   );
 }

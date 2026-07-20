@@ -9,7 +9,25 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
-export default function Productos({ categoria, onBack, onCartChanged, cartCount }) {
+// Combina la lista ya mostrada con la respuesta más reciente (de la caché o
+// del servidor) en vez de sustituirla entera: los artículos que siguen
+// existiendo se actualizan en el mismo sitio (su precio o su marca de
+// "comprado" pueden haber cambiado), los que ya no vienen se quitan, y los
+// que aparecen por primera vez se añaden al final. Así un refresco en
+// segundo plano no reordena ni hace "parpadear" la lista mientras el
+// cliente la está mirando — antes se sustituía entera cada vez, lo que
+// además obligaba a subir el scroll arriba para que tuviera sentido verla.
+function combinarProductos(anteriores, frescos) {
+  const frescoPorArticulo = new Map(frescos.map((p) => [p.articulo, p]));
+  const actualizados = anteriores
+    .filter((p) => frescoPorArticulo.has(p.articulo))
+    .map((p) => ({ ...p, ...frescoPorArticulo.get(p.articulo) }));
+  const yaVistos = new Set(actualizados.map((p) => p.articulo));
+  const nuevos = frescos.filter((p) => !yaVistos.has(p.articulo));
+  return [...actualizados, ...nuevos];
+}
+
+export default function Productos({ categoria, onBack, onCartChanged, cartCount, codigosEnCarrito, codigosSesion }) {
   // La navegación (subcategoría activa, página dentro de ella y pila para
   // "Anterior") se guarda junto a la clave del contexto que la creó. Cuando
   // cambia la categoría/búsqueda, la clave deja de coincidir y el estado
@@ -40,6 +58,17 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
   const contentRef = useRef(null);
   const chipsRef = useRef(null);
 
+  // El scroll se resetea al NAVEGAR de verdad (cambia categoría, subcategoría
+  // o página) — no cada vez que llega una actualización de datos para lo que
+  // ya se está mirando. Antes vivía dentro de "aplicar" de abajo, así que
+  // también saltaba arriba cuando la respuesta de verdad llegaba por detrás
+  // de la caché, aunque el cliente ya llevara un rato bajando la lista.
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxKey, effNav.pageUrl, effNav.subcategoria]);
+
   useEffect(() => {
     // Si al llegar la respuesta ya se pidió otra cosa (cambio rápido de
     // subcategoría o de página), se ignora: la última petición siempre gana.
@@ -49,10 +78,13 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
     setError(null);
     setErrorDebugHtml(null);
     setDebugSample(null);
+    // Navegación nueva de verdad: se empieza de cero, no se combina con lo
+    // que hubiera antes (eso sería mezclar productos de otra subcategoría).
+    setProductos([]);
 
     function aplicar(data) {
       if (cancelado) return;
-      setProductos(data.productos);
+      setProductos((anteriores) => combinarProductos(anteriores, data.productos));
       setSubcategorias(data.subcategorias || []);
       setGrupoActual(data.grupo || null);
       setTotalPaginas(data.totalPaginas);
@@ -61,10 +93,6 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
       setSiguientePagina(data.siguientePagina || null);
       setSiguienteGrupo(data.siguienteGrupo || null);
       setDebugSample(data.debug?.normalizedSample || null);
-      // Al llegar una página nueva, el listado empieza por arriba (tanto el
-      // contenedor con scroll propio como la ventana, según el layout).
-      contentRef.current?.scrollTo({ top: 0 });
-      window.scrollTo({ top: 0 });
     }
 
     api
@@ -163,6 +191,13 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
       setError(e.message);
       setErrorDebugHtml(e.debugHtml || null);
     }
+  }
+
+  // Icono de carrito: distinto de "comprado" (que es histórico, viene de
+  // Histórico/compradosStore.js) — este solo mira si el artículo está AHORA
+  // en el carrito real o se pidió en esta misma sesión de la app.
+  function enCarritoOSesion(articulo) {
+    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo));
   }
 
   // El rango de páginas reales (p.ej. "1-2 de 2") solo tiene sentido cuando
@@ -272,6 +307,11 @@ export default function Productos({ categoria, onBack, onCartChanged, cartCount 
               </p>
               <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
+                {enCarritoOSesion(p.articulo) && (
+                  <span title="En el carrito o pedido en esta sesión" style={{ marginLeft: 5 }}>
+                    🛒
+                  </span>
+                )}
               </p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>

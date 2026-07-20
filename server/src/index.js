@@ -12,6 +12,8 @@ import {
   getComprasRecientes,
   getCarrito,
   getMiCuenta,
+  getPedidosPendientes,
+  getCopiaDocumento,
   anadirAlCarrito,
   actualizarCantidadCarrito,
   eliminarDelCarrito,
@@ -27,6 +29,7 @@ import {
   necesitaConstruir,
   iniciarConstruccion,
   buscarEnIndice,
+  buscarPorArticulo,
   marcarActividad,
 } from './indiceStore.js';
 import { asegurarComprados, comprasConocidas, registrarCompras } from './compradosStore.js';
@@ -209,8 +212,13 @@ app.get('/api/carrito', requireSession, async (req, res) => {
     const carrito = await getCarrito(req.cofiba);
     // cofiba.es's cart page has no product photos of its own — fill each
     // line in with whatever image was last seen for that articulo while
-    // browsing the catalog.
-    carrito.lineas = carrito.lineas.map((l) => ({ ...l, imagen: obtenerImagen(l.codigo) }));
+    // browsing the catalog. Si nunca se vio así (p. ej. un artículo añadido
+    // directamente en la web real, no desde nuestra app), se busca en el
+    // índice del catálogo entero como segunda opción antes de rendirse.
+    carrito.lineas = carrito.lineas.map((l) => {
+      const imagen = obtenerImagen(l.codigo) || buscarPorArticulo(l.codigo)?.imagen || null;
+      return { ...l, imagen };
+    });
     res.json(carrito);
   } catch (e) {
     res.status(502).json({ error: e.message });
@@ -234,6 +242,39 @@ app.get('/api/mi-cuenta', requireSession, async (req, res) => {
     res.json(datos);
   } catch (e) {
     res.status(502).json({ error: e.message });
+  }
+});
+
+// Cortos y baratos de rastrear (una sola tabla dentro de mi-cuenta.html, ya
+// cargada de todas formas) — cache breve solo para no repetir el scrape en
+// cada render de la pantalla del carrito.
+const CACHE_PEDIDOS_MS = 5 * 60 * 1000;
+const pedidosCache = new Map(); // usuario -> { datos, cuando }
+
+app.get('/api/pedidos-pendientes', requireSession, async (req, res) => {
+  const cacheado = pedidosCache.get(req.usuario);
+  if (cacheado && Date.now() - cacheado.cuando < CACHE_PEDIDOS_MS) {
+    return res.json(cacheado.datos);
+  }
+  try {
+    const pedidos = await getPedidosPendientes(req.cofiba);
+    pedidosCache.set(req.usuario, { datos: pedidos, cuando: Date.now() });
+    res.json(pedidos);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+app.get('/api/pedido-copia', requireSession, async (req, res) => {
+  const href = (req.query.href || '').toString();
+  if (!href) return res.status(400).json({ error: 'Falta href.' });
+  try {
+    const { contentType, data } = await getCopiaDocumento(req.cofiba, { href });
+    res.setHeader('Content-Type', contentType);
+    res.send(Buffer.from(data));
+  } catch (e) {
+    const status = e.code === 'INVALID_DOC_URL' ? 400 : 502;
+    res.status(status).json({ error: e.message, code: e.code });
   }
 });
 

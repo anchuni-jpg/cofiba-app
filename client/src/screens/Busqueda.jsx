@@ -10,7 +10,23 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
-export default function Busqueda({ termino, onBack, onCartChanged }) {
+// Igual que en Productos.jsx: en vez de sustituir la lista entera en cada
+// respuesta (caché, luego la real, luego cada sondeo mientras el índice se
+// sigue construyendo), se mantiene el orden de lo ya mostrado y solo se
+// añaden al final los artículos nuevos que van apareciendo — así lo que ya
+// se vio desde la caché no se reordena ni desaparece un instante mientras
+// llegan más resultados.
+function combinarResultados(anteriores, frescos) {
+  const frescoPorArticulo = new Map(frescos.map((p) => [p.articulo, p]));
+  const actualizados = (anteriores || [])
+    .filter((p) => frescoPorArticulo.has(p.articulo))
+    .map((p) => ({ ...p, ...frescoPorArticulo.get(p.articulo) }));
+  const yaVistos = new Set(actualizados.map((p) => p.articulo));
+  const nuevos = frescos.filter((p) => !yaVistos.has(p.articulo));
+  return [...actualizados, ...nuevos];
+}
+
+export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarrito, codigosSesion }) {
   // La barra de búsqueda vive en esta misma pantalla (no solo en Categorías)
   // para poder encadenar una búsqueda tras otra sin tener que volver atrás.
   // `terminoActivo` es la que de verdad dispara la consulta; `campo` es solo
@@ -60,7 +76,7 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
       const promesa = primera
         ? api.buscarCached(terminoActivo, (cacheado) => {
             huboCache = true;
-            if (!cancelado) setResultados(cacheado.resultados || []);
+            if (!cancelado) setResultados((prev) => combinarResultados(prev, cacheado.resultados || []));
           })
         : api.buscar(terminoActivo);
       promesa
@@ -75,7 +91,7 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
           // TANDA/visibles más abajo), y se sigue consultando cada pocos
           // segundos para completar la lista según avanza, en vez de dejar
           // al usuario esperando en blanco.
-          setResultados(data.resultados || []);
+          setResultados((prev) => combinarResultados(prev, data.resultados || []));
           setConstruyendo(!!data.construyendo);
           if (data.construyendo) pollRef.current = setTimeout(() => consultar(false), 3000);
         })
@@ -91,6 +107,13 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminoActivo, nonce]);
+
+  // Icono de carrito: distinto de "comprado" (histórico, ver Historico.jsx) —
+  // este solo mira si el artículo está AHORA en el carrito real o se pidió
+  // en esta misma sesión de la app.
+  function enCarritoOSesion(articulo) {
+    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo));
+  }
 
   async function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
@@ -121,17 +144,26 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
         <p style={{ fontWeight: 500, margin: 0 }}>Búsqueda</p>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+      {/* form+onSubmit en vez de solo onKeyDown==='Enter': el teclado virtual
+          de algunos móviles no siempre dispara un keydown con Enter que
+          React pueda leer al pulsar "Ir"/"Buscar" — el submit del
+          formulario sí es fiable en cualquier dispositivo. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          buscarDeNuevo();
+        }}
+        style={{ display: 'flex', gap: 8, marginBottom: 10 }}
+      >
         <input
           placeholder="Producto, referencia, código..."
           value={campo}
           onChange={(e) => setCampo(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && buscarDeNuevo()}
         />
-        <button onClick={buscarDeNuevo} aria-label="Buscar">
+        <button type="submit" aria-label="Buscar">
           🔍
         </button>
-      </div>
+      </form>
 
       {error && <div className="error-banner">{error}</div>}
 
@@ -171,6 +203,11 @@ export default function Busqueda({ termino, onBack, onCartChanged }) {
                   </p>
                   <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                     {p.precioFinal ? `${p.precioFinal}€` : '—'}
+                    {enCarritoOSesion(p.articulo) && (
+                      <span title="En el carrito o pedido en esta sesión" style={{ marginLeft: 5 }}>
+                        🛒
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
