@@ -14,6 +14,18 @@ import { crawlCatalogo } from './cofibaClient.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'indice-busqueda.json');
+// El plan gratuito de Render no tiene disco persistente: .data/ se borra
+// entero en cada despliegue, así que sin más el índice arrancaba vacío del
+// todo hasta que el rastreo de fondo (varios minutos, a veces más de una
+// hora para el catálogo entero) lo repoblara — mientras tanto ni "Ver más"
+// de Histórico ni el buscador tenían nada que ofrecer. Esta semilla es una
+// foto fija del catálogo completo, committeada aparte de .data (que sí va
+// todo en .gitignore por las credenciales) para que sobreviva a los
+// despliegues — se usa solo como punto de partida si .data está vacío; el
+// rastreo de fondo la va sustituyendo por datos frescos de todas formas.
+// Para renovarla: copiar el .data/indice-busqueda.json de un servidor con
+// el índice ya completo encima de este fichero.
+const SEED_FILE = path.join(__dirname, '..', 'catalog-seed', 'indice-busqueda.json');
 const SEIS_HORAS = 6 * 60 * 60 * 1000;
 
 let estado = 'vacio'; // vacio | construyendo | listo | error
@@ -71,17 +83,31 @@ function ensureDataDir() {
 
 export function cargarDeDisco() {
   ensureDataDir();
-  if (!fs.existsSync(STORE_FILE)) return false;
-  try {
-    const data = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
-    if (!Array.isArray(data.indice) || !data.indice.length) return false;
-    indice = data.indice;
-    actualizado = data.actualizado || null;
-    estado = 'listo';
-    return true;
-  } catch {
-    return false;
+  if (fs.existsSync(STORE_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+      if (Array.isArray(data.indice) && data.indice.length) {
+        indice = data.indice;
+        actualizado = data.actualizado || null;
+        estado = 'listo';
+        return true;
+      }
+    } catch {
+      // Sigue abajo e intenta la semilla en vez de rendirse.
+    }
   }
+  try {
+    const data = JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'));
+    if (Array.isArray(data.indice) && data.indice.length) {
+      indice = data.indice;
+      actualizado = data.actualizado || null;
+      estado = 'listo';
+      return true;
+    }
+  } catch {
+    // Sin .data Y sin semilla legible: el índice arranca vacío, como antes.
+  }
+  return false;
 }
 
 function guardarEnDisco() {
