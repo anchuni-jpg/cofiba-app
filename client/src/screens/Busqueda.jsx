@@ -123,24 +123,28 @@ export default function Busqueda({ termino, onBack, onCartChanged, codigosEnCarr
     return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo));
   }
 
-  async function añadir(p, delta) {
+  // No se espera a que cofiba.es confirme antes de reaccionar: el contador
+  // cambia al instante y la petición sigue sola en segundo plano. Solo si de
+  // verdad falla se corrige el contador y se avisa, y entonces sí, no antes.
+  function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
     const nueva = Math.max(0, anterior + delta);
     if (nueva === anterior) return;
     setPending((s) => ({ ...s, [p.articulo]: nueva }));
-    try {
-      if (anterior === 0) {
-        await api.anadirAlCarrito({ categoria: p.categoria, articulo: p.articulo, cantidad: nueva, origen: p.origen });
-      } else if (nueva === 0) {
-        await api.eliminarDelCarrito(p.articulo);
-      } else {
-        await api.actualizarCantidadCarrito({ articulo: p.articulo, cantidad: nueva });
-      }
-      onCartChanged();
-    } catch (e) {
-      setPending((s) => ({ ...s, [p.articulo]: anterior }));
-      setError(e.message);
-    }
+
+    const promesa =
+      anterior === 0
+        ? api.anadirAlCarrito({ categoria: p.categoria, articulo: p.articulo, cantidad: nueva, origen: p.origen })
+        : nueva === 0
+        ? api.eliminarDelCarrito(p.articulo)
+        : api.actualizarCantidadCarrito({ articulo: p.articulo, cantidad: nueva });
+
+    promesa
+      .then(() => onCartChanged())
+      .catch((e) => {
+        setPending((s) => ({ ...s, [p.articulo]: anterior }));
+        setError(e.message);
+      });
   }
 
   const resultadosFiltrados = resultados ? filtrarPorIsla(resultados, islaFiltro) : resultados;

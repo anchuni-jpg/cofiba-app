@@ -174,38 +174,44 @@ export default function Productos({
     setNav({ key: ctxKey, subcategoria: slug, pageUrl: null, stack: [] });
   }
 
-  async function añadir(p, delta) {
+  // No se espera a que cofiba.es confirme antes de reaccionar: el contador
+  // sube/baja al instante (setPending, antes de pedir nada) y la petición de
+  // verdad sigue su curso sola en segundo plano. Solo si de verdad falla
+  // (p. ej. el artículo ya no existe — ver anadirAlCarrito en el servidor)
+  // se corrige el contador y se avisa, y entonces sí, no antes.
+  function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
     const nueva = Math.max(0, anterior + delta);
     if (nueva === anterior) return;
     setPending((s) => ({ ...s, [p.articulo]: nueva }));
-    try {
-      if (anterior === 0) {
-        // Primera vez que se pulsa + para este producto: aún no está en el
-        // carrito, así que hay que añadirlo (no solo fijar su cantidad).
-        await api.anadirAlCarrito({
-          categoria: categoria?.slug || 'todas',
-          articulo: p.articulo,
-          cantidad: nueva,
-          origen: p.origen,
-        });
-      } else if (nueva === 0) {
-        // Bajar hasta 0 ya no es "menos cantidad", es sacarlo del carrito.
-        // Antes el botón "-" solo tocaba este contador local y nunca
-        // llegaba a quitar nada del carrito real.
-        await api.eliminarDelCarrito(p.articulo);
-      } else {
-        await api.actualizarCantidadCarrito({ articulo: p.articulo, cantidad: nueva });
-      }
-      // cofiba.es's own total_carrito counts "add events", not distinct
-      // products — always refetch our own parsed cart so the badge matches
-      // what the Carrito tab shows.
-      onCartChanged();
-    } catch (e) {
-      setPending((s) => ({ ...s, [p.articulo]: anterior }));
-      setError(e.message);
-      setErrorDebugHtml(e.debugHtml || null);
-    }
+
+    const promesa =
+      anterior === 0
+        ? // Primera vez que se pulsa + para este producto: aún no está en el
+          // carrito, así que hay que añadirlo (no solo fijar su cantidad).
+          api.anadirAlCarrito({
+            categoria: categoria?.slug || 'todas',
+            articulo: p.articulo,
+            cantidad: nueva,
+            origen: p.origen,
+          })
+        : nueva === 0
+        ? // Bajar hasta 0 ya no es "menos cantidad", es sacarlo del carrito.
+          api.eliminarDelCarrito(p.articulo)
+        : api.actualizarCantidadCarrito({ articulo: p.articulo, cantidad: nueva });
+
+    promesa
+      .then(() => {
+        // cofiba.es's own total_carrito counts "add events", not distinct
+        // products — always refetch our own parsed cart so the badge matches
+        // what the Carrito tab shows.
+        onCartChanged();
+      })
+      .catch((e) => {
+        setPending((s) => ({ ...s, [p.articulo]: anterior }));
+        setError(e.message);
+        setErrorDebugHtml(e.debugHtml || null);
+      });
   }
 
   // Icono de carrito: distinto de "comprado" (que es histórico, viene de
