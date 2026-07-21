@@ -218,7 +218,10 @@ export default function Productos({
   // Histórico/compradosStore.js) — este solo mira si el artículo está AHORA
   // en el carrito real o se pidió en esta misma sesión de la app.
   function enCarritoOSesion(articulo) {
-    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo));
+    // pending[articulo] es el contador local, que ya cambia al instante al
+    // pulsar +/- (antes de que cofiba.es confirme nada) — mirarlo aquí
+    // también hace que el icono aparezca al momento, no solo el número.
+    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo) || (pending[articulo] ?? 0) > 0);
   }
 
   // El rango de páginas reales (p.ej. "1-2 de 2") solo tiene sentido cuando

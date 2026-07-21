@@ -53,7 +53,13 @@ export function marcarActividad() {
 // bastaba para que la navegación normal no se notara lenta mientras el
 // rastreo corría de fondo. Ventana de inactividad real (ver
 // esperarInactividad) en vez de una pausa fija.
-const VENTANA_ACTIVIDAD_MS = 10000;
+// Antes 10000: en el uso real, un usuario mirando qué producto tocar a
+// menudo se para más de 10s entre una petición y la siguiente, así que el
+// rastreo de fondo se colaba de todas formas justo antes de la siguiente
+// acción real (confirmado: una petición normal tardó ~18s de golpe por
+// esto). 20s da más margen sin alargar demasiado lo que tarda el rastreo
+// en terminar del todo.
+const VENTANA_ACTIVIDAD_MS = 20000;
 
 // Espera hasta que lleve VENTANA_ACTIVIDAD_MS sin ninguna petición real del
 // cliente (o hasta `maxEsperaMs` como tope, para que un rastreo largo acabe

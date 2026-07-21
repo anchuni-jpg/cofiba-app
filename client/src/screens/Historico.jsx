@@ -169,7 +169,10 @@ export default function Historico({ onCartChanged, codigosEnCarrito, codigosSesi
   // "comprado alguna vez") — este marca lo que está en el carrito AHORA o se
   // pidió en esta sesión, igual que en Productos/Búsqueda.
   function enCarritoOSesion(articulo) {
-    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo));
+    // pending[articulo] es el contador local, que ya cambia al instante al
+    // pulsar +/- (antes de que cofiba.es confirme nada) — mirarlo aquí
+    // también hace que el icono aparezca al momento, no solo el número.
+    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo) || (pending[articulo] ?? 0) > 0);
   }
 
   const productosPorTexto = filtro.trim()
