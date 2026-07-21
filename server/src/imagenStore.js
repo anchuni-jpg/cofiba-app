@@ -13,6 +13,12 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'imagenes.json');
+// Mismo motivo que catalog-seed/indice-busqueda.json (ver indiceStore.js):
+// .data se borra entero en cada despliegue del plan gratuito de Render, así
+// que sin esto un cliente nuevo no tenía ninguna foto de respaldo para el
+// carrito hasta que se navegara el catálogo entero otra vez. Solo fotos —
+// nunca el histórico de compras (eso sí es del cliente, no se comitea).
+const SEED_FILE = path.join(__dirname, '..', 'catalog-seed', 'imagenes.json');
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -20,9 +26,15 @@ function ensureDataDir() {
 
 function readStore() {
   ensureDataDir();
-  if (!fs.existsSync(STORE_FILE)) return {};
+  if (fs.existsSync(STORE_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    } catch {
+      // Sigue abajo e intenta la semilla en vez de rendirse.
+    }
+  }
   try {
-    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    return JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'));
   } catch {
     return {};
   }

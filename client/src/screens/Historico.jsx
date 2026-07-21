@@ -25,7 +25,15 @@ function normalizar(s) {
 
 const TANDA = 20;
 
-export default function Historico({ onCartChanged, codigosEnCarrito, codigosSesion, onIrACategoria, islaFiltro }) {
+export default function Historico({
+  onCartChanged,
+  codigosEnCarrito,
+  codigosSesion,
+  onIrACategoria,
+  islaFiltro,
+  vistaColumnas,
+  onCambiarVista,
+}) {
   const [filtro, setFiltro] = useState('');
   // Esto ya no es un historial que llevemos nosotros — lee directamente la
   // sección real "Comprados recientemente" de cofiba.es (/consumo.html), así
@@ -187,7 +195,12 @@ export default function Historico({ onCartChanged, codigosEnCarrito, codigosSesi
 
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
-      <p style={{ fontWeight: 500, marginBottom: 10 }}>Comprados recientemente</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>Comprados recientemente</p>
+        <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
+          {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
+        </button>
+      </div>
 
       <input
         placeholder="Buscar en tu histórico..."
@@ -224,32 +237,90 @@ export default function Historico({ onCartChanged, codigosEnCarrito, codigosSesi
         </p>
       )}
 
-      <div>
-        {visiblesLista.map((p, idx) => (
-          // La clave incluye la posición: el mismo artículo puede aparecer
-          // más de una vez en el histórico real (comprado en fechas
-          // distintas), y repetir solo el articulo como key confundía a
-          // React (dos filas con la misma key "se superponían" visualmente).
-          <div className="product-row" key={`${p.articulo}-${idx}`}>
-            <div
-              className="product-thumb"
-              onClick={() => p.imagen && setZoomProducto(p)}
-              style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
-            >
-              {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+      {vistaColumnas === 1 ? (
+        <div>
+          {visiblesLista.map((p, idx) => (
+            // La clave incluye la posición: el mismo artículo puede aparecer
+            // más de una vez en el histórico real (comprado en fechas
+            // distintas), y repetir solo el articulo como key confundía a
+            // React (dos filas con la misma key "se superponían" visualmente).
+            <div className="product-row" key={`${p.articulo}-${idx}`}>
+              <div
+                className="product-thumb"
+                onClick={() => p.imagen && setZoomProducto(p)}
+                style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
+              >
+                {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.nombre || p.referencia || p.articulo}
+                </p>
+                <p className="muted" style={{ margin: '2px 0' }}>
+                  Ref. {p.referencia || p.articulo}
+                </p>
+                <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+                  {p.precioFinal ? `${p.precioFinal}€` : '—'}
+                  {enCarritoOSesion(p.articulo) && (
+                    <span style={{ marginLeft: 5 }}>
+                      <CarritoIcon />
+                    </span>
+                  )}
+                </p>
+                {p.categoria && (
+                  <button
+                    onClick={() => onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
+                    style={{ fontSize: 11, padding: '3px 8px', marginTop: 3 }}
+                  >
+                    Ver más
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <div className="qty-stepper">
+                  <button onClick={() => añadir(p, -1)}>-</button>
+                  <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                  <button onClick={() => añadir(p, 1)}>+</button>
+                </div>
+                {p.undVenta && (
+                  <span className="muted" style={{ fontSize: 11 }}>
+                    caja de {formatoCaja(p.undVenta)} uds
+                  </span>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 12, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          ))}
+        </div>
+      ) : (
+        <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${vistaColumnas}, 1fr)` }}>
+          {visiblesLista.map((p, idx) => (
+            <div className="producto-card" key={`${p.articulo}-${idx}`}>
+              <div
+                className="product-thumb"
+                onClick={() => p.imagen && setZoomProducto(p)}
+                style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
+              >
+                {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+              </div>
+              <p
+                style={{
+                  fontSize: 13,
+                  margin: '4px 0 0',
+                  width: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                }}
+              >
                 {p.nombre || p.referencia || p.articulo}
               </p>
-              <p className="muted" style={{ margin: '2px 0' }}>
-                Ref. {p.referencia || p.articulo}
-              </p>
-              <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+              <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
                 {enCarritoOSesion(p.articulo) && (
-                  <span style={{ marginLeft: 5 }}>
-                    <CarritoIcon />
+                  <span style={{ marginLeft: 4 }}>
+                    <CarritoIcon size={11} />
                   </span>
                 )}
               </p>
@@ -261,22 +332,15 @@ export default function Historico({ onCartChanged, codigosEnCarrito, codigosSesi
                   Ver más
                 </button>
               )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-              <div className="qty-stepper">
+              <div className="qty-stepper" style={{ marginTop: 4 }}>
                 <button onClick={() => añadir(p, -1)}>-</button>
-                <span style={{ minWidth: 14, textAlign: 'center', fontSize: 12 }}>{pending[p.articulo] ?? 0}</span>
+                <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                 <button onClick={() => añadir(p, 1)}>+</button>
               </div>
-              {p.undVenta && (
-                <span className="muted" style={{ fontSize: 10 }}>
-                  caja de {formatoCaja(p.undVenta)} uds
-                </span>
-              )}
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {hayMasParaRevelar && (
         <div style={{ padding: '12px 0', textAlign: 'center' }}>

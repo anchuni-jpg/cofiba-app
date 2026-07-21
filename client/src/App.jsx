@@ -59,6 +59,10 @@ export default function App() {
   // vive aquí arriba. Persistido en localStorage (no sessionStorage): es una
   // preferencia del dispositivo, tiene sentido que sobreviva a cerrar la app.
   const [islaFiltro, setIslaFiltro] = useState(() => localStorage.getItem('cofiba:isla-filtro') || null);
+  // Cuántas columnas usan las listas de productos (Productos/Búsqueda/
+  // Histórico) — 1 es la fila de siempre, 2/3 son tarjetas en rejilla más
+  // compactas. También preferencia de dispositivo, mismo motivo que la isla.
+  const [vistaColumnas, setVistaColumnas] = useState(() => Number(localStorage.getItem('cofiba:columnas')) || 1);
   const [cartCount, setCartCount] = useState(0);
   const [codigosEnCarrito, setCodigosEnCarrito] = useState(new Set());
   const [codigosSesion, setCodigosSesion] = useState(cargarCompradosSesion);
@@ -107,9 +111,44 @@ export default function App() {
     });
   }
 
+  // 1 -> 2 -> 3 -> 1 ...
+  function cambiarVista() {
+    setVistaColumnas((actual) => {
+      const nuevo = actual >= 3 ? 1 : actual + 1;
+      localStorage.setItem('cofiba:columnas', String(nuevo));
+      return nuevo;
+    });
+  }
+
   useEffect(() => {
     if (loggedIn) refreshCartCount();
   }, [loggedIn]);
+
+  // El botón/gesto "atrás" del móvil (o del navegador) antes cerraba la app
+  // entera de golpe en cuanto no había página anterior de verdad en el
+  // historial — una PWA de una sola página nunca añade ninguna por sí sola.
+  // Con esto, en cuanto se sale de Categorías se deja UNA entrada en el
+  // historial (no una por cada pestaña que se visite, para no acumular);
+  // "atrás" la consume y vuelve a Categorías en vez de salir. Ya en
+  // Categorías, "atrás" no tiene nada más que consumir y hace lo normal
+  // (salir) — para cerrar sesión de verdad sigue estando el botón "Salir".
+  useEffect(() => {
+    function onPopState() {
+      setTab('categorias');
+      setCategoria(null);
+      setBusqueda(null);
+      setSubcategoriaInicial(null);
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'categorias') return;
+    if (!window.history.state?.cofibaEnApp) {
+      window.history.pushState({ cofibaEnApp: true }, '');
+    }
+  }, [tab]);
 
   // Vive aquí (no en Categorías) porque la barra superior es la misma en
   // todas las pantallas — así el nombre del cliente logeado queda siempre
@@ -221,6 +260,8 @@ export default function App() {
           codigosEnCarrito={codigosEnCarrito}
           codigosSesion={codigosSesion}
           islaFiltro={islaFiltro}
+          vistaColumnas={vistaColumnas}
+          onCambiarVista={cambiarVista}
         />
       )}
       {tab === 'busqueda' && (
@@ -231,6 +272,8 @@ export default function App() {
           codigosEnCarrito={codigosEnCarrito}
           codigosSesion={codigosSesion}
           islaFiltro={islaFiltro}
+          vistaColumnas={vistaColumnas}
+          onCambiarVista={cambiarVista}
         />
       )}
       {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
@@ -240,6 +283,8 @@ export default function App() {
           codigosEnCarrito={codigosEnCarrito}
           codigosSesion={codigosSesion}
           islaFiltro={islaFiltro}
+          vistaColumnas={vistaColumnas}
+          onCambiarVista={cambiarVista}
           onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
             setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
             setSubcategoriaInicial(subcategoriaSlug || null);

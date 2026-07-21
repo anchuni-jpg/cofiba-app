@@ -38,6 +38,8 @@ export default function Productos({
   codigosEnCarrito,
   codigosSesion,
   islaFiltro,
+  vistaColumnas,
+  onCambiarVista,
 }) {
   // La navegación (subcategoría activa, página dentro de ella y pila para
   // "Anterior") se guarda junto a la clave del contexto que la creó. Cuando
@@ -244,7 +246,12 @@ export default function Productos({
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
         </button>
-        <p style={{ fontWeight: 500, margin: 0 }}>{categoria?.nombre}</p>
+        <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>{categoria?.nombre}</p>
+        {/* Cambia entre lista (1 columna) y rejilla de 2/3 tarjetas —
+            preferencia del dispositivo, se recuerda entre visitas. */}
+        <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
+          {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
+        </button>
       </div>
 
       {error && (
@@ -315,48 +322,91 @@ export default function Productos({
         </p>
       )}
 
-      <div>
-        {productosFiltrados.map((p) => (
-          <div className={`product-row${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
-            <div
-              className="product-thumb"
-              onClick={() => p.imagen && setZoomProducto(p)}
-              style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
-            >
-              {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+      {vistaColumnas === 1 ? (
+        <div>
+          {productosFiltrados.map((p) => (
+            <div className={`product-row${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
+              <div
+                className="product-thumb"
+                onClick={() => p.imagen && setZoomProducto(p)}
+                style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
+              >
+                {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.nombre || p.referencia || p.articulo}
+                </p>
+                <p className="muted" style={{ margin: '2px 0' }}>
+                  Ref. {p.referencia || p.articulo}
+                  {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
+                </p>
+                <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+                  {p.precioFinal ? `${p.precioFinal}€` : '—'}
+                  {enCarritoOSesion(p.articulo) && (
+                    <span style={{ marginLeft: 5 }}>
+                      <CarritoIcon />
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <div className="qty-stepper">
+                  <button onClick={() => añadir(p, -1)}>-</button>
+                  <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                  <button onClick={() => añadir(p, 1)}>+</button>
+                </div>
+                {p.undVenta && (
+                  <span className="muted" style={{ fontSize: 11 }}>
+                    caja de {formatoCaja(p.undVenta)} uds
+                  </span>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 12, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          ))}
+        </div>
+      ) : (
+        <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${vistaColumnas}, 1fr)` }}>
+          {productosFiltrados.map((p) => (
+            <div className={`producto-card${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
+              <div
+                className="product-thumb"
+                onClick={() => p.imagen && setZoomProducto(p)}
+                style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
+              >
+                {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+              </div>
+              <p
+                style={{
+                  fontSize: 13,
+                  margin: '4px 0 0',
+                  width: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                }}
+              >
                 {p.nombre || p.referencia || p.articulo}
               </p>
-              <p className="muted" style={{ margin: '2px 0' }}>
-                Ref. {p.referencia || p.articulo}
-                {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
-              </p>
-              <p style={{ fontSize: 12, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+              <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
                 {enCarritoOSesion(p.articulo) && (
-                  <span style={{ marginLeft: 5 }}>
-                    <CarritoIcon />
+                  <span style={{ marginLeft: 4 }}>
+                    <CarritoIcon size={11} />
                   </span>
                 )}
               </p>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-              <div className="qty-stepper">
+              <div className="qty-stepper" style={{ marginTop: 4 }}>
                 <button onClick={() => añadir(p, -1)}>-</button>
-                <span style={{ minWidth: 14, textAlign: 'center', fontSize: 12 }}>{pending[p.articulo] ?? 0}</span>
+                <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                 <button onClick={() => añadir(p, 1)}>+</button>
               </div>
-              {p.undVenta && (
-                <span className="muted" style={{ fontSize: 10 }}>
-                  caja de {formatoCaja(p.undVenta)} uds
-                </span>
-              )}
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {hayPaginacion && (
         <div style={{ padding: '12px 0' }}>

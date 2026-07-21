@@ -109,7 +109,7 @@ input {
   border-radius: var(--radius);
   padding: 14px 10px;
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .product-row {
@@ -121,8 +121,8 @@ input {
 }
 
 .product-thumb {
-  width: 48px;
-  height: 48px;
+  width: 62px;
+  height: 62px;
   border-radius: 8px;
   background: var(--surface-1);
   flex-shrink: 0;
@@ -152,9 +152,32 @@ input {
   padding-right: 8px;
 }
 
+/* Vista en rejilla (2/3 columnas) de Productos/Búsqueda/Histórico — la
+   alternativa a .product-row cuando vistaColumnas > 1. Tarjeta vertical:
+   foto arriba, nombre/precio/+- abajo, en vez de la fila horizontal. */
+.producto-grid {
+  display: grid;
+  gap: 10px;
+}
+.producto-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  gap: 4px;
+}
+.producto-card .product-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
 .cart-thumb {
-  width: 32px;
-  height: 32px;
+  width: 42px;
+  height: 42px;
   border-radius: 6px;
   background: var(--surface-1);
   flex-shrink: 0;
@@ -177,10 +200,10 @@ input {
   gap: 6px;
 }
 .qty-stepper button {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .bottomnav {
@@ -222,7 +245,7 @@ input {
 
 .muted {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .error-banner {
   background: #fcebeb;
