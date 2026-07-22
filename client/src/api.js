@@ -117,8 +117,16 @@ export const api = {
   // /consumo.html tarda 15-35s en el servidor de cofiba.es — mostrar la
   // última tanda vista de esta misma página mientras se repite la petición
   // de verdad evita ese rato en blanco en visitas repetidas.
+  //
+  // "v2" a propósito: los dispositivos que ya habían recorrido TODO el
+  // histórico antes de que el servidor empezara a enriquecer cada producto
+  // con categoría/subcategoría (el botón "Ver más") se quedaban con esa
+  // caché antigua para siempre — Historico.jsx nunca vuelve a pedir de
+  // verdad una página que ya tiene completa en caché. Cambiar la clave hace
+  // que esa caché vieja quede huérfana (se ignora) y fuerza un recorrido
+  // fresco, ya con el campo nuevo.
   historicoCached({ pageUrl } = {}, onCacheHit) {
-    const clave = `historico:${pageUrl || ''}`;
+    const clave = `historico:v2:${pageUrl || ''}`;
     return conCache(clave, () => this.historico({ pageUrl }), onCacheHit);
   },
   pedidosPendientes() {

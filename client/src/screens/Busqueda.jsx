@@ -308,6 +308,11 @@ export default function Busqueda({
                     <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                     <button onClick={() => añadir(p, 1)}>+</button>
                   </div>
+                  {p.undVenta && (
+                    <span className="muted" style={{ fontSize: 10 }}>
+                      caja de {formatoCaja(p.undVenta)} uds
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

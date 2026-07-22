@@ -73,7 +73,10 @@ export default function Historico({
       let totalPaginasCache = null;
       let pageUrl = null;
       do {
-        const cacheado = await getCache(`historico:${pageUrl || ''}`);
+        // "v2": mismo motivo que en api.js#historicoCached — clave nueva
+        // para no quedarse atascado en una caché completa de antes de que
+        // existiera el campo "categoria" (el botón "Ver más").
+        const cacheado = await getCache(`historico:v2:${pageUrl || ''}`);
         if (!cacheado) break;
         paginasCache.push(cacheado.productos);
         totalPaginasCache = cacheado.totalPaginas;
@@ -337,6 +340,11 @@ export default function Historico({
                 <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                 <button onClick={() => añadir(p, 1)}>+</button>
               </div>
+              {p.undVenta && (
+                <span className="muted" style={{ fontSize: 10 }}>
+                  caja de {formatoCaja(p.undVenta)} uds
+                </span>
+              )}
             </div>
           ))}
         </div>

@@ -28,7 +28,7 @@ function iconoCategoria(slug) {
   if (s.includes('juguete')) return '🧸';
   if (s.includes('juego')) return '🎲';
   if (s.includes('textil')) return '👕';
-  if (s.includes('postal')) return '📮';
+  if (s.includes('postal')) return '🖼️';
   if (s.includes('pila')) return '🔋';
   if (s.includes('arte')) return '🎨';
   if (s.includes('souvenir')) return '🎁';

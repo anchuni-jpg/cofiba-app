@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getToken, api } from './api.js';
 import Login from './screens/Login.jsx';
 import Categorias from './screens/Categorias.jsx';
@@ -127,28 +127,47 @@ export default function App() {
   // El botón/gesto "atrás" del móvil (o del navegador) antes cerraba la app
   // entera de golpe en cuanto no había página anterior de verdad en el
   // historial — una PWA de una sola página nunca añade ninguna por sí sola.
-  // Con esto, en cuanto se sale de Categorías se deja UNA entrada en el
-  // historial (no una por cada pestaña que se visite, para no acumular);
-  // "atrás" la consume y vuelve a Categorías en vez de salir. Ya en
-  // Categorías, "atrás" no tiene nada más que consumir y hace lo normal
-  // (salir) — para cerrar sesión de verdad sigue estando el botón "Salir".
+  // Retrocede pantalla a pantalla de verdad (cada cambio de pestaña,
+  // categoría o búsqueda deja su propia entrada), no solo "vuelve a
+  // Categorías de un salto" — así se comporta como el usuario espera de
+  // cualquier navegación normal. `restaurandoRef` evita un bucle: al
+  // restaurar un estado desde popstate, ese cambio de tab/categoria/
+  // busqueda no debe volver a empujar OTRA entrada nueva.
+  const restaurandoRef = useRef(false);
+  const primeraVezRef = useRef(true);
+
   useEffect(() => {
-    function onPopState() {
-      setTab('categorias');
-      setCategoria(null);
-      setBusqueda(null);
-      setSubcategoriaInicial(null);
+    function onPopState(e) {
+      restaurandoRef.current = true;
+      const s = e.state || {};
+      setTab(s.tab || 'categorias');
+      setCategoria(s.categoria || null);
+      setBusqueda(s.busqueda || null);
+      setSubcategoriaInicial(s.subcategoriaInicial || null);
     }
     window.addEventListener('popstate', onPopState);
+    // Dejar el estado inicial (Categorías) en la propia entrada de carga,
+    // para que haya algo coherente a lo que volver si el primer "atrás"
+    // aterriza aquí.
+    window.history.replaceState({ tab: 'categorias', categoria: null, busqueda: null, subcategoriaInicial: null }, '');
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   useEffect(() => {
-    if (tab === 'categorias') return;
-    if (!window.history.state?.cofibaEnApp) {
-      window.history.pushState({ cofibaEnApp: true }, '');
+    if (restaurandoRef.current) {
+      restaurandoRef.current = false;
+      return;
     }
-  }, [tab]);
+    // El primer render también dispara este efecto (con el estado inicial,
+    // ya cubierto por el replaceState de arriba) — sin este guard se
+    // empujaba una entrada de más nada más arrancar.
+    if (primeraVezRef.current) {
+      primeraVezRef.current = false;
+      return;
+    }
+    window.history.pushState({ tab, categoria, busqueda, subcategoriaInicial }, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, categoria, busqueda]);
 
   // Vive aquí (no en Categorías) porque la barra superior es la misma en
   // todas las pantallas — así el nombre del cliente logeado queda siempre

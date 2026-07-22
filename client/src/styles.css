@@ -157,7 +157,12 @@ input {
    foto arriba, nombre/precio/+- abajo, en vez de la fila horizontal. */
 .producto-grid {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  /* Sin esto, una tarjeta con contenido que no se puede partir (el paso
+     +/-, un precio largo) le pedía a su columna más ancho del que un
+     "1fr" le deja de verdad — el navegador respeta ese mínimo y la
+     rejilla entera se salía por la derecha, cortando la última columna. */
+  width: 100%;
 }
 .producto-card {
   display: flex;
@@ -166,13 +171,23 @@ input {
   text-align: center;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 10px;
+  padding: 8px 6px;
   gap: 4px;
+  min-width: 0;
+  overflow: hidden;
 }
 .producto-card .product-thumb {
   width: 100%;
   height: auto;
   aspect-ratio: 1 / 1;
+}
+/* Un poco más pequeño que en la fila (30px): en 3 columnas apenas hay 90-
+   100px de ancho por tarjeta, y el paso +/- de tamaño normal se comía casi
+   todo eso él solo. */
+.producto-card .qty-stepper button {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
 }
 
 .cart-thumb {

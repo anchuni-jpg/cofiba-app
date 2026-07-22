@@ -58,6 +58,17 @@ export default function Productos({
   const [nav, setNav] = useState({ key: ctxKey, subcategoria: subcategoriaInicial || null, pageUrl: null, stack: [] });
   const effNav = nav.key === ctxKey ? nav : { key: ctxKey, subcategoria: null, pageUrl: null, stack: [] };
 
+  // Cuántos artículos enseñar como máximo de golpe — preferencia del
+  // dispositivo (como vistaColumnas), no hace falta re-preguntarla cada vez.
+  const [limite, setLimite] = useState(() => Number(localStorage.getItem('cofiba:limite')) || 25);
+  function cambiarLimite(n) {
+    setLimite(n);
+    localStorage.setItem('cofiba:limite', String(n));
+  }
+  // Este sí que no se recuerda entre visitas — a diferencia del filtro de
+  // isla (una elección deliberada y poco frecuente), dejarlo puesto sin
+  // querer escondería productos nuevos sin que se note por qué.
+  const [soloComprados, setSoloComprados] = useState(false);
   const [productos, setProductos] = useState([]);
   const [subcategorias, setSubcategorias] = useState([]);
   const [grupoActual, setGrupoActual] = useState(null);
@@ -238,7 +249,9 @@ export default function Productos({
   const rango = paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`;
   const etiquetaPaginas = siguientePagina && totalPaginas ? `${rango} de ${totalPaginas}` : '';
   const hayPaginacion = !!siguientePagina || !!siguienteGrupo || effNav.stack.length > 0;
-  const productosFiltrados = filtrarPorIsla(productos, islaFiltro);
+  const productosPorIsla = filtrarPorIsla(productos, islaFiltro);
+  const productosPorComprado = soloComprados ? productosPorIsla.filter((p) => p.comprado) : productosPorIsla;
+  const productosFiltrados = productosPorComprado.slice(0, limite);
 
   return (
     <div className="content" ref={contentRef} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -247,11 +260,6 @@ export default function Productos({
           ←
         </button>
         <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>{categoria?.nombre}</p>
-        {/* Cambia entre lista (1 columna) y rejilla de 2/3 tarjetas —
-            preferencia del dispositivo, se recuerda entre visitas. */}
-        <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
-          {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
-        </button>
       </div>
 
       {error && (
@@ -265,6 +273,38 @@ export default function Productos({
           )}
         </div>
       )}
+
+      {/* Cuántos enseñar / solo comprados / vista — todo junto y justo
+          encima de las subcategorías, como una sola barra de controles. */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+        <select
+          value={limite}
+          onChange={(e) => cambiarLimite(Number(e.target.value))}
+          style={{ fontSize: 12, padding: '6px 8px', flex: 1, minWidth: 0 }}
+          aria-label="Cuántos artículos mostrar"
+        >
+          <option value={10}>10 artículos</option>
+          <option value={25}>25 artículos</option>
+          <option value={50}>50 artículos</option>
+          <option value={100}>100 artículos</option>
+        </select>
+        <button
+          onClick={() => setSoloComprados((v) => !v)}
+          style={{
+            padding: '6px 10px',
+            fontSize: 12,
+            whiteSpace: 'nowrap',
+            background: soloComprados ? 'var(--accent)' : 'var(--surface-2)',
+            color: soloComprados ? '#fff' : 'var(--text-primary)',
+            borderColor: soloComprados ? 'var(--accent)' : 'var(--border)',
+          }}
+        >
+          Comprados
+        </button>
+        <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+          {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
+        </button>
+      </div>
 
       {subcategorias.length > 0 && (
         <div ref={chipsRef} style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
@@ -304,8 +344,11 @@ export default function Productos({
           )}
         </>
       )}
-      {!loading && productos.length > 0 && productosFiltrados.length === 0 && (
+      {!loading && productos.length > 0 && productosPorIsla.length === 0 && (
         <p className="muted">Ningún producto de esta pantalla es de la isla seleccionada.</p>
+      )}
+      {!loading && productos.length > 0 && productosPorIsla.length > 0 && productosPorComprado.length === 0 && (
+        <p className="muted">Ningún producto de esta pantalla está marcado como comprado.</p>
       )}
 
       {!loading && productos.length > 0 && grupoActual && (
@@ -403,6 +446,11 @@ export default function Productos({
                 <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                 <button onClick={() => añadir(p, 1)}>+</button>
               </div>
+              {p.undVenta && (
+                <span className="muted" style={{ fontSize: 10 }}>
+                  caja de {formatoCaja(p.undVenta)} uds
+                </span>
+              )}
             </div>
           ))}
         </div>
