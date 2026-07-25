@@ -7,6 +7,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // El registro del service worker se hace a mano en main.jsx (con
+      // virtual:pwa-register), para poder recargar la página en cuanto el
+      // SW nuevo toma el control — si esto se deja en 'auto', el plugin
+      // además inyecta su propio script de registro por su cuenta y
+      // acaban registrándose dos veces.
+      injectRegister: null,
       includeAssets: ['icons/apple-touch-icon.png'],
       workbox: {
         runtimeCaching: [
