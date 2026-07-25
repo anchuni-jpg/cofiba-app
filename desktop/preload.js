@@ -8,4 +8,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('cofibaPanel', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (config) => ipcRenderer.invoke('config:save', config),
+  getDatos: () => ipcRenderer.invoke('datos:get'),
+  guardarDatos: (datos) => ipcRenderer.invoke('datos:guardar', datos),
 });

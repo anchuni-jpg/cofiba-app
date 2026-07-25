@@ -2,3 +2,4 @@ node_modules/
 dist/
 server/.data/
 desktop/release/
+desktop/datos-panel.json

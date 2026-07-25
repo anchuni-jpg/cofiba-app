@@ -7,8 +7,18 @@ const TOKEN_SUGERIDO = 'fc26dfbf20e90d8addd47b17703fe77cb59ab37b8bf47459';
 
 let config = null;
 let temporizador = null;
+// Lo acumulado localmente (ver main.js#DATOS_PATH) — sobrevive a que el
+// servidor gratuito se reinicie y olvide lo que tenía en memoria, y deja
+// que el panel arranque ya con datos sin esperar a la primera respuesta.
+// Cada respuesta nueva del servidor se FUSIONA aquí encima, nunca lo
+// sustituye entero.
+let acumulado = null;
 
 const el = (id) => document.getElementById(id);
+
+function acumuladoVacio() {
+  return { pedidos: [], cuentasVistas: {}, masComprados: {}, ultimaActualizacion: null };
+}
 
 function formatoEuro(n) {
   if (n == null || !Number.isFinite(n)) return '—';
@@ -27,8 +37,15 @@ function mostrarPantalla(nombre) {
 
 async function cargarConfigInicial() {
   config = await window.cofibaPanel.getConfig();
+  acumulado = (await window.cofibaPanel.getDatos()) || acumuladoVacio();
+
   if (config?.url && config?.token) {
     mostrarPantalla('panel');
+    // Pinta ya con lo que hubiera guardado de antes, sin esperar a que
+    // responda el servidor — si nunca se guardó nada, sale todo en "—"
+    // hasta el primer sondeo, que llega enseguida (iniciarPolling llama a
+    // actualizar() de inmediato).
+    if (acumulado.ultimaActualizacion) render(null);
     iniciarPolling();
   } else {
     el('campo-url').value = config?.url || URL_SUGERIDA;
@@ -95,6 +112,7 @@ async function actualizar() {
   try {
     const datos = await probarConexion(config.url, config.token);
     el('aviso-error').hidden = true;
+    fusionar(datos);
     render(datos);
     el('ultima-actualizacion').textContent = `Actualizado ${new Date().toLocaleTimeString('es-ES')}`;
   } catch (e) {
@@ -103,26 +121,73 @@ async function actualizar() {
   }
 }
 
-function render(d) {
-  el('n-conectadas').textContent = d.cuentasConectadasAhora;
-  el('n-cuentas').textContent = d.cuentasTotales;
-  el('n-fact-total').textContent = formatoEuro(d.facturacion?.total?.totalImporte);
-  el('n-fact-30').textContent = formatoEuro(d.facturacion?.ultimos30Dias?.totalImporte);
-  el('n-fact-7').textContent = formatoEuro(d.facturacion?.ultimos7Dias?.totalImporte);
+// Añade lo que traiga esta respuesta del servidor a lo ya acumulado en
+// local (nunca lo sustituye) y lo guarda en el fichero de la carpeta del
+// programa — así, aunque el servidor gratuito se reinicie y pierda su
+// memoria, lo que ya se vio aquí no desaparece.
+function fusionar(d) {
+  if (!acumulado) acumulado = acumuladoVacio();
 
-  el('tabla-sesiones').innerHTML = (d.sesiones || [])
-    .map(
-      (s) => `
+  const clavePedido = (p) => `${p.usuario}|${p.fecha}`;
+  const yaVistos = new Set(acumulado.pedidos.map(clavePedido));
+  const pedidosNuevos = (d.facturacion?.total?.pedidos || []).filter((p) => !yaVistos.has(clavePedido(p)));
+  acumulado.pedidos = [...acumulado.pedidos, ...pedidosNuevos].sort((a, b) => b.fecha - a.fecha).slice(0, 5000);
+
+  for (const s of d.sesiones || []) {
+    const actual = acumulado.cuentasVistas[s.usuario];
+    acumulado.cuentasVistas[s.usuario] = {
+      primeraVez: actual ? Math.min(actual.primeraVez, s.desde) : s.desde,
+      ultimaVez: actual ? Math.max(actual.ultimaVez, s.ultimaActividad) : s.ultimaActividad,
+    };
+  }
+
+  for (const p of d.masCompradosGlobal || []) {
+    const actual = acumulado.masComprados[p.articulo];
+    if (!actual || p.veces >= actual.veces) acumulado.masComprados[p.articulo] = p;
+  }
+
+  acumulado.ultimaActualizacion = Date.now();
+  window.cofibaPanel.guardarDatos(acumulado);
+}
+
+function calcularFacturacion(pedidos, desde) {
+  const lista = desde ? pedidos.filter((p) => p.fecha >= desde) : pedidos;
+  const totalImporte = lista.reduce((acc, p) => acc + (Number.isFinite(p.total) ? p.total : 0), 0);
+  return { totalPedidos: lista.length, totalImporte: Math.round(totalImporte * 100) / 100 };
+}
+
+// `d` es la última respuesta EN VIVO del servidor, o null si todavía no ha
+// llegado ninguna (arranque con solo lo acumulado en local). Lo que es
+// inherentemente "ahora mismo" (quién está conectado, estado del índice)
+// solo sale cuando hay `d`; lo demás (pedidos, facturación, más comprados)
+// sale siempre de `acumulado`, que ya está disponible desde el arranque.
+function render(d) {
+  const ahora = Date.now();
+  const pedidos = acumulado.pedidos;
+  const factTotal = calcularFacturacion(pedidos, 0);
+  const fact30 = calcularFacturacion(pedidos, ahora - 30 * 24 * 60 * 60 * 1000);
+  const fact7 = calcularFacturacion(pedidos, ahora - 7 * 24 * 60 * 60 * 1000);
+
+  el('n-conectadas').textContent = d ? d.cuentasConectadasAhora : '—';
+  el('n-cuentas').textContent = d ? d.cuentasTotales : Object.keys(acumulado.cuentasVistas).length;
+  el('n-fact-total').textContent = formatoEuro(factTotal.totalImporte);
+  el('n-fact-30').textContent = formatoEuro(fact30.totalImporte);
+  el('n-fact-7').textContent = formatoEuro(fact7.totalImporte);
+
+  el('tabla-sesiones').innerHTML = d
+    ? (d.sesiones || [])
+        .map(
+          (s) => `
       <tr>
         <td><span class="punto ${s.conectadoAhora ? 'on' : 'off'}"></span></td>
         <td>${escapeHtml(s.usuario)}</td>
         <td>${formatoFecha(s.desde)}</td>
         <td>${formatoFecha(s.ultimaActividad)}</td>
       </tr>`
-    )
-    .join('') || '<tr><td colspan="4" class="muted">Sin sesiones activas todavía.</td></tr>';
+        )
+        .join('') || '<tr><td colspan="4" class="muted">Sin sesiones activas todavía.</td></tr>'
+    : '<tr><td colspan="4" class="muted">Conectando con el servidor…</td></tr>';
 
-  const pedidos = d.facturacion?.ultimos30Dias?.pedidos || [];
   el('tabla-pedidos').innerHTML = pedidos.length
     ? pedidos
         .slice(0, 30)
@@ -136,10 +201,11 @@ function render(d) {
       </tr>`
         )
         .join('')
-    : '<tr><td colspan="4" class="muted">Sin pedidos registrados en los últimos 30 días.</td></tr>';
+    : '<tr><td colspan="4" class="muted">Sin pedidos registrados todavía.</td></tr>';
 
-  el('lista-mas-comprados').innerHTML = (d.masCompradosGlobal || []).length
-    ? d.masCompradosGlobal
+  const masComprados = Object.values(acumulado.masComprados).sort((a, b) => b.veces - a.veces);
+  el('lista-mas-comprados').innerHTML = masComprados.length
+    ? masComprados
         .slice(0, 15)
         .map(
           (p) => `
@@ -151,8 +217,8 @@ function render(d) {
         .join('')
     : '<p class="muted">Todavía no hay datos suficientes.</p>';
 
-  el('tabla-cuentas').innerHTML = (d.porCuenta || []).length
-    ? d.porCuenta
+  el('tabla-cuentas').innerHTML = d
+    ? (d.porCuenta || [])
         .map(
           (c) => `
       <tr>
@@ -161,13 +227,17 @@ function render(d) {
         <td>${c.completo ? 'Completo' : 'En curso…'}</td>
       </tr>`
         )
-        .join('')
-    : '<tr><td colspan="3" class="muted">Sin datos todavía.</td></tr>';
+        .join('') || '<tr><td colspan="3" class="muted">Sin datos todavía.</td></tr>'
+    : '<tr><td colspan="3" class="muted">Conectando con el servidor…</td></tr>';
 
-  const idx = d.indiceCatalogo || {};
-  el('estado-indice').textContent =
-    `Estado: ${idx.estado || '—'} · ${idx.total || 0} artículos indexados` +
-    (idx.actualizado ? ` · actualizado ${formatoFecha(idx.actualizado)}` : '');
+  if (d) {
+    const idx = d.indiceCatalogo || {};
+    el('estado-indice').textContent =
+      `Estado: ${idx.estado || '—'} · ${idx.total || 0} artículos indexados` +
+      (idx.actualizado ? ` · actualizado ${formatoFecha(idx.actualizado)}` : '');
+  } else {
+    el('estado-indice').textContent = 'Conectando con el servidor…';
+  }
 }
 
 function escapeHtml(s) {

@@ -44,6 +44,29 @@ function guardarConfig(config) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config));
 }
 
+// Los datos que va viendo el panel (pedidos, cuentas, más comprados) se
+// guardan en la MISMA carpeta del programa (junto a "Cofiba Panel.exe"),
+// no en el perfil de Windows — así el usuario puede ver/mover ese fichero
+// igual de fácil que el propio programa. Sirven para que el panel arranque
+// ya con datos (sin esperar a la primera respuesta del servidor) y para no
+// perder el histórico si el servidor gratuito se reinicia y olvida lo que
+// tenía en memoria — el renderer va fusionando cada respuesta nueva encima
+// de esto, nunca lo sustituye entero.
+const CARPETA_DATOS = app.isPackaged ? path.dirname(app.getPath('exe')) : __dirname;
+const DATOS_PATH = path.join(CARPETA_DATOS, 'datos-panel.json');
+
+function leerDatos() {
+  try {
+    return JSON.parse(fs.readFileSync(DATOS_PATH, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function guardarDatos(datos) {
+  fs.writeFileSync(DATOS_PATH, JSON.stringify(datos));
+}
+
 function crearVentana() {
   const win = new BrowserWindow({
     width: 1100,
@@ -78,6 +101,11 @@ function crearVentana() {
 ipcMain.handle('config:get', () => leerConfig());
 ipcMain.handle('config:save', (_evento, config) => {
   guardarConfig(config);
+  return true;
+});
+ipcMain.handle('datos:get', () => leerDatos());
+ipcMain.handle('datos:guardar', (_evento, datos) => {
+  guardarDatos(datos);
   return true;
 });
 
