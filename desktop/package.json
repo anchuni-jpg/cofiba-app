@@ -9,6 +9,7 @@
     "dist": "electron-builder"
   },
   "devDependencies": {
+    "@electron/packager": "^20.0.4",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8"
   },
@@ -18,6 +19,13 @@
     "win": {
       "target": "nsis"
     },
-    "files": ["main.js", "preload.js", "index.html", "renderer.js", "styles.css", "icon.ico"]
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "renderer.js",
+      "styles.css",
+      "icon.ico"
+    ]
   }
 }
