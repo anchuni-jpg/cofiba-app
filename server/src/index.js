@@ -535,10 +535,14 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
   }
   const { conteo, completo, actualizado } = stats;
 
-  // Importe = precio actual × veces comprado. Es una aproximación (el
-  // histórico no guarda el precio de cada compra en su momento, así que se
-  // usa el precio de catálogo de ahora), pero es la única forma de dar una
-  // cifra de dinero sin que cofiba.es exponga ese dato en ningún otro sitio.
+  // cofiba.es vende por CAJA, no por unidad suelta — "veces" cuenta cajas
+  // pedidas de ese artículo, así que el importe real es precio unitario ×
+  // unidades por caja (undVenta) × veces, no solo precio × veces (eso
+  // daría un importe muy por debajo de lo real). Sigue siendo una
+  // aproximación (el histórico no guarda el precio de cada compra en su
+  // momento, así que se usa el precio de catálogo de ahora), pero es la
+  // única forma de dar una cifra de dinero sin que cofiba.es exponga ese
+  // dato en ningún otro sitio.
   const porCategoria = new Map(); // nombre -> { nombre, veces, importe, productos: [] }
   const filas = [];
   let totalLineas = 0;
@@ -547,8 +551,10 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
     totalLineas += veces;
     const info = buscarPorArticulo(articulo);
     const categoriaNombre = info?.categoriaNombre || (info?.categoria ? info.categoria.toUpperCase() : 'Sin categoría');
-    const precio = parseFloat(String(info?.precioFinal || '').replace(',', '.'));
-    const importe = Number.isFinite(precio) ? Math.round(precio * veces * 100) / 100 : null;
+    const precioUnidad = parseFloat(String(info?.precioFinal || '').replace(',', '.'));
+    const unidadesPorCaja = parseFloat(String(info?.undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
+    const precioCaja = Number.isFinite(precioUnidad) ? Math.round(precioUnidad * unidadesPorCaja * 100) / 100 : null;
+    const importe = precioCaja != null ? Math.round(precioCaja * veces * 100) / 100 : null;
     if (importe != null) totalImporte += importe;
 
     const fila = {
@@ -558,6 +564,9 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
       nombre: info?.nombre || null,
       referencia: info?.referencia || null,
       precioFinal: info?.precioFinal || null,
+      undVenta: info?.undVenta || null,
+      precioCaja,
+      stock: info?.stock ?? null,
       imagen: info?.imagen || null,
       categoriaNombre,
     };

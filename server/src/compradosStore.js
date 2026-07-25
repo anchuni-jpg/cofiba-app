@@ -1,30 +1,79 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getProductos, CONSUMO_URL } from './cofibaClient.js';
 import { esperarInactividad } from './indiceStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 
-// El plan gratuito no guarda nada en disco/BD entre reinicios — así que en
-// vez de llevar nuestro propio registro de "qué compró cada cliente", esto
-// junta en memoria, por usuario, los códigos de artículo vistos en
+// Junta en memoria, por usuario, los códigos de artículo vistos en
 // /consumo.html (el histórico real de la cuenta en cofiba.es). Con eso el
 // catálogo (Productos/Búsqueda) marca al momento qué productos ya se
-// compraron antes, sin que el cliente tenga que entrar en Histórico.
+// compraron antes, sin que el cliente tenga que entrar en Histórico, y
+// Estadísticas puede calcular "más comprados" sin pedir nada aparte.
 //
 // El set se alimenta de dos sitios:
 //  1. Cada página de /consumo.html que YA se pidió por cualquier motivo (la
 //     pestaña Histórico) — gratis, y hace que las marcas aparezcan en cuanto
 //     hay datos, aunque sean parciales.
 //  2. Un recorrido completo en segundo plano de todas las páginas — pero SOLO
-//     se dispara cuando el cliente busca algo o entra en Histórico (petición
-//     expresa del usuario: navegar por el catálogo no debe arrancar rastreos
-//     de fondo, que en el servidor gratuito compiten por la única CPU).
+//     se dispara cuando el cliente busca algo, entra en Histórico o mira
+//     Estadísticas (petición expresa del usuario: navegar por el catálogo no
+//     debe arrancar rastreos de fondo, que en el servidor gratuito compiten
+//     por la única CPU).
 //
 // Recorrer las ~32 páginas reales tarda varios minutos (cada una es igual de
 // lenta que la propia pestaña Histórico — ver getComprasRecientes) así que
 // nunca bloquea una petición: mientras corre, el catálogo se sirve con las
-// marcas parciales que ya haya.
+// marcas parciales que ya haya. Se guarda en disco a medida que avanza (no
+// solo al terminar) para que, si el servidor gratuito se reinicia a medias
+// (duerme por inactividad, o un despliegue), el próximo recorrido continúe
+// con lo ya sabido en vez de tener que empezar de cero.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = path.join(__dirname, '..', '.data');
+const STORE_FILE = path.join(DATA_DIR, 'comprados.json');
+const GUARDADO_MIN_MS = 5000; // no escribir en disco más de una vez cada 5s
+
 const TTL_MS = 20 * 60 * 1000;
 const datos = new Map(); // usuario -> { conteo, completo, actualizado }
 const enCurso = new Map(); // usuario -> Promise
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function cargarDeDisco() {
+  try {
+    const plano = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    for (const [usuario, d] of Object.entries(plano)) {
+      datos.set(usuario, {
+        conteo: new Map(Object.entries(d.conteo || {})),
+        completo: !!d.completo,
+        actualizado: d.actualizado || null,
+      });
+    }
+  } catch {
+    // Arranque limpio (o sin .data persistente tras un despliegue en el
+    // plan gratuito) — no pasa nada, se reconstruye solo.
+  }
+}
+cargarDeDisco();
+
+let ultimoGuardado = 0;
+function guardarEnDisco(forzar = false) {
+  const ahora = Date.now();
+  if (!forzar && ahora - ultimoGuardado < GUARDADO_MIN_MS) return;
+  ultimoGuardado = ahora;
+  try {
+    ensureDataDir();
+    const plano = {};
+    for (const [usuario, d] of datos.entries()) {
+      plano[usuario] = { conteo: Object.fromEntries(d.conteo), completo: d.completo, actualizado: d.actualizado };
+    }
+    fs.writeFileSync(STORE_FILE, JSON.stringify(plano));
+  } catch (e) {
+    console.error('[compradosStore] fallo guardando en disco:', e.message);
+  }
+}
 
 function entrada(usuario) {
   let d = datos.get(usuario);
@@ -44,10 +93,12 @@ function entrada(usuario) {
 // Alimenta el conteo con productos de una página de /consumo.html ya pedida
 // por otro motivo (p. ej. la pestaña Histórico) — así no se desperdicia
 // ninguna petición ya hecha y las marcas aparecen sin esperar al recorrido
-// completo.
+// completo. Guarda en disco (con límite de una vez cada 5s) para no perder
+// este avance si el servidor se reinicia a medias.
 export function registrarCompras(usuario, productos) {
   const d = entrada(usuario);
   productos.forEach((p) => d.conteo.set(p.articulo, (d.conteo.get(p.articulo) || 0) + 1));
+  guardarEnDisco();
 }
 
 // El conteo de artículos comprados si ya se sabe algo (aunque sea parcial), o
@@ -72,8 +123,7 @@ export function estadisticasCompras(usuario) {
 
 // Para el panel de escritorio (/api/admin/estado): suma el conteo de TODAS
 // las cuentas que usan la app en uno solo (para "más vendidos" a nivel
-// global, no solo de una cuenta) y da un resumen por cuenta. Solo incluye
-// cuentas que ya tienen algún dato recorrido desde que arrancó este proceso.
+// global, no solo de una cuenta) y da un resumen por cuenta.
 export function resumenGlobal() {
   const conteoGlobal = new Map();
   const porUsuario = [];
@@ -88,7 +138,11 @@ export function resumenGlobal() {
 
 // Dispara el recorrido completo en segundo plano si hace falta. "Fire and
 // forget" a propósito: la petición actual se sirve con lo que haya y las
-// próximas irán teniendo más marcas según avanza.
+// próximas irán teniendo más marcas según avanza. Si ya había un recorrido a
+// medias guardado en disco (de antes de un reinicio), esto NO empieza de la
+// primera página del histórico real — sigue sirviendo con lo ya conocido y
+// solo completa lo que falte la próxima vez que de verdad haga falta
+// refrescar (han pasado TTL_MS desde la última vez completa).
 export function asegurarComprados(usuario, session) {
   if (enCurso.has(usuario)) return;
   const d = entrada(usuario);
@@ -100,7 +154,8 @@ export function asegurarComprados(usuario, session) {
       // — /consumo.html es lentísima y cofiba.es serializa las peticiones de
       // una misma cuenta, así que lanzarla mientras alguien navega le mete
       // 15-35s de espera. Este rastreo es de baja prioridad: puede esperar a
-      // los ratos muertos.
+      // los ratos muertos, pero corre tan rápido como cofiba.es lo permita
+      // en cuanto hay hueco.
       await esperarInactividad();
       const res = await encolarConsumo(usuario, () => getProductos(session, { pageUrl: pageUrl || CONSUMO_URL }));
       registrarCompras(usuario, res.productos);
@@ -108,9 +163,11 @@ export function asegurarComprados(usuario, session) {
     } while (pageUrl);
     d.completo = true;
     d.actualizado = Date.now();
+    guardarEnDisco(true);
   })()
     .catch((e) => {
       console.error('[compradosStore] fallo recorriendo el histórico de compras:', e.message);
+      guardarEnDisco(true); // conserva lo avanzado hasta el fallo, no se tira
     })
     .finally(() => {
       enCurso.delete(usuario);
