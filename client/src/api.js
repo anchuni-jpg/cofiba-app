@@ -141,6 +141,24 @@ export const api = {
   estadisticasCached(onCacheHit) {
     return conCache('estadisticas', () => this.estadisticas(), onCacheHit);
   },
+  novedades() {
+    return request('/novedades');
+  },
+  // A diferencia del resto de *Cached (que siempre repiten la petición real
+  // por detrás), Novedades solo hace falta pedirla de verdad una vez al
+  // día: el catálogo de cofiba.es no cambia más a menudo que eso (se
+  // renueva de madrugada), así que volver a mirarla el mismo día no puede
+  // traer nada nuevo.
+  async novedadesCached(onCacheHit) {
+    const CLAVE = 'novedades';
+    const UN_DIA_MS = 24 * 60 * 60 * 1000;
+    const cacheado = await getCache(CLAVE);
+    if (cacheado) onCacheHit?.(cacheado.datos);
+    if (cacheado && Date.now() - cacheado.cuando < UN_DIA_MS) return cacheado.datos;
+    const frescos = await this.novedades();
+    await setCache(CLAVE, { datos: frescos, cuando: Date.now() });
+    return frescos;
+  },
   // El PDF no puede enlazarse directo (necesita nuestra sesión, no la del
   // navegador) — se trae como blob autenticado y quien llama decide qué
   // hacer con él (abrirlo, descargarlo).

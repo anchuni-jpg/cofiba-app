@@ -18,6 +18,13 @@ function formatoEuro(n) {
   );
 }
 
+function haceCuanto(desde) {
+  const dias = Math.floor((Date.now() - desde) / (24 * 60 * 60 * 1000));
+  if (dias <= 0) return 'hoy';
+  if (dias === 1) return 'hace 1 día';
+  return `hace ${dias} días`;
+}
+
 function FilaProducto({ p, max }) {
   return (
     <div className="product-row">
@@ -57,6 +64,20 @@ export default function Estadisticas() {
   // ordenados de más a menos vendido) en vez del resumen general — no hace
   // falta pedir nada nuevo, el desglose ya trae sus propios productos.
   const [categoriaAbierta, setCategoriaAbierta] = useState(null);
+  const [novedades, setNovedades] = useState(null);
+
+  useEffect(() => {
+    // Su propia caché con límite de un día (api.novedadesCached) — no hace
+    // falta volver a pedirla de verdad cada vez que se entra aquí en el
+    // mismo día, el catálogo no cambia más a menudo que eso.
+    api
+      .novedadesCached((cacheado) => setNovedades(cacheado.productos))
+      .then((data) => setNovedades(data.productos))
+      .catch(() => {
+        // Silencioso a propósito: es un dato complementario, no algo que
+        // deba impedir ver el resto de Estadísticas si falla.
+      });
+  }, []);
 
   function cargar({ mostrarCache }) {
     setError(null);
@@ -161,6 +182,43 @@ export default function Estadisticas() {
               <p className="muted" style={{ margin: '2px 0 0', fontSize: 11 }}>Importe total</p>
             </div>
           </div>
+
+          {novedades && novedades.length > 0 && (
+            <>
+              <p style={{ fontWeight: 600, fontSize: 13, margin: '0 0 8px' }}>
+                Novedades <span className="muted" style={{ fontWeight: 400 }}>· añadidas en los últimos 3 días</span>
+              </p>
+              <div style={{ marginBottom: 20 }}>
+                {novedades.map((p) => (
+                  <div className="product-row" key={p.articulo}>
+                    <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {p.nombre || p.referencia || p.articulo}
+                      </p>
+                      <p className="muted" style={{ margin: '2px 0 0' }}>
+                        {p.categoriaNombre}
+                        {p.precioFinal ? ` · ${p.precioFinal}€` : ''}
+                      </p>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: 'var(--accent)',
+                        background: 'var(--accent-bg)',
+                        borderRadius: 8,
+                        padding: '3px 8px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {haceCuanto(p.desde)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <p style={{ fontWeight: 600, fontSize: 13, margin: '0 0 8px' }}>Más comprados</p>
           <div style={{ marginBottom: 20 }}>

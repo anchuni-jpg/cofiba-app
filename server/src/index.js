@@ -34,6 +34,7 @@ import {
   marcarActividad,
 } from './indiceStore.js';
 import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras } from './compradosStore.js';
+import { articulosNuevos } from './novedadesStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
@@ -203,17 +204,42 @@ app.get('/api/categorias', requireSession, async (req, res) => {
   }
 });
 
+// cofiba.es solo renueva su catálogo una vez al día (de madrugada) — rehacer
+// el scraping de la misma página varias veces en el mismo día no sirve de
+// nada salvo para gastar la única CPU del plan gratuito y hacer esperar al
+// cliente. Se cachea el resultado del scraping en sí (precios, stock,
+// productos — igual para cualquier cuenta) un día entero; lo que SÍ es
+// propio de cada usuario (la marca "comprado") se recalcula siempre fresco
+// encima, nunca se guarda junto al resto.
+const CACHE_PRODUCTOS_MS = 24 * 60 * 60 * 1000;
+const productosCache = new Map(); // `${categoria}|${subcategoria||''}|${pageUrl||''}` -> { resultado, cuando }
+const productosEnCurso = new Map(); // misma clave -> Promise, para no pedir la misma página dos veces en paralelo
+
 app.get('/api/productos', requireSession, async (req, res) => {
   const { categoria, subcategoria, page, pageUrl } = req.query;
   if (!categoria) return res.status(400).json({ error: 'Falta el parámetro categoria.' });
+  const clave = `${categoria}|${subcategoria || ''}|${pageUrl || ''}`;
   try {
-    const resultado = await getProductosAgrupados(req.cofiba, {
-      categoria,
-      subcategoria,
-      page: Number(page) || 1,
-      pageUrl,
-    });
-    registrarImagenes(resultado.productos);
+    let resultado;
+    const cacheado = productosCache.get(clave);
+    if (cacheado && Date.now() - cacheado.cuando < CACHE_PRODUCTOS_MS) {
+      resultado = cacheado.resultado;
+    } else {
+      let promesa = productosEnCurso.get(clave);
+      if (!promesa) {
+        promesa = getProductosAgrupados(req.cofiba, {
+          categoria,
+          subcategoria,
+          page: Number(page) || 1,
+          pageUrl,
+        }).finally(() => productosEnCurso.delete(clave));
+        productosEnCurso.set(clave, promesa);
+      }
+      resultado = await promesa;
+      registrarImagenes(resultado.productos);
+      productosCache.set(clave, { resultado, cuando: Date.now() });
+    }
+
     // Antes esto no se llamaba aquí (solo en Buscar/Histórico) para no
     // competir por la única CPU del plan gratuito mientras alguien solo
     // navegaba el catálogo — pero eso dejaba las marcas de "Comprado" sin
@@ -222,7 +248,8 @@ app.get('/api/productos', requireSession, async (req, res) => {
     // un rastreo en curso o uno reciente, así que llamarlo aquí también es
     // barato y asegura que las marcas siempre acaban apareciendo.
     asegurarComprados(req.usuario, req.cofiba);
-    resultado.productos = marcarComprados(req.usuario, resultado.productos);
+    const productos = marcarComprados(req.usuario, resultado.productos);
+    let subcategorias = resultado.subcategorias;
     // Quita de los chips las subcategorías que el índice del catálogo ya
     // sabe que no tienen ningún producto — antes se enseñaban todas (vienen
     // tal cual del menú lateral de cofiba.es) y algunas llevaban a una
@@ -231,15 +258,13 @@ app.get('/api/productos', requireSession, async (req, res) => {
     // Set vacío y no se filtra nada (mejor enseñar de más que ocultar de
     // más). La subcategoría que se está viendo ahora mismo nunca se quita,
     // aunque el índice no la conozca todavía.
-    if (resultado.subcategorias?.length) {
+    if (subcategorias?.length) {
       const conProductos = subcategoriasConProductos(categoria);
       if (conProductos.size) {
-        resultado.subcategorias = resultado.subcategorias.filter(
-          (s) => conProductos.has(s.slug) || s.slug === resultado.grupo?.slug
-        );
+        subcategorias = subcategorias.filter((s) => conProductos.has(s.slug) || s.slug === resultado.grupo?.slug);
       }
     }
-    res.json(resultado);
+    res.json({ ...resultado, productos, subcategorias });
   } catch (e) {
     res.status(e.code === 'PAGEURL_INVALIDA' ? 400 : 502).json({ error: e.message });
   }
@@ -533,6 +558,22 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
     masComprados: filas.slice(0, 15),
     porCategoria: categorias,
   });
+});
+
+// Artículos detectados como nuevos en el catálogo en los últimos 3 días
+// (ver novedadesStore.js) — no depende del usuario que pregunta, es el
+// mismo catálogo general para cualquiera, así que no hace falta ningún
+// rastreo por cuenta como en /api/estadisticas.
+app.get('/api/novedades', requireSession, (req, res) => {
+  const nuevos = articulosNuevos();
+  const productos = nuevos
+    .map(({ articulo, desde }) => {
+      const info = buscarPorArticulo(articulo);
+      if (!info) return null;
+      return { ...info, desde };
+    })
+    .filter(Boolean);
+  res.json({ productos });
 });
 
 // El buscador propio de cofiba.es (categoria/todas/true?buscar=) no sirve de
