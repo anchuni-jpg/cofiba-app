@@ -508,14 +508,6 @@ export default function Productos({
                 </p>
                 <p className="muted" style={{ margin: '2px 0' }}>
                   Ref. {p.referencia || p.articulo}
-                  {(() => {
-                    const info = nivelStock(p.stock, p.undVenta);
-                    return (
-                      info && (
-                        <span style={{ color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {info.texto}</span>
-                      )
-                    );
-                  })()}
                   {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
                 </p>
                 <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
@@ -525,6 +517,16 @@ export default function Productos({
                       <CarritoIcon />
                     </span>
                   )}
+                  {(() => {
+                    const info = nivelStock(p.stock, p.undVenta);
+                    return (
+                      info && (
+                        <span style={{ marginLeft: 5, fontSize: 11, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                          {info.texto}
+                        </span>
+                      )
+                    );
+                  })()}
                 </p>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
@@ -574,6 +576,16 @@ export default function Productos({
                     <CarritoIcon size={11} />
                   </span>
                 )}
+                {(() => {
+                  const info = nivelStock(p.stock, p.undVenta);
+                  return (
+                    info && (
+                      <span style={{ marginLeft: 4, fontSize: 10, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                        {info.texto}
+                      </span>
+                    )
+                  );
+                })()}
               </p>
               <div className="qty-stepper" style={{ marginTop: 4 }}>
                 <button onClick={() => añadir(p, -1)}>-</button>
@@ -585,14 +597,6 @@ export default function Productos({
                   caja de {formatoCaja(p.undVenta)} uds
                 </span>
               )}
-              {(() => {
-                const info = nivelStock(p.stock, p.undVenta);
-                return (
-                  info && (
-                    <span style={{ fontSize: 10, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>{info.texto}</span>
-                  )
-                );
-              })()}
             </div>
           ))}
         </div>

@@ -12,6 +12,15 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
+// Duplica nivelStock de Productos.jsx — 10 cajas o más: "STOCK" en verde,
+// sin número; por debajo: "STOCK BAJO" en el color de aviso.
+function nivelStock(stock, undVenta) {
+  if (!Number.isFinite(stock)) return null;
+  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
+  const cajas = stock / unidadesPorCaja;
+  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+}
+
 // Insensible a acentos/mayúsculas — duplica normalizar() de indiceStore.js
 // del lado del servidor, para filtrar aquí lo que ya se cargó sin ir y
 // volver al servidor por cada tecla.
@@ -293,6 +302,16 @@ export default function Historico({
                       <CarritoIcon />
                     </span>
                   )}
+                  {(() => {
+                    const info = nivelStock(p.stock, p.undVenta);
+                    return (
+                      info && (
+                        <span style={{ marginLeft: 5, fontSize: 11, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                          {info.texto}
+                        </span>
+                      )
+                    );
+                  })()}
                 </p>
                 {p.categoria && (
                   <button
@@ -350,6 +369,16 @@ export default function Historico({
                     <CarritoIcon size={11} />
                   </span>
                 )}
+                {(() => {
+                  const info = nivelStock(p.stock, p.undVenta);
+                  return (
+                    info && (
+                      <span style={{ marginLeft: 4, fontSize: 10, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                        {info.texto}
+                      </span>
+                    )
+                  );
+                })()}
               </p>
               {p.categoria && (
                 <button
@@ -424,6 +453,12 @@ export default function Historico({
               Ref. {zoomProducto.referencia || zoomProducto.articulo}
               {zoomProducto.precioFinal ? ` · ${zoomProducto.precioFinal}€` : ''}
               {zoomProducto.undVenta ? ` · caja de ${formatoCaja(zoomProducto.undVenta)} uds` : ''}
+              {(() => {
+                const info = nivelStock(zoomProducto.stock, zoomProducto.undVenta);
+                return (
+                  info && <span style={{ color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {info.texto}</span>
+                );
+              })()}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div className="qty-stepper">

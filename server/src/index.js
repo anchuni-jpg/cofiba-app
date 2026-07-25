@@ -473,28 +473,55 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
   }
   const { conteo, completo, actualizado } = stats;
 
-  const porCategoria = new Map();
+  // Importe = precio actual × veces comprado. Es una aproximación (el
+  // histórico no guarda el precio de cada compra en su momento, así que se
+  // usa el precio de catálogo de ahora), pero es la única forma de dar una
+  // cifra de dinero sin que cofiba.es exponga ese dato en ningún otro sitio.
+  const porCategoria = new Map(); // nombre -> { nombre, veces, importe, productos: [] }
   const filas = [];
   let totalLineas = 0;
+  let totalImporte = 0;
   for (const [articulo, veces] of conteo.entries()) {
     totalLineas += veces;
     const info = buscarPorArticulo(articulo);
     const categoriaNombre = info?.categoriaNombre || (info?.categoria ? info.categoria.toUpperCase() : 'Sin categoría');
-    porCategoria.set(categoriaNombre, (porCategoria.get(categoriaNombre) || 0) + veces);
-    filas.push({
+    const precio = parseFloat(String(info?.precioFinal || '').replace(',', '.'));
+    const importe = Number.isFinite(precio) ? Math.round(precio * veces * 100) / 100 : null;
+    if (importe != null) totalImporte += importe;
+
+    const fila = {
       articulo,
       veces,
+      importe,
       nombre: info?.nombre || null,
       referencia: info?.referencia || null,
       precioFinal: info?.precioFinal || null,
       imagen: info?.imagen || null,
       categoriaNombre,
-    });
+    };
+    filas.push(fila);
+
+    let cat = porCategoria.get(categoriaNombre);
+    if (!cat) {
+      cat = { nombre: categoriaNombre, veces: 0, importe: 0, productos: [] };
+      porCategoria.set(categoriaNombre, cat);
+    }
+    cat.veces += veces;
+    if (importe != null) cat.importe += importe;
+    cat.productos.push(fila);
   }
   filas.sort((a, b) => b.veces - a.veces);
-  const categorias = [...porCategoria.entries()]
-    .map(([nombre, veces]) => ({ nombre, veces }))
-    .sort((a, b) => b.veces - a.veces);
+
+  // Cada categoría trae ya sus propios productos ordenados de más a menos
+  // vendido — así, al tocar una categoría en el cliente, mostrar "sus
+  // productos de más a menos vendido" no necesita ninguna petición nueva.
+  const categorias = [...porCategoria.values()]
+    .map((c) => ({
+      ...c,
+      importe: Math.round(c.importe * 100) / 100,
+      productos: c.productos.slice().sort((a, b) => b.veces - a.veces),
+    }))
+    .sort((a, b) => b.importe - a.importe);
 
   res.json({
     disponible: true,
@@ -502,6 +529,7 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
     actualizado,
     articulosDistintos: conteo.size,
     totalLineas,
+    totalImporte: Math.round(totalImporte * 100) / 100,
     masComprados: filas.slice(0, 15),
     porCategoria: categorias,
   });
