@@ -33,7 +33,7 @@ import {
   subcategoriasConProductos,
   marcarActividad,
 } from './indiceStore.js';
-import { asegurarComprados, comprasConocidas, registrarCompras } from './compradosStore.js';
+import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras } from './compradosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
@@ -454,6 +454,57 @@ app.get('/api/historico', requireSession, async (req, res) => {
   } catch (e) {
     res.status(e.code === 'PAGEURL_INVALIDA' ? 400 : 502).json({ error: e.message });
   }
+});
+
+// Estadísticas de la propia cuenta: no hay ningún endpoint de "informes" en
+// cofiba.es, así que esto se calcula a partir de lo mismo que ya usa
+// compradosStore.js para marcar "comprado" en el catálogo (el recorrido de
+// fondo de /consumo.html) — solo que ahí se contaba con un Set (sí/no) y
+// aquí con un Map (cuántas veces), lo que permite sacar "más comprados" y un
+// desglose por categoría sin ninguna petición extra a cofiba.es. Dispara el
+// mismo recorrido de fondo que Histórico/Buscar si aún no hay nada — puede
+// tardar en completarse la primera vez, así que `completo` indica si las
+// cifras son ya definitivas o siguen creciendo.
+app.get('/api/estadisticas', requireSession, async (req, res) => {
+  asegurarComprados(req.usuario, req.cofiba);
+  const stats = estadisticasCompras(req.usuario);
+  if (!stats) {
+    return res.json({ disponible: false, completo: false });
+  }
+  const { conteo, completo, actualizado } = stats;
+
+  const porCategoria = new Map();
+  const filas = [];
+  let totalLineas = 0;
+  for (const [articulo, veces] of conteo.entries()) {
+    totalLineas += veces;
+    const info = buscarPorArticulo(articulo);
+    const categoriaNombre = info?.categoriaNombre || (info?.categoria ? info.categoria.toUpperCase() : 'Sin categoría');
+    porCategoria.set(categoriaNombre, (porCategoria.get(categoriaNombre) || 0) + veces);
+    filas.push({
+      articulo,
+      veces,
+      nombre: info?.nombre || null,
+      referencia: info?.referencia || null,
+      precioFinal: info?.precioFinal || null,
+      imagen: info?.imagen || null,
+      categoriaNombre,
+    });
+  }
+  filas.sort((a, b) => b.veces - a.veces);
+  const categorias = [...porCategoria.entries()]
+    .map(([nombre, veces]) => ({ nombre, veces }))
+    .sort((a, b) => b.veces - a.veces);
+
+  res.json({
+    disponible: true,
+    completo,
+    actualizado,
+    articulosDistintos: conteo.size,
+    totalLineas,
+    masComprados: filas.slice(0, 15),
+    porCategoria: categorias,
+  });
 });
 
 // El buscador propio de cofiba.es (categoria/todas/true?buscar=) no sirve de

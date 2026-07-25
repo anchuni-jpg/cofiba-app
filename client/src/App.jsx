@@ -6,6 +6,7 @@ import Productos from './screens/Productos.jsx';
 import Carrito from './screens/Carrito.jsx';
 import Historico from './screens/Historico.jsx';
 import Busqueda from './screens/Busqueda.jsx';
+import Estadisticas from './screens/Estadisticas.jsx';
 
 function useInstallPrompt() {
   const [deferred, setDeferred] = useState(null);
@@ -45,7 +46,7 @@ function cargarCompradosSesion() {
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!getToken());
-  const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico
+  const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico | estadisticas
   const [categoria, setCategoria] = useState(null);
   // Solo se rellena al venir del botón "Ver más" de Histórico — le dice a
   // Productos en qué subcategoría entrar directamente en vez de la primera
@@ -347,19 +348,23 @@ export default function App() {
           }}
         />
       )}
+      {tab === 'estadisticas' && <Estadisticas />}
 
+      {/* Sin botón propio para "Productos": a esa pantalla solo se llega
+          tocando una categoría desde Catálogo (o "Ver más" en Histórico) —
+          por eso no aparece aquí abajo, aunque su ruta siga existiendo. */}
       <div className="bottomnav">
         <button className={tab === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>
-          Categorías
+          Catálogo
         </button>
-        <button className={tab === 'productos' ? 'active' : ''} onClick={() => setTab('productos')} disabled={!categoria}>
-          Productos
+        <button className={tab === 'historico' ? 'active' : ''} onClick={() => setTab('historico')}>
+          Histórico
         </button>
         <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
           Carrito{cartCount > 0 ? <span className="badge">{cartCount}</span> : null}
         </button>
-        <button className={tab === 'historico' ? 'active' : ''} onClick={() => setTab('historico')}>
-          Histórico
+        <button className={tab === 'estadisticas' ? 'active' : ''} onClick={() => setTab('estadisticas')}>
+          Estadísticas
         </button>
       </div>
     </>

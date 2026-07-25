@@ -23,31 +23,51 @@ import { encolarConsumo } from './consumoQueue.js';
 // nunca bloquea una petición: mientras corre, el catálogo se sirve con las
 // marcas parciales que ya haya.
 const TTL_MS = 20 * 60 * 1000;
-const datos = new Map(); // usuario -> { set, completo, actualizado }
+const datos = new Map(); // usuario -> { conteo, completo, actualizado }
 const enCurso = new Map(); // usuario -> Promise
 
 function entrada(usuario) {
   let d = datos.get(usuario);
   if (!d) {
-    d = { set: new Set(), completo: false, actualizado: null };
+    // `conteo` cuenta cuántas veces se ha visto cada artículo en
+    // /consumo.html (una vez por línea de compra real) — no es solo un Set
+    // de "comprado sí/no": la frecuencia es lo que permite luego calcular
+    // "los más vendidos" en /api/estadisticas. Sigue teniendo `.has()`
+    // (Map la trae de serie), así que marcarComprados() en index.js no
+    // necesita cambiar nada.
+    d = { conteo: new Map(), completo: false, actualizado: null };
     datos.set(usuario, d);
   }
   return d;
 }
 
-// Alimenta el set con productos de una página de /consumo.html ya pedida por
-// otro motivo (p. ej. la pestaña Histórico) — así no se desperdicia ninguna
-// petición ya hecha y las marcas aparecen sin esperar al recorrido completo.
+// Alimenta el conteo con productos de una página de /consumo.html ya pedida
+// por otro motivo (p. ej. la pestaña Histórico) — así no se desperdicia
+// ninguna petición ya hecha y las marcas aparecen sin esperar al recorrido
+// completo.
 export function registrarCompras(usuario, productos) {
   const d = entrada(usuario);
-  productos.forEach((p) => d.set.add(p.articulo));
+  productos.forEach((p) => d.conteo.set(p.articulo, (d.conteo.get(p.articulo) || 0) + 1));
 }
 
-// El set de artículos comprados si ya se sabe algo (aunque sea parcial), o
-// null si aún no hay ni un dato — nunca bloquea.
+// El conteo de artículos comprados si ya se sabe algo (aunque sea parcial), o
+// null si aún no hay ni un dato — nunca bloquea. Se sigue llamando "set" en
+// los sitios que solo miran pertenencia (marcarComprados) porque Map también
+// tiene `.has()`.
 export function comprasConocidas(usuario) {
   const d = datos.get(usuario);
-  return d && d.set.size ? d.set : null;
+  return d && d.conteo.size ? d.conteo : null;
+}
+
+// Datos crudos para /api/estadisticas: la frecuencia de cada artículo (para
+// "más vendidos") y si el recorrido ya es completo (para avisar si las
+// cifras todavía son parciales). El enriquecido con nombre/categoría/precio
+// se hace en index.js con el índice del catálogo, no aquí — este módulo solo
+// sabe de códigos de artículo, no de sus datos.
+export function estadisticasCompras(usuario) {
+  const d = datos.get(usuario);
+  if (!d || d.conteo.size === 0) return null;
+  return { conteo: d.conteo, completo: d.completo, actualizado: d.actualizado };
 }
 
 // Dispara el recorrido completo en segundo plano si hace falta. "Fire and

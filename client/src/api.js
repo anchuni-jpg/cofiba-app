@@ -135,6 +135,12 @@ export const api = {
   pedidosPendientes() {
     return request('/pedidos-pendientes');
   },
+  estadisticas() {
+    return request('/estadisticas');
+  },
+  estadisticasCached(onCacheHit) {
+    return conCache('estadisticas', () => this.estadisticas(), onCacheHit);
+  },
   // El PDF no puede enlazarse directo (necesita nuestra sesión, no la del
   // navegador) — se trae como blob autenticado y quien llama decide qué
   // hacer con él (abrirlo, descargarlo).

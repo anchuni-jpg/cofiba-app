@@ -27,6 +27,18 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
+// El número exacto de unidades en stock no dice gran cosa por sí solo (¿224
+// unidades es mucho o poco si la caja es de 100?) — lo que importa es
+// cuántas CAJAS quedan. Con 10 cajas o más se enseña solo "STOCK" (en
+// verde, sin número: hay de sobra); por debajo, "STOCK BAJO" en el color de
+// aviso, para que salte a la vista sin tener que hacer la cuenta.
+function nivelStock(stock, undVenta) {
+  if (!Number.isFinite(stock)) return null;
+  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
+  const cajas = stock / unidadesPorCaja;
+  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+}
+
 export default function Productos({
   categoria,
   subcategoriaInicial,
@@ -496,9 +508,14 @@ export default function Productos({
                 </p>
                 <p className="muted" style={{ margin: '2px 0' }}>
                   Ref. {p.referencia || p.articulo}
-                  {Number.isFinite(p.stock) && (
-                    <span style={{ color: p.stock === 0 ? 'var(--danger)' : undefined }}> · STOCK {p.stock}</span>
-                  )}
+                  {(() => {
+                    const info = nivelStock(p.stock, p.undVenta);
+                    return (
+                      info && (
+                        <span style={{ color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {info.texto}</span>
+                      )
+                    );
+                  })()}
                   {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
                 </p>
                 <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
@@ -568,11 +585,14 @@ export default function Productos({
                   caja de {formatoCaja(p.undVenta)} uds
                 </span>
               )}
-              {Number.isFinite(p.stock) && (
-                <span className="muted" style={{ fontSize: 10, color: p.stock === 0 ? 'var(--danger)' : undefined }}>
-                  STOCK {p.stock}
-                </span>
-              )}
+              {(() => {
+                const info = nivelStock(p.stock, p.undVenta);
+                return (
+                  info && (
+                    <span style={{ fontSize: 10, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>{info.texto}</span>
+                  )
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -650,7 +670,12 @@ export default function Productos({
               Ref. {zoomProducto.referencia || zoomProducto.articulo}
               {zoomProducto.precioFinal ? ` · ${zoomProducto.precioFinal}€` : ''}
               {zoomProducto.undVenta ? ` · caja de ${formatoCaja(zoomProducto.undVenta)} uds` : ''}
-              {Number.isFinite(zoomProducto.stock) ? ` · STOCK ${zoomProducto.stock}` : ''}
+              {(() => {
+                const info = nivelStock(zoomProducto.stock, zoomProducto.undVenta);
+                return (
+                  info && <span style={{ color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {info.texto}</span>
+                );
+              })()}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div className="qty-stepper">
