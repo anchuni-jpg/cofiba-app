@@ -1,0 +1,23 @@
+{
+  "name": "cofiba-panel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Panel de escritorio con estadísticas de uso de Cofiba Visor de Pedidos",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "es.cofiba.panel",
+    "productName": "Cofiba Panel",
+    "win": {
+      "target": "nsis"
+    },
+    "files": ["main.js", "preload.js", "index.html", "renderer.js", "styles.css", "icon.ico"]
+  }
+}

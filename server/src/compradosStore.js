@@ -70,6 +70,22 @@ export function estadisticasCompras(usuario) {
   return { conteo: d.conteo, completo: d.completo, actualizado: d.actualizado };
 }
 
+// Para el panel de escritorio (/api/admin/estado): suma el conteo de TODAS
+// las cuentas que usan la app en uno solo (para "más vendidos" a nivel
+// global, no solo de una cuenta) y da un resumen por cuenta. Solo incluye
+// cuentas que ya tienen algún dato recorrido desde que arrancó este proceso.
+export function resumenGlobal() {
+  const conteoGlobal = new Map();
+  const porUsuario = [];
+  for (const [usuario, d] of datos.entries()) {
+    porUsuario.push({ usuario, articulosDistintos: d.conteo.size, completo: d.completo, actualizado: d.actualizado });
+    for (const [articulo, veces] of d.conteo.entries()) {
+      conteoGlobal.set(articulo, (conteoGlobal.get(articulo) || 0) + veces);
+    }
+  }
+  return { conteoGlobal, porUsuario };
+}
+
 // Dispara el recorrido completo en segundo plano si hace falta. "Fire and
 // forget" a propósito: la petición actual se sirve con lo que haya y las
 // próximas irán teniendo más marcas según avanza.

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Cofiba Panel</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="setup" class="pantalla" hidden>
+    <div class="setup-card">
+      <h1>Cofiba Panel</h1>
+      <p class="muted">Configura la conexión con el servidor la primera vez que abras el programa.</p>
+      <label>URL del servidor</label>
+      <input id="campo-url" type="text" placeholder="https://cofiba-visor.onrender.com" />
+      <label>Token de administrador</label>
+      <input id="campo-token" type="password" placeholder="Token que te dio Claude / que pusiste en Render" />
+      <p id="setup-error" class="error" hidden></p>
+      <button id="btn-guardar" class="primary">Conectar</button>
+    </div>
+  </div>
+
+  <div id="panel" class="pantalla" hidden>
+    <header>
+      <h1>Cofiba Panel</h1>
+      <div class="header-right">
+        <span id="ultima-actualizacion" class="muted"></span>
+        <button id="btn-refrescar" title="Actualizar ahora">⟳</button>
+        <button id="btn-ajustes" title="Ajustes">⚙</button>
+      </div>
+    </header>
+
+    <div id="aviso-error" class="error" hidden></div>
+
+    <main>
+      <section class="tarjetas">
+        <div class="tarjeta">
+          <p class="tarjeta-numero" id="n-conectadas">—</p>
+          <p class="tarjeta-etiqueta">Cuentas conectadas ahora</p>
+        </div>
+        <div class="tarjeta">
+          <p class="tarjeta-numero" id="n-cuentas">—</p>
+          <p class="tarjeta-etiqueta">Cuentas usando la app</p>
+        </div>
+        <div class="tarjeta">
+          <p class="tarjeta-numero" id="n-fact-total">—</p>
+          <p class="tarjeta-etiqueta">Facturado en total</p>
+        </div>
+        <div class="tarjeta">
+          <p class="tarjeta-numero" id="n-fact-30">—</p>
+          <p class="tarjeta-etiqueta">Últimos 30 días</p>
+        </div>
+        <div class="tarjeta">
+          <p class="tarjeta-numero" id="n-fact-7">—</p>
+          <p class="tarjeta-etiqueta">Últimos 7 días</p>
+        </div>
+      </section>
+
+      <section class="columnas">
+        <div class="col">
+          <h2>Cuentas conectadas</h2>
+          <table>
+            <thead><tr><th></th><th>Usuario</th><th>Desde</th><th>Última actividad</th></tr></thead>
+            <tbody id="tabla-sesiones"></tbody>
+          </table>
+        </div>
+        <div class="col">
+          <h2>Pedidos recientes</h2>
+          <table>
+            <thead><tr><th>Fecha</th><th>Usuario</th><th>Importe</th><th>Artículos</th></tr></thead>
+            <tbody id="tabla-pedidos"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="columnas">
+        <div class="col">
+          <h2>Más comprados (global)</h2>
+          <div id="lista-mas-comprados"></div>
+        </div>
+        <div class="col">
+          <h2>Por cuenta</h2>
+          <table>
+            <thead><tr><th>Usuario</th><th>Artículos distintos</th><th>Recorrido</th></tr></thead>
+            <tbody id="tabla-cuentas"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Índice del catálogo</h2>
+        <p id="estado-indice" class="muted"></p>
+      </section>
+    </main>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -33,8 +33,9 @@ import {
   subcategoriasConProductos,
   marcarActividad,
 } from './indiceStore.js';
-import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras } from './compradosStore.js';
+import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras, resumenGlobal } from './compradosStore.js';
 import { articulosNuevos } from './novedadesStore.js';
+import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
@@ -105,6 +106,9 @@ async function requireSession(req, res, next) {
 
   const entry = sessions.get(token);
   if (entry) {
+    // Para el panel de escritorio: saber quién está "conectado ahora" de
+    // verdad (no solo quién tiene un token válido) necesita esto.
+    entry.lastSeenAt = Date.now();
     req.cofiba = entry.session;
     req.usuario = entry.usuario;
     return next();
@@ -181,6 +185,18 @@ app.post('/api/logout', requireSession, (req, res) => {
   deleteCredentials(token);
   res.json({ ok: true });
 });
+
+// Panel de escritorio (programa aparte, no la PWA de los clientes): su
+// propia clave compartida, distinta del login de cada cuenta de cofiba.es
+// — esto es información de negocio (quién usa la app, qué se factura a
+// través de ella...), no algo que deba poder ver cualquiera que tenga
+// usuario y contraseña de un solo cliente.
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+function requireAdmin(req, res, next) {
+  if (!ADMIN_TOKEN) return res.status(503).json({ error: 'ADMIN_TOKEN no configurado en el servidor.' });
+  if (req.headers['x-admin-token'] !== ADMIN_TOKEN) return res.status(401).json({ error: 'No autorizado.' });
+  next();
+}
 
 // La lista de categorías es la misma para todos los clientes y casi nunca
 // cambia — se cachea en memoria del servidor (global, no por usuario) para no
@@ -394,10 +410,31 @@ app.post('/api/carrito/vaciar', requireSession, async (req, res) => {
 app.post('/api/carrito/finalizar', requireSession, async (req, res) => {
   const { observaciones } = req.body || {};
   try {
+    // Totales de ANTES de finalizar (finalizar vacía el carrito) — solo para
+    // el registro del panel de escritorio ("lo que factura la app"). Si esto
+    // falla, no debe impedir finalizar el pedido de verdad: es un dato
+    // secundario, no algo crítico para el cliente.
+    let resumenCarrito = null;
+    try {
+      resumenCarrito = await getCarrito(req.cofiba);
+    } catch {
+      // ignorado a propósito, ver comentario de arriba
+    }
+
     // "Histórico" ya no depende de que registremos nosotros la compra —
     // lee directamente /consumo.html, que cofiba.es actualiza sola en
     // cuanto el pedido se genera.
     const result = await finalizarPedido(req.cofiba, { observaciones });
+
+    if (resumenCarrito) {
+      const total = parseFloat(String(resumenCarrito.totales?.total || '').replace(/\./g, '').replace(',', '.'));
+      registrarPedido({
+        usuario: req.usuario,
+        total: Number.isFinite(total) ? total : null,
+        numProductos: resumenCarrito.numProductos,
+      });
+    }
+
     res.json(result);
   } catch (e) {
     const status = e.code === 'CALIBRATION_NEEDED' ? 501 : 502;
@@ -574,6 +611,60 @@ app.get('/api/novedades', requireSession, (req, res) => {
     })
     .filter(Boolean);
   res.json({ productos });
+});
+
+// "Conectado ahora" = ha hecho alguna petición autenticada en los últimos 15
+// minutos (ver `entry.lastSeenAt` en requireSession) — un token válido sin
+// actividad reciente es una pestaña abierta y olvidada, no alguien usando
+// la app de verdad ahora mismo.
+const CONECTADO_RECIENTE_MS = 15 * 60 * 1000;
+
+// Todo lo que necesita el programa de escritorio en una sola llamada: qué
+// cuentas están usando la app ahora mismo, qué se compra más entre todas
+// ellas (sumando el histórico de cada una — ver compradosStore.js), y lo
+// facturado a través de la propia app (pedidosStore.js, que solo registra
+// pedidos que de verdad se finalizaron aquí, no todo el histórico de
+// cofiba.es). También el estado del índice del catálogo, útil para saber si
+// el servidor sigue "calentando" tras un despliegue.
+app.get('/api/admin/estado', requireAdmin, (req, res) => {
+  const ahora = Date.now();
+  const sesiones = [...sessions.entries()].map(([, s]) => ({
+    usuario: s.usuario,
+    desde: s.createdAt,
+    ultimaActividad: s.lastSeenAt || s.createdAt,
+    conectadoAhora: ahora - (s.lastSeenAt || s.createdAt) < CONECTADO_RECIENTE_MS,
+  }));
+
+  const { conteoGlobal, porUsuario } = resumenGlobal();
+  const masComprados = [...conteoGlobal.entries()]
+    .map(([articulo, veces]) => {
+      const info = buscarPorArticulo(articulo);
+      return {
+        articulo,
+        veces,
+        nombre: info?.nombre || null,
+        referencia: info?.referencia || null,
+        categoriaNombre: info?.categoriaNombre || null,
+        precioFinal: info?.precioFinal || null,
+        imagen: info?.imagen || null,
+      };
+    })
+    .sort((a, b) => b.veces - a.veces)
+    .slice(0, 30);
+
+  res.json({
+    sesiones,
+    cuentasConectadasAhora: sesiones.filter((s) => s.conectadoAhora).length,
+    cuentasTotales: sesiones.length,
+    porCuenta: porUsuario,
+    masCompradosGlobal: masComprados,
+    facturacion: {
+      total: resumenFacturacion(),
+      ultimos30Dias: resumenFacturacion({ desde: ahora - 30 * 24 * 60 * 60 * 1000 }),
+      ultimos7Dias: resumenFacturacion({ desde: ahora - 7 * 24 * 60 * 60 * 1000 }),
+    },
+    indiceCatalogo: estadoActual(),
+  });
 });
 
 // El buscador propio de cofiba.es (categoria/todas/true?buscar=) no sirve de
