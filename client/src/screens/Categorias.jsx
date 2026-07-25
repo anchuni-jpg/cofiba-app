@@ -15,7 +15,7 @@ const CONTACTO_COFIBA = {
   emails: ['pedidos@cofiba.es', 'info@cofiba.es'],
 };
 
-const APP_VERSION = '0.8';
+const APP_VERSION = '0.9';
 
 // Cofiba no da un icono por categoría — esto es solo decorativo, para que la
 // rejilla se reconozca de un vistazo. Por palabra clave en el slug (no
