@@ -11,24 +11,6 @@ function formatoCaja(undVenta) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
 }
 
-// Combina la lista ya mostrada con la respuesta más reciente (de la caché o
-// del servidor) en vez de sustituirla entera: los artículos que siguen
-// existiendo se actualizan en el mismo sitio (su precio o su marca de
-// "comprado" pueden haber cambiado), los que ya no vienen se quitan, y los
-// que aparecen por primera vez se añaden al final. Así un refresco en
-// segundo plano no reordena ni hace "parpadear" la lista mientras el
-// cliente la está mirando — antes se sustituía entera cada vez, lo que
-// además obligaba a subir el scroll arriba para que tuviera sentido verla.
-function combinarProductos(anteriores, frescos) {
-  const frescoPorArticulo = new Map(frescos.map((p) => [p.articulo, p]));
-  const actualizados = anteriores
-    .filter((p) => frescoPorArticulo.has(p.articulo))
-    .map((p) => ({ ...p, ...frescoPorArticulo.get(p.articulo) }));
-  const yaVistos = new Set(actualizados.map((p) => p.articulo));
-  const nuevos = frescos.filter((p) => !yaVistos.has(p.articulo));
-  return [...actualizados, ...nuevos];
-}
-
 export default function Productos({
   categoria,
   subcategoriaInicial,
@@ -41,42 +23,42 @@ export default function Productos({
   vistaColumnas,
   onCambiarVista,
 }) {
-  // La navegación (subcategoría activa, página dentro de ella y pila para
-  // "Anterior") se guarda junto a la clave del contexto que la creó. Cuando
-  // cambia la categoría/búsqueda, la clave deja de coincidir y el estado
-  // viejo se descarta en el MISMO render — sin efectos de reseteo que llegan
-  // tarde. `subcategoria: null` significa "que el servidor elija la primera
-  // alfabética"; da igual si se llega así o pulsando un chip, el recorrido
-  // (Siguiente pasa a la próxima subcategoría al agotar la actual) funciona
-  // igual desde ese punto en adelante — no hace falta un botón "Todas"
-  // aparte, porque siempre empieza por la primera subcategoría de todos modos.
-  // `subcategoriaInicial` (viene de "Ver en catálogo" en Histórico) solo se
-  // usa como valor de arranque de este useState — de ahí en adelante manda
-  // `nav` como siempre, así que un cambio posterior de subcategoría dentro
-  // de esta misma pantalla no se ve pisado por él.
+  // La subcategoría activa se guarda junto a la clave del contexto que la
+  // creó. Cuando cambia la categoría/búsqueda, la clave deja de coincidir y
+  // el estado viejo se descarta en el MISMO render — sin efectos de reseteo
+  // que llegan tarde. `subcategoria: null` significa "que el servidor elija
+  // la primera alfabética". `subcategoriaInicial` (viene de "Ver en
+  // catálogo" en Histórico) solo se usa como valor de arranque de este
+  // useState — de ahí en adelante manda `nav` como siempre.
   const ctxKey = categoria?.slug || 'todas';
-  const [nav, setNav] = useState({ key: ctxKey, subcategoria: subcategoriaInicial || null, pageUrl: null, stack: [] });
-  const effNav = nav.key === ctxKey ? nav : { key: ctxKey, subcategoria: null, pageUrl: null, stack: [] };
+  const [nav, setNav] = useState({ key: ctxKey, subcategoria: subcategoriaInicial || null });
+  const effNav = nav.key === ctxKey ? nav : { key: ctxKey, subcategoria: null };
 
-  // Cuántos artículos enseñar como máximo de golpe — preferencia del
-  // dispositivo (como vistaColumnas), no hace falta re-preguntarla cada vez.
+  // Cuántos artículos revelar de golpe (y cuántos más cada vez que se pulsa
+  // "Ver más") — preferencia del dispositivo (como vistaColumnas), no hace
+  // falta re-preguntarla cada vez.
   const [limite, setLimite] = useState(() => Number(localStorage.getItem('cofiba:limite')) || 25);
   function cambiarLimite(n) {
     setLimite(n);
     localStorage.setItem('cofiba:limite', String(n));
+    setVisibles(n);
   }
   // Este sí que no se recuerda entre visitas — a diferencia del filtro de
   // isla (una elección deliberada y poco frecuente), dejarlo puesto sin
   // querer escondería productos nuevos sin que se note por qué.
   const [soloComprados, setSoloComprados] = useState(false);
-  const [productos, setProductos] = useState([]);
+  // `paginas[i]` guarda los productos de la página real i-ésima de la
+  // subcategoría activa. En vez de paginar con botones "Siguiente/Anterior"
+  // (que sustituían la vista entera), se recorren TODAS las páginas reales
+  // de la subcategoría en segundo plano nada más entrar (igual que
+  // Histórico) y se van acumulando aquí — "Ver más" solo revela más de lo
+  // ya traído, nunca dispara una petición por sí mismo.
+  const [paginas, setPaginas] = useState([]);
   const [subcategorias, setSubcategorias] = useState([]);
   const [grupoActual, setGrupoActual] = useState(null);
-  const [siguientePagina, setSiguientePagina] = useState(null);
-  const [siguienteGrupo, setSiguienteGrupo] = useState(null);
-  const [totalPaginas, setTotalPaginas] = useState(null);
-  const [paginaInicio, setPaginaInicio] = useState(null);
-  const [paginaFin, setPaginaFin] = useState(null);
+  const [siguienteGrupoSlug, setSiguienteGrupoSlug] = useState(null);
+  const [cargandoMas, setCargandoMas] = useState(true);
+  const [visibles, setVisibles] = useState(limite);
   const [error, setError] = useState(null);
   const [errorDebugHtml, setErrorDebugHtml] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,72 +67,98 @@ export default function Productos({
   const [zoomProducto, setZoomProducto] = useState(null);
   const contentRef = useRef(null);
   const chipsRef = useRef(null);
+  // Cada entrada a una subcategoría (o cambio de categoría) saca un número
+  // nuevo; un recorrido en curso se sabe superado (y deja de tocar estado)
+  // en cuanto ve que ya no es el más reciente — evita que un cambio rápido
+  // de subcategoría dos veces seguidas deje dos recorridos escribiendo a la
+  // vez sobre el mismo estado.
+  const recorridoIdRef = useRef(0);
 
-  // El scroll se resetea al NAVEGAR de verdad (cambia categoría, subcategoría
-  // o página) — no cada vez que llega una actualización de datos para lo que
-  // ya se está mirando. Antes vivía dentro de "aplicar" de abajo, así que
-  // también saltaba arriba cuando la respuesta de verdad llegaba por detrás
-  // de la caché, aunque el cliente ya llevara un rato bajando la lista.
+  const productos = paginas.flat();
+
+  // El scroll se resetea al NAVEGAR de verdad (cambia categoría o
+  // subcategoría) — no cada vez que llega una actualización de datos para lo
+  // que ya se está mirando.
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0 });
     window.scrollTo({ top: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxKey, effNav.pageUrl, effNav.subcategoria]);
+  }, [ctxKey, effNav.subcategoria]);
 
   useEffect(() => {
-    // Si al llegar la respuesta ya se pidió otra cosa (cambio rápido de
-    // subcategoría o de página), se ignora: la última petición siempre gana.
-    let cancelado = false;
-    let huboCache = false;
+    const miId = ++recorridoIdRef.current;
+    const vigente = () => recorridoIdRef.current === miId;
+
     setLoading(true);
     setError(null);
     setErrorDebugHtml(null);
     setDebugSample(null);
-    // Navegación nueva de verdad: se empieza de cero, no se combina con lo
-    // que hubiera antes (eso sería mezclar productos de otra subcategoría).
-    setProductos([]);
+    setPaginas([]);
+    setVisibles(limite);
+    setCargandoMas(true);
 
-    function aplicar(data) {
-      if (cancelado) return;
-      setProductos((anteriores) => combinarProductos(anteriores, data.productos));
-      setSubcategorias(data.subcategorias || []);
-      setGrupoActual(data.grupo || null);
-      setTotalPaginas(data.totalPaginas);
-      setPaginaInicio(data.paginaInicio);
-      setPaginaFin(data.paginaFin);
-      setSiguientePagina(data.siguientePagina || null);
-      setSiguienteGrupo(data.siguienteGrupo || null);
-      setDebugSample(data.debug?.normalizedSample || null);
-    }
+    (async () => {
+      let pageUrl = null;
+      let subcatEfectiva = effNav.subcategoria;
+      let indice = 0;
+      do {
+        let huboCache = false;
+        const i = indice;
+        const promesa = api.productosCached(
+          { categoria: categoria?.slug || 'todas', subcategoria: subcatEfectiva, pageUrl },
+          (cacheado) => {
+            if (!vigente() || i > 0) return;
+            huboCache = true;
+            setPaginas((prev) => {
+              const copia = [...prev];
+              copia[i] = cacheado.productos;
+              return copia;
+            });
+            setSubcategorias(cacheado.subcategorias || []);
+            setGrupoActual(cacheado.grupo || null);
+            setSiguienteGrupoSlug(cacheado.siguienteGrupo || null);
+            setLoading(false);
+          }
+        );
 
-    api
-      .productosCached(
-        { categoria: categoria?.slug || 'todas', subcategoria: effNav.subcategoria, pageUrl: effNav.pageUrl },
-        (cacheado) => {
-          huboCache = true;
-          aplicar(cacheado);
-          if (!cancelado) setLoading(false);
+        let data;
+        try {
+          data = await promesa;
+        } catch (e) {
+          if (vigente() && !huboCache) {
+            setError(e.message);
+            setErrorDebugHtml(e.debugHtml || null);
+          }
+          break;
         }
-      )
-      .then(aplicar)
-      .catch((e) => {
-        // Si ya se pudo enseñar algo de la caché, un fallo de la petición de
-        // verdad (p. ej. el servidor reiniciándose) no debe tapar esos datos
-        // ya válidos con un banner de error confuso — se queda como está y
-        // ya se reintentará solo la próxima vez que se entre aquí.
-        if (!cancelado && !huboCache) setError(e.message);
-      })
-      .finally(() => {
-        if (!cancelado) setLoading(false);
-      });
-    return () => {
-      cancelado = true;
-    };
+        if (!vigente()) return;
+
+        setPaginas((prev) => {
+          const copia = [...prev];
+          copia[i] = data.productos;
+          return copia;
+        });
+        setSubcategorias(data.subcategorias || []);
+        setGrupoActual(data.grupo || null);
+        setSiguienteGrupoSlug(data.siguienteGrupo || null);
+        setDebugSample(data.debug?.normalizedSample || null);
+        setLoading(false);
+
+        // El servidor pudo auto-elegir la subcategoría (o saltar alguna
+        // vacía) en la primera respuesta — las páginas siguientes de este
+        // mismo recorrido tienen que pedir explícitamente esa misma.
+        subcatEfectiva = data.grupo?.slug || subcatEfectiva;
+
+        pageUrl = data.siguientePagina || null;
+        indice += 1;
+      } while (pageUrl && vigente());
+      if (vigente()) setCargandoMas(false);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxKey, effNav.pageUrl, effNav.subcategoria]);
+  }, [ctxKey, effNav.subcategoria]);
 
   // El servidor pudo auto-elegir la primera subcategoría (o saltar alguna
-  // vacía): para paginar dentro de ella hay que usar la que realmente sirvió.
+  // vacía): los chips y la navegación de bordes usan la que realmente sirvió.
   const grupoEfectivo = grupoActual?.slug || effNav.subcategoria;
 
   // La fila de chips hace scroll horizontal propio: al avanzar de
@@ -163,29 +171,20 @@ export default function Productos({
     el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [grupoEfectivo]);
 
-  function irASiguiente() {
-    const destino = siguientePagina
-      ? { subcategoria: effNav.subcategoria, pageUrl: siguientePagina }
-      : siguienteGrupo
-      ? { subcategoria: siguienteGrupo, pageUrl: null }
-      : null;
-    if (!destino) return;
-    setNav({
-      key: ctxKey,
-      ...destino,
-      stack: [...effNav.stack, { subcategoria: effNav.subcategoria, pageUrl: effNav.pageUrl }],
-    });
-  }
-
-  function irAAnterior() {
-    if (!effNav.stack.length) return;
-    const prev = effNav.stack[effNav.stack.length - 1];
-    setNav({ key: ctxKey, subcategoria: prev.subcategoria, pageUrl: prev.pageUrl, stack: effNav.stack.slice(0, -1) });
-  }
-
   function elegirSubcategoria(slug) {
-    setNav({ key: ctxKey, subcategoria: slug, pageUrl: null, stack: [] });
+    setNav({ key: ctxKey, subcategoria: slug });
   }
+
+  // Al llegar al final de una subcategoría (nada más que revelar y ya no
+  // queda nada por traer de fondo), en vez de "Siguiente/Anterior" de
+  // página se ofrece saltar directamente a la subcategoría vecina — el
+  // recorrido alfabético completo sigue funcionando igual, solo que ahora
+  // avanza de subcategoría en subcategoría en vez de de página en página.
+  const idxSubcatActual = subcategorias.findIndex((s) => s.slug === grupoEfectivo);
+  const subcatAnterior = idxSubcatActual > 0 ? subcategorias[idxSubcatActual - 1] : null;
+  const subcatSiguiente = siguienteGrupoSlug
+    ? subcategorias.find((s) => s.slug === siguienteGrupoSlug) || null
+    : null;
 
   // No se espera a que cofiba.es confirme antes de reaccionar: el contador
   // sube/baja al instante (setPending, antes de pedir nada) y la petición de
@@ -237,21 +236,10 @@ export default function Productos({
     return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo) || (pending[articulo] ?? 0) > 0);
   }
 
-  // El rango de páginas reales (p.ej. "1-2 de 2") solo tiene sentido cuando
-  // pulsar "Siguiente" enseña MÁS productos de esta MISMA subcategoría
-  // (siguientePagina). Varias páginas reales de cofiba.es pueden fusionarse
-  // en una sola pantalla nuestra (p.ej. 12+3 productos en 2 páginas reales
-  // de "bolsa-compra" caben enteros en una única vista) — en ese caso,
-  // mostrar "Páginas 1-2" es confuso: el usuario ve una sola pantalla con
-  // todo, no dos. Cuando siguientePagina es null, "Siguiente" (si existe)
-  // pasa a la SIGUIENTE subcategoría, no a más de esta, así que no hay
-  // ningún número de página que enseñar.
-  const rango = paginaInicio === paginaFin ? `Página ${paginaInicio}` : `Páginas ${paginaInicio}-${paginaFin}`;
-  const etiquetaPaginas = siguientePagina && totalPaginas ? `${rango} de ${totalPaginas}` : '';
-  const hayPaginacion = !!siguientePagina || !!siguienteGrupo || effNav.stack.length > 0;
   const productosPorIsla = filtrarPorIsla(productos, islaFiltro);
   const productosPorComprado = soloComprados ? productosPorIsla.filter((p) => p.comprado) : productosPorIsla;
-  const productosFiltrados = productosPorComprado.slice(0, limite);
+  const productosFiltrados = productosPorComprado.slice(0, visibles);
+  const hayMasParaRevelar = visibles < productosPorComprado.length;
 
   return (
     <div className="content" ref={contentRef} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -382,6 +370,9 @@ export default function Productos({
                 </p>
                 <p className="muted" style={{ margin: '2px 0' }}>
                   Ref. {p.referencia || p.articulo}
+                  {Number.isFinite(p.stock) && (
+                    <span style={{ color: p.stock === 0 ? 'var(--danger)' : undefined }}> · STOCK {p.stock}</span>
+                  )}
                   {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
                 </p>
                 <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
@@ -451,24 +442,42 @@ export default function Productos({
                   caja de {formatoCaja(p.undVenta)} uds
                 </span>
               )}
+              {Number.isFinite(p.stock) && (
+                <span className="muted" style={{ fontSize: 10, color: p.stock === 0 ? 'var(--danger)' : undefined }}>
+                  STOCK {p.stock}
+                </span>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {hayPaginacion && (
+      {hayMasParaRevelar && (
+        <div style={{ padding: '12px 0', textAlign: 'center' }}>
+          <button onClick={() => setVisibles((v) => v + limite)} style={{ width: '100%' }}>
+            Ver más ({productosPorComprado.length - visibles} más)
+          </button>
+        </div>
+      )}
+
+      {!hayMasParaRevelar && cargandoMas && productosPorComprado.length > 0 && (
+        <p className="muted" style={{ textAlign: 'center', padding: '12px 0' }}>
+          Cargando más artículos de esta subcategoría en segundo plano…
+        </p>
+      )}
+
+      {!hayMasParaRevelar && !cargandoMas && (subcatAnterior || subcatSiguiente) && (
         <div style={{ padding: '12px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <button disabled={effNav.stack.length === 0} onClick={irAAnterior}>
-              Anterior
+            <button disabled={!subcatAnterior} onClick={() => subcatAnterior && elegirSubcategoria(subcatAnterior.slug)} style={{ flex: 1 }}>
+              ← {subcatAnterior ? subcatAnterior.nombre : 'Anterior'}
             </button>
-            <span className="muted" style={{ textAlign: 'center' }}>
-              {grupoActual ? grupoActual.nombre : ''}
-              {grupoActual && etiquetaPaginas ? ' · ' : ''}
-              {etiquetaPaginas}
-            </span>
-            <button disabled={!siguientePagina && !siguienteGrupo} onClick={irASiguiente}>
-              Siguiente
+            <button
+              disabled={!subcatSiguiente}
+              onClick={() => subcatSiguiente && elegirSubcategoria(subcatSiguiente.slug)}
+              style={{ flex: 1 }}
+            >
+              {subcatSiguiente ? subcatSiguiente.nombre : 'Siguiente'} →
             </button>
           </div>
         </div>
@@ -514,6 +523,7 @@ export default function Productos({
               Ref. {zoomProducto.referencia || zoomProducto.articulo}
               {zoomProducto.precioFinal ? ` · ${zoomProducto.precioFinal}€` : ''}
               {zoomProducto.undVenta ? ` · caja de ${formatoCaja(zoomProducto.undVenta)} uds` : ''}
+              {Number.isFinite(zoomProducto.stock) ? ` · STOCK ${zoomProducto.stock}` : ''}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div className="qty-stepper">

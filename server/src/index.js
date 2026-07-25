@@ -407,9 +407,10 @@ const historicoEnCurso = new Map(); // `${usuario}|${pageUrl||''}` -> Promise
 
 app.get('/api/historico', requireSession, async (req, res) => {
   const pageUrl = req.query.pageUrl || '';
+  const forzar = req.query.forzar === '1';
   const clave = `${req.usuario}|${pageUrl}`;
   const cacheado = historicoCache.get(clave);
-  if (cacheado && Date.now() - cacheado.cuando < CACHE_HISTORICO_MS) {
+  if (!forzar && cacheado && Date.now() - cacheado.cuando < CACHE_HISTORICO_MS) {
     return res.json(cacheado.resultado);
   }
   try {

@@ -321,6 +321,16 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
     const nombre = nombreTexto || nombreAlt || null;
     const imagen = imagenPorArticulo.get(articulo) || null;
 
+    // Stock real: cofiba.es lo manda oculto en cada tarjeta (lo usan sus
+    // propios botones +/- de esa página para no dejar pedir más de lo que
+    // hay — confirmado mirando el HTML crudo: <input type='hidden'
+    // name='existencia' id='existencia_list_N' value='224' />). Vive dentro
+    // del mismo $card que ya usamos para Referencia/EAN/etc., así que no
+    // hace falta correlacionar por índice de fila.
+    const stockTexto = $card.find("input[name='existencia']").attr('value');
+    const stockNum = stockTexto != null ? Math.round(parseFloat(stockTexto)) : null;
+    const stock = Number.isFinite(stockNum) ? stockNum : null;
+
     productos.push({
       articulo,
       nlinea: nlinea || null,
@@ -330,6 +340,7 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
       undVenta: m?.[4] || null,
       pvp: m?.[5] || null,
       dto: m?.[6] || null,
+      stock,
       precioFinal: m?.[7] || null,
       nombre,
       imagen,

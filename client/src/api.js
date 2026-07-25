@@ -110,9 +110,12 @@ export const api = {
   finalizarPedido(observaciones = '') {
     return request('/carrito/finalizar', { method: 'POST', body: { observaciones } });
   },
-  historico({ pageUrl } = {}) {
-    const params = pageUrl ? `?pageUrl=${encodeURIComponent(pageUrl)}` : '';
-    return request(`/historico${params}`);
+  historico({ pageUrl, forzar } = {}) {
+    const params = new URLSearchParams();
+    if (pageUrl) params.set('pageUrl', pageUrl);
+    if (forzar) params.set('forzar', '1');
+    const qs = params.toString();
+    return request(`/historico${qs ? `?${qs}` : ''}`);
   },
   // /consumo.html tarda 15-35s en el servidor de cofiba.es — mostrar la
   // última tanda vista de esta misma página mientras se repite la petición
@@ -125,9 +128,9 @@ export const api = {
   // verdad una página que ya tiene completa en caché. Cambiar la clave hace
   // que esa caché vieja quede huérfana (se ignora) y fuerza un recorrido
   // fresco, ya con el campo nuevo.
-  historicoCached({ pageUrl } = {}, onCacheHit) {
+  historicoCached({ pageUrl, forzar } = {}, onCacheHit) {
     const clave = `historico:v2:${pageUrl || ''}`;
-    return conCache(clave, () => this.historico({ pageUrl }), onCacheHit);
+    return conCache(clave, () => this.historico({ pageUrl, forzar }), onCacheHit);
   },
   pedidosPendientes() {
     return request('/pedidos-pendientes');

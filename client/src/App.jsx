@@ -192,6 +192,42 @@ export default function App() {
     return () => window.removeEventListener('cofiba:session-expired', onExpired);
   }, []);
 
+  // Si el cliente lleva 15 minutos sin entrar en la app (móvil bloqueado,
+  // cambiado de app, o la pestaña cerrada del todo y reabierta más tarde),
+  // al volver debe empezar de nuevo por la pantalla de credenciales en vez
+  // de continuar donde lo dejó — aunque el token siga siendo técnicamente
+  // válido. Se mide con la Page Visibility API (no un simple timer, que
+  // seguiría corriendo aunque el navegador esté descartado en segundo
+  // plano) y se guarda en localStorage (no una ref) para que sobreviva a
+  // cerrar del todo la app y volver a abrirla más tarde.
+  const INACTIVIDAD_MS = 15 * 60 * 1000;
+  const CLAVE_ULTIMA_ACTIVIDAD = 'cofiba:ultima-actividad';
+  useEffect(() => {
+    function marcarActividad() {
+      localStorage.setItem(CLAVE_ULTIMA_ACTIVIDAD, String(Date.now()));
+    }
+    function comprobar() {
+      if (document.visibilityState === 'hidden') {
+        marcarActividad();
+        return;
+      }
+      const ultima = Number(localStorage.getItem(CLAVE_ULTIMA_ACTIVIDAD) || 0);
+      if (ultima && Date.now() - ultima >= INACTIVIDAD_MS) {
+        api.logout();
+        setLoggedIn(false);
+      }
+      marcarActividad();
+    }
+    document.addEventListener('visibilitychange', comprobar);
+    window.addEventListener('pagehide', marcarActividad);
+    comprobar();
+    return () => {
+      document.removeEventListener('visibilitychange', comprobar);
+      window.removeEventListener('pagehide', marcarActividad);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!loggedIn) {
     return (
       <Login

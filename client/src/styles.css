@@ -34,6 +34,21 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Por debajo de ~640px (móviles) el ancho fijo de 480px es justo lo que hace
+   falta. A partir de ahí (tablets, escritorio) ese mismo límite dejaba dos
+   franjas vacías enormes a los lados — la app crece con la pantalla en vez
+   de quedarse encogida en el centro. */
+@media (min-width: 640px) {
+  #root {
+    max-width: min(96vw, 900px);
+  }
+}
+@media (min-width: 1000px) {
+  #root {
+    max-width: min(92vw, 1200px);
+  }
+}
+
 button {
   font: inherit;
   border-radius: var(--radius);

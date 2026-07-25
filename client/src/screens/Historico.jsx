@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { getCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
@@ -55,82 +55,90 @@ export default function Historico({
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState({});
   const [zoomProducto, setZoomProducto] = useState(null);
+  // Cada llamada a recorrerTodo (al montar, o al pulsar "Actualizar") saca un
+  // número nuevo; una llamada en curso se sabe superada (y deja de tocar
+  // estado) en cuanto ve que ya no es la más reciente — así pulsar
+  // "Actualizar" mientras el recorrido automático seguía en marcha no acaba
+  // con dos recorridos escribiendo a la vez.
+  const recorridoIdRef = useRef(0);
 
   const productos = paginas.flat();
 
-  useEffect(() => {
-    let cancelado = false;
+  // Reconstruye al instante (sin red) todo lo que ya se había recorrido en
+  // este dispositivo, encadenando la caché por su propio siguientePagina —
+  // así reabrir Histórico pinta algo de inmediato en vez de una pantalla en
+  // blanco mientras se confirma que sigue igual.
+  async function reconstruirDesdeCache() {
+    const paginasCache = [];
+    let totalPaginasCache = null;
+    let pageUrl = null;
+    do {
+      // "v2": mismo motivo que en api.js#historicoCached — clave nueva para
+      // no quedarse atascado en una caché completa de antes de que existiera
+      // el campo "categoria" (el botón "Ver más").
+      const cacheado = await getCache(`historico:v2:${pageUrl || ''}`);
+      if (!cacheado) break;
+      paginasCache.push(cacheado.productos);
+      totalPaginasCache = cacheado.totalPaginas;
+      pageUrl = cacheado.siguientePagina || null;
+    } while (pageUrl);
+    return { paginasCache, totalPaginasCache, siguientePageUrl: pageUrl };
+  }
 
-    // Reconstruye al instante (sin red) todo lo que ya se había recorrido en
-    // este dispositivo, encadenando la caché por su propio siguientePagina —
-    // así reabrir Histórico no repite la espera real de páginas que ya se
-    // habían completado antes: antes, aunque la caché mostrara el dato al
-    // momento, el recorrido de fondo esperaba igualmente la respuesta real
-    // de CADA página ya conocida antes de poder avanzar a una nueva, así que
-    // "se ponía al día" desde cero cada vez que se abría la pestaña.
-    async function reconstruirDesdeCache() {
-      const paginasCache = [];
-      let totalPaginasCache = null;
+  // Recorre TODO el histórico real de nuevo, de la primera página en
+  // adelante, pidiendo cada una con forzar=1 (salta la caché de 3 minutos
+  // del servidor). Antes, si la última vez ya se había llegado al final del
+  // histórico, reabrir Histórico se quedaba enseñando esa misma foto vieja
+  // para siempre sin volver a pedir nada — con esto, cada entrada (y cada
+  // pulsación de "Actualizar") vuelve a mirar de verdad si hay algo nuevo.
+  function recorrerTodo({ mostrarCache }) {
+    const miId = ++recorridoIdRef.current;
+    const vigente = () => recorridoIdRef.current === miId;
+
+    setCargandoTodo(true);
+    setError(null);
+
+    (async () => {
+      let indice = 0;
+      if (mostrarCache) {
+        const { paginasCache, totalPaginasCache } = await reconstruirDesdeCache();
+        if (!vigente()) return;
+        if (paginasCache.length) {
+          setPaginas(paginasCache);
+          setTotalPaginas(totalPaginasCache);
+          setPaginasCargadas(paginasCache.length);
+          setLoading(false);
+        }
+      }
+
       let pageUrl = null;
       do {
-        // "v2": mismo motivo que en api.js#historicoCached — clave nueva
-        // para no quedarse atascado en una caché completa de antes de que
-        // existiera el campo "categoria" (el botón "Ver más").
-        const cacheado = await getCache(`historico:v2:${pageUrl || ''}`);
-        if (!cacheado) break;
-        paginasCache.push(cacheado.productos);
-        totalPaginasCache = cacheado.totalPaginas;
-        pageUrl = cacheado.siguientePagina || null;
-      } while (pageUrl);
-      return { paginasCache, totalPaginasCache, siguientePageUrl: pageUrl };
-    }
-
-    async function recorrerTodo() {
-      const { paginasCache, totalPaginasCache, siguientePageUrl } = await reconstruirDesdeCache();
-      if (cancelado) return;
-
-      if (paginasCache.length) {
-        setPaginas(paginasCache);
-        setTotalPaginas(totalPaginasCache);
-        setPaginasCargadas(paginasCache.length);
-        setLoading(false);
-      }
-
-      // Si ya no hay más "siguiente" y algo se había cacheado, es que la
-      // última vez se llegó al final del histórico real — nada que rastrear.
-      if (paginasCache.length && !siguientePageUrl) {
-        setCargandoTodo(false);
-        return;
-      }
-
-      let pageUrl = siguientePageUrl;
-      let indice = paginasCache.length;
-      do {
         let huboCache = false;
-        const promesa = api.historicoCached({ pageUrl }, (cacheado) => {
-          if (cancelado) return;
+        const i = indice;
+        const promesa = api.historicoCached({ pageUrl, forzar: true }, (cacheado) => {
+          if (!vigente() || i > 0) return;
+          // Solo la página 1 usa el aviso instantáneo de caché — de la 2 en
+          // adelante ya se está mirando de verdad, mostrar aquí una versión
+          // vieja de una página posterior solo generaría parpadeo.
           huboCache = true;
-          const i = indice;
           setPaginas((prev) => {
             const copia = [...prev];
             copia[i] = cacheado.productos;
             return copia;
           });
           setTotalPaginas(cacheado.totalPaginas);
-          setPaginasCargadas((prev) => Math.max(prev, i + 1));
-          if (i === 0) setLoading(false);
+          setLoading(false);
         });
 
         let data;
         try {
           data = await promesa;
         } catch (e) {
-          if (!cancelado && !huboCache) setError(e.message);
+          if (vigente() && !huboCache) setError(e.message);
           break;
         }
-        if (cancelado) return;
+        if (!vigente()) return;
 
-        const i = indice;
         setPaginas((prev) => {
           const copia = [...prev];
           copia[i] = data.productos;
@@ -138,19 +146,27 @@ export default function Historico({
         });
         setTotalPaginas(data.totalPaginas);
         setPaginasCargadas((prev) => Math.max(prev, i + 1));
-        if (i === 0) setLoading(false);
+        setLoading(false);
 
         pageUrl = data.siguientePagina || null;
         indice += 1;
-      } while (pageUrl && !cancelado);
-      if (!cancelado) setCargandoTodo(false);
-    }
+      } while (pageUrl && vigente());
+      if (vigente()) setCargandoTodo(false);
+    })();
+  }
 
-    recorrerTodo();
-    return () => {
-      cancelado = true;
-    };
+  useEffect(() => {
+    recorrerTodo({ mostrarCache: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Botón manual: repite el mismo recorrido completo sin esperar a salir y
+  // volver a entrar en la pestaña. No se limpia `paginas` antes de empezar
+  // para no hacer parpadear la lista — cada página se va sustituyendo en su
+  // sitio según llega la respuesta fresca, igual que el recorrido automático.
+  function actualizar() {
+    recorrerTodo({ mostrarCache: false });
+  }
 
   // No se espera a que cofiba.es confirme antes de reaccionar: el contador
   // cambia al instante y la petición sigue sola en segundo plano. Solo si de
@@ -200,6 +216,14 @@ export default function Historico({
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>Comprados recientemente</p>
+        <button
+          onClick={actualizar}
+          disabled={cargandoTodo}
+          aria-label="Actualizar histórico"
+          style={{ padding: '6px 10px', fontSize: 12 }}
+        >
+          {cargandoTodo ? '⟳ Actualizando…' : '⟳ Actualizar'}
+        </button>
         <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
           {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
         </button>
