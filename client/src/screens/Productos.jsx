@@ -1,7 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import { getCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
+
+// Entrada vacía para una subcategoría de la que aún no se sabe nada — se usa
+// como valor por defecto antes de que llegue ni siquiera la caché.
+function entradaVacia() {
+  return {
+    paginas: [],
+    subcategorias: [],
+    grupo: null,
+    siguienteGrupoSlug: null,
+    cargandoMas: true,
+    error: null,
+    errorDebugHtml: null,
+    debugSample: null,
+  };
+}
 
 // "Und. de venta" llega como texto con formato español ("12,00"); se muestra
 // como tamaño de caja legible ("caja de 12 uds").
@@ -47,34 +63,147 @@ export default function Productos({
   // isla (una elección deliberada y poco frecuente), dejarlo puesto sin
   // querer escondería productos nuevos sin que se note por qué.
   const [soloComprados, setSoloComprados] = useState(false);
-  // `paginas[i]` guarda los productos de la página real i-ésima de la
-  // subcategoría activa. En vez de paginar con botones "Siguiente/Anterior"
-  // (que sustituían la vista entera), se recorren TODAS las páginas reales
-  // de la subcategoría en segundo plano nada más entrar (igual que
-  // Histórico) y se van acumulando aquí — "Ver más" solo revela más de lo
-  // ya traído, nunca dispara una petición por sí mismo.
-  const [paginas, setPaginas] = useState([]);
-  const [subcategorias, setSubcategorias] = useState([]);
-  const [grupoActual, setGrupoActual] = useState(null);
-  const [siguienteGrupoSlug, setSiguienteGrupoSlug] = useState(null);
-  const [cargandoMas, setCargandoMas] = useState(true);
   const [visibles, setVisibles] = useState(limite);
-  const [error, setError] = useState(null);
-  const [errorDebugHtml, setErrorDebugHtml] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState({});
-  const [debugSample, setDebugSample] = useState(null);
   const [zoomProducto, setZoomProducto] = useState(null);
   const contentRef = useRef(null);
   const chipsRef = useRef(null);
-  // Cada entrada a una subcategoría (o cambio de categoría) saca un número
-  // nuevo; un recorrido en curso se sabe superado (y deja de tocar estado)
-  // en cuanto ve que ya no es el más reciente — evita que un cambio rápido
-  // de subcategoría dos veces seguidas deje dos recorridos escribiendo a la
-  // vez sobre el mismo estado.
-  const recorridoIdRef = useRef(0);
 
-  const productos = paginas.flat();
+  // Cada subcategoría visitada tiene su propia entrada aquí (paginas
+  // acumuladas, subcategorías, grupo resuelto...), en vez de un único estado
+  // "de la pantalla actual". Así, si el cliente pasa a otra subcategoría
+  // mientras la anterior se sigue completando en segundo plano, esa
+  // actualización no se pierde ni pisa lo que se está mirando ahora: cada
+  // recorrido escribe solo en SU clave, y cuando se vuelve a esa
+  // subcategoría más tarde ya está (más) lista.
+  const [porSubcat, setPorSubcat] = useState({});
+  const clave = `${ctxKey}::${effNav.subcategoria || '__auto__'}`;
+  function actualizarSubcat(clv, updater) {
+    setPorSubcat((prev) => ({ ...prev, [clv]: updater(prev[clv]) }));
+  }
+
+  // Coordinación de los recorridos en segundo plano: como mucho uno corre
+  // "urgente" a la vez por subcategoría sin caché (para no dejar al cliente
+  // mirando una pantalla vacía), y el resto (subcategorías que YA tenían
+  // algo en caché para pintar al instante) se turnan en una cola compartida
+  // en vez de competir en paralelo por la misma cuenta de cofiba.es.
+  const enCursoRef = useRef(new Set());
+  const colaRef = useRef([]);
+  const consumiendoRef = useRef(false);
+  const montadoRef = useRef(true);
+  useEffect(
+    () => () => {
+      montadoRef.current = false;
+    },
+    []
+  );
+
+  async function ejecutarRecorrido(clv, categoriaSlug, subcatSolicitada) {
+    if (enCursoRef.current.has(clv)) return;
+    enCursoRef.current.add(clv);
+    if (montadoRef.current) actualizarSubcat(clv, (prev) => ({ ...(prev || entradaVacia()), cargandoMas: true }));
+    try {
+      let pageUrl = null;
+      let subcatEfectiva = subcatSolicitada;
+      let indice = 0;
+      do {
+        let data;
+        try {
+          // Sin onCacheHit aquí a propósito: la caché de esta subcategoría ya
+          // se pintó (si la había) antes de programar este recorrido — pasar
+          // por productosCached solo para que siga dejando la respuesta
+          // fresca guardada para la próxima vez.
+          data = await api.productosCached({ categoria: categoriaSlug, subcategoria: subcatEfectiva, pageUrl });
+        } catch (e) {
+          if (montadoRef.current) {
+            actualizarSubcat(clv, (prev) => ({
+              ...(prev || entradaVacia()),
+              error: e.message,
+              errorDebugHtml: e.debugHtml || null,
+            }));
+          }
+          break;
+        }
+        const i = indice;
+        if (montadoRef.current) {
+          actualizarSubcat(clv, (prev) => {
+            const base = prev || entradaVacia();
+            const copia = [...base.paginas];
+            copia[i] = data.productos;
+            return {
+              ...base,
+              paginas: copia,
+              subcategorias: data.subcategorias || base.subcategorias,
+              grupo: data.grupo || base.grupo,
+              siguienteGrupoSlug: data.siguienteGrupo || null,
+              debugSample: data.debug?.normalizedSample || null,
+            };
+          });
+        }
+        // El servidor pudo auto-elegir la subcategoría (o saltar alguna
+        // vacía) en la primera respuesta — las páginas siguientes de este
+        // mismo recorrido tienen que pedir explícitamente esa misma.
+        subcatEfectiva = data.grupo?.slug || subcatEfectiva;
+        pageUrl = data.siguientePagina || null;
+        indice += 1;
+      } while (pageUrl);
+    } finally {
+      enCursoRef.current.delete(clv);
+      if (montadoRef.current) actualizarSubcat(clv, (prev) => ({ ...(prev || entradaVacia()), cargandoMas: false }));
+    }
+  }
+
+  async function consumirCola() {
+    if (consumiendoRef.current) return;
+    consumiendoRef.current = true;
+    while (colaRef.current.length) {
+      const item = colaRef.current.shift();
+      if (enCursoRef.current.has(item.clave)) continue;
+      await ejecutarRecorrido(item.clave, item.categoriaSlug, item.subcatSolicitada);
+    }
+    consumiendoRef.current = false;
+  }
+
+  // urgente=true (sin nada en caché que enseñar): arranca ya, sin esperar
+  // turno — el cliente está mirando una pantalla vacía y no debe esperar
+  // detrás de otra subcategoría. urgente=false (ya había algo en caché):
+  // se apunta al final de la cola en vez de competir con lo que ya está en
+  // marcha — "no interrumpir, poner en cola".
+  function programarRecorrido(clv, categoriaSlug, subcatSolicitada, { urgente }) {
+    if (enCursoRef.current.has(clv)) return;
+    if (urgente) {
+      ejecutarRecorrido(clv, categoriaSlug, subcatSolicitada);
+    } else {
+      if (colaRef.current.some((it) => it.clave === clv)) return;
+      colaRef.current.push({ clave: clv, categoriaSlug, subcatSolicitada });
+      consumirCola();
+    }
+  }
+
+  // Reconstruye al instante (sin red) lo que ya se hubiera visto antes de
+  // esta subcategoría, encadenando la caché local por su propio
+  // siguientePagina — así cambiar de subcategoría pinta las fotos ya
+  // conocidas de inmediato en vez de dejar al cliente mirando un hueco en
+  // blanco mientras se confirma que sigue igual.
+  async function reconstruirDesdeCache(categoriaSlug, subcatSolicitada) {
+    const paginasCache = [];
+    let subcategoriasCache = [];
+    let grupoCache = null;
+    let siguienteGrupoCache = null;
+    let pageUrl = null;
+    let subcatActual = subcatSolicitada;
+    do {
+      const cacheado = await getCache(`productos:${categoriaSlug}|${subcatActual || ''}|${pageUrl || ''}`);
+      if (!cacheado) break;
+      paginasCache.push(cacheado.productos);
+      if (cacheado.subcategorias?.length) subcategoriasCache = cacheado.subcategorias;
+      if (cacheado.grupo) grupoCache = cacheado.grupo;
+      siguienteGrupoCache = cacheado.siguienteGrupo || null;
+      subcatActual = cacheado.grupo?.slug || subcatActual;
+      pageUrl = cacheado.siguientePagina || null;
+    } while (pageUrl);
+    return { paginasCache, subcategoriasCache, grupoCache, siguienteGrupoCache };
+  }
 
   // El scroll se resetea al NAVEGAR de verdad (cambia categoría o
   // subcategoría) — no cada vez que llega una actualización de datos para lo
@@ -82,80 +211,58 @@ export default function Productos({
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0 });
     window.scrollTo({ top: 0 });
+    setVisibles(limite);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxKey, effNav.subcategoria]);
 
   useEffect(() => {
-    const miId = ++recorridoIdRef.current;
-    const vigente = () => recorridoIdRef.current === miId;
-
-    setLoading(true);
-    setError(null);
-    setErrorDebugHtml(null);
-    setDebugSample(null);
-    setPaginas([]);
-    setVisibles(limite);
-    setCargandoMas(true);
+    const categoriaSlug = categoria?.slug || 'todas';
+    const subcatSolicitada = effNav.subcategoria;
+    let cancelado = false;
 
     (async () => {
-      let pageUrl = null;
-      let subcatEfectiva = effNav.subcategoria;
-      let indice = 0;
-      do {
-        let huboCache = false;
-        const i = indice;
-        const promesa = api.productosCached(
-          { categoria: categoria?.slug || 'todas', subcategoria: subcatEfectiva, pageUrl },
-          (cacheado) => {
-            if (!vigente() || i > 0) return;
-            huboCache = true;
-            setPaginas((prev) => {
-              const copia = [...prev];
-              copia[i] = cacheado.productos;
-              return copia;
-            });
-            setSubcategorias(cacheado.subcategorias || []);
-            setGrupoActual(cacheado.grupo || null);
-            setSiguienteGrupoSlug(cacheado.siguienteGrupo || null);
-            setLoading(false);
-          }
-        );
+      const { paginasCache, subcategoriasCache, grupoCache, siguienteGrupoCache } = await reconstruirDesdeCache(
+        categoriaSlug,
+        subcatSolicitada
+      );
+      if (cancelado || !montadoRef.current) return;
 
-        let data;
-        try {
-          data = await promesa;
-        } catch (e) {
-          if (vigente() && !huboCache) {
-            setError(e.message);
-            setErrorDebugHtml(e.debugHtml || null);
-          }
-          break;
-        }
-        if (!vigente()) return;
+      const tieneCache = paginasCache.length > 0;
+      if (tieneCache) {
+        actualizarSubcat(clave, () => ({
+          ...entradaVacia(),
+          paginas: paginasCache,
+          subcategorias: subcategoriasCache,
+          grupo: grupoCache,
+          siguienteGrupoSlug: siguienteGrupoCache,
+        }));
+      } else {
+        actualizarSubcat(clave, (prev) => prev || entradaVacia());
+      }
 
-        setPaginas((prev) => {
-          const copia = [...prev];
-          copia[i] = data.productos;
-          return copia;
-        });
-        setSubcategorias(data.subcategorias || []);
-        setGrupoActual(data.grupo || null);
-        setSiguienteGrupoSlug(data.siguienteGrupo || null);
-        setDebugSample(data.debug?.normalizedSample || null);
-        setLoading(false);
-
-        // El servidor pudo auto-elegir la subcategoría (o saltar alguna
-        // vacía) en la primera respuesta — las páginas siguientes de este
-        // mismo recorrido tienen que pedir explícitamente esa misma.
-        subcatEfectiva = data.grupo?.slug || subcatEfectiva;
-
-        pageUrl = data.siguientePagina || null;
-        indice += 1;
-      } while (pageUrl && vigente());
-      if (vigente()) setCargandoMas(false);
+      programarRecorrido(clave, categoriaSlug, subcatSolicitada, { urgente: !tieneCache });
     })();
+
+    return () => {
+      cancelado = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxKey, effNav.subcategoria]);
+
+  const entradaActiva = porSubcat[clave] || entradaVacia();
+  const productos = entradaActiva.paginas.flat();
+  const subcategorias = entradaActiva.subcategorias;
+  const grupoActual = entradaActiva.grupo;
+  const siguienteGrupoSlug = entradaActiva.siguienteGrupoSlug;
+  const cargandoMas = entradaActiva.cargandoMas;
+  const error = entradaActiva.error;
+  const errorDebugHtml = entradaActiva.errorDebugHtml;
+  const debugSample = entradaActiva.debugSample;
+  // Solo se enseña "Cargando productos…" a pantalla completa cuando de
+  // verdad no hay nada que mostrar todavía (ni de caché ni de la red) — en
+  // cuanto hay algo, aunque sea de caché, el cliente ya ve fotos mientras el
+  // recorrido de fondo sigue completando el resto.
+  const loading = productos.length === 0 && cargandoMas;
 
   // El servidor pudo auto-elegir la primera subcategoría (o saltar alguna
   // vacía): los chips y la navegación de bordes usan la que realmente sirvió.
@@ -221,8 +328,11 @@ export default function Productos({
       })
       .catch((e) => {
         setPending((s) => ({ ...s, [p.articulo]: anterior }));
-        setError(e.message);
-        setErrorDebugHtml(e.debugHtml || null);
+        actualizarSubcat(clave, (prev) => ({
+          ...(prev || entradaVacia()),
+          error: e.message,
+          errorDebugHtml: e.debugHtml || null,
+        }));
       });
   }
 
