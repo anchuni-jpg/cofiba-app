@@ -275,6 +275,16 @@ export default function Productos({
   // (acababa desplazando hacia la derecha en vez de centrar el chip) —
   // calculando el scrollLeft a mano contra el propio contenedor sale
   // siempre centrado, sin depender de heurísticas del navegador.
+  //
+  // Al elegir una subcategoría sin nada aún en `porSubcat`, la entrada
+  // vacía trae `subcategorias: []` durante un instante — la fila de chips
+  // desaparece (y con ella chipsRef.current) hasta que llegan datos de
+  // verdad. Cuando reaparece, `grupoEfectivo` casi siempre sigue siendo el
+  // MISMO texto que ya tenía (la subcategoría pedida no cambia), así que un
+  // efecto que solo dependa de `grupoEfectivo` no se entera de que la fila
+  // acaba de volver a montarse — de ahí que antes se quedara sin centrar.
+  // Añadir `subcategorias.length` como dependencia fuerza a re-comprobarlo
+  // también en ese momento.
   useEffect(() => {
     if (!grupoEfectivo || !chipsRef.current) return;
     const contenedor = chipsRef.current;
@@ -282,7 +292,7 @@ export default function Productos({
     if (!el) return;
     const destino = el.offsetLeft - contenedor.clientWidth / 2 + el.clientWidth / 2;
     contenedor.scrollTo({ left: Math.max(0, destino), behavior: 'smooth' });
-  }, [grupoEfectivo]);
+  }, [grupoEfectivo, subcategorias.length]);
 
   function elegirSubcategoria(slug) {
     setNav({ key: ctxKey, subcategoria: slug });
