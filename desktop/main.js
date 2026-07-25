@@ -1,6 +1,29 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+
+// Electron no trae de serie ni menú contextual de clic derecho (Cortar/
+// Copiar/Pegar) ni, en algunos casos, los atajos Ctrl+C/V/X si no hay
+// ningún menú de aplicación registrado — a diferencia de un navegador
+// normal. Sin esto, pegar el token largo en el campo era imposible y solo
+// quedaba escribirlo a mano. El menú de aplicación se deja registrado
+// (para que los atajos de teclado funcionen) pero oculto de la ventana.
+Menu.setApplicationMenu(
+  Menu.buildFromTemplate([
+    {
+      label: 'Editar',
+      submenu: [
+        { role: 'undo', label: 'Deshacer' },
+        { role: 'redo', label: 'Rehacer' },
+        { type: 'separator' },
+        { role: 'cut', label: 'Cortar' },
+        { role: 'copy', label: 'Copiar' },
+        { role: 'paste', label: 'Pegar' },
+        { role: 'selectAll', label: 'Seleccionar todo' },
+      ],
+    },
+  ])
+);
 
 // Config (URL del servidor + token de administrador) se guarda en el
 // perfil del usuario de Windows, fuera de la carpeta del programa — así
@@ -36,6 +59,20 @@ function crearVentana() {
   });
   win.setMenuBarVisibility(false);
   win.loadFile('index.html');
+
+  // El menú de arriba da los atajos de teclado, pero clic derecho seguía sin
+  // hacer nada — esto añade el menú contextual de toda la vida
+  // (Cortar/Copiar/Pegar/Seleccionar todo) solo sobre campos editables.
+  win.webContents.on('context-menu', (_evento, params) => {
+    if (!params.isEditable) return;
+    Menu.buildFromTemplate([
+      { role: 'cut', label: 'Cortar' },
+      { role: 'copy', label: 'Copiar' },
+      { role: 'paste', label: 'Pegar' },
+      { type: 'separator' },
+      { role: 'selectAll', label: 'Seleccionar todo' },
+    ]).popup({ window: win });
+  });
 }
 
 ipcMain.handle('config:get', () => leerConfig());

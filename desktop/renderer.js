@@ -1,4 +1,9 @@
 const INTERVALO_MS = 45 * 1000; // dentro de la horquilla de 30-60s pedida
+// Valores ya rellenados en el formulario de la primera vez — así, si son
+// correctos, basta con pulsar "Conectar" sin tener que escribir ni pegar
+// nada. Cambia esto si generas un ADMIN_TOKEN distinto en Render.
+const URL_SUGERIDA = 'https://cofiba-visor.onrender.com';
+const TOKEN_SUGERIDO = 'fc26dfbf20e90d8addd47b17703fe77cb59ab37b8bf47459';
 
 let config = null;
 let temporizador = null;
@@ -26,8 +31,8 @@ async function cargarConfigInicial() {
     mostrarPantalla('panel');
     iniciarPolling();
   } else {
-    el('campo-url').value = config?.url || 'https://cofiba-visor.onrender.com';
-    el('campo-token').value = config?.token || '';
+    el('campo-url').value = config?.url || URL_SUGERIDA;
+    el('campo-token').value = config?.token || TOKEN_SUGERIDO;
     mostrarPantalla('setup');
   }
 }
