@@ -270,12 +270,18 @@ export default function Productos({
 
   // La fila de chips hace scroll horizontal propio: al avanzar de
   // subcategoría en subcategoría el chip resaltado puede quedar fuera de la
-  // vista, así que se lleva a la vista solo (sin mover el resto de la
-  // pantalla) cada vez que cambia cuál está activo.
+  // vista, así que se centra en la vista cada vez que cambia cuál está
+  // activo. scrollIntoView({inline:'center'}) se queda corto en la práctica
+  // (acababa desplazando hacia la derecha en vez de centrar el chip) —
+  // calculando el scrollLeft a mano contra el propio contenedor sale
+  // siempre centrado, sin depender de heurísticas del navegador.
   useEffect(() => {
     if (!grupoEfectivo || !chipsRef.current) return;
-    const el = chipsRef.current.querySelector(`[data-slug="${grupoEfectivo}"]`);
-    el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    const contenedor = chipsRef.current;
+    const el = contenedor.querySelector(`[data-slug="${grupoEfectivo}"]`);
+    if (!el) return;
+    const destino = el.offsetLeft - contenedor.clientWidth / 2 + el.clientWidth / 2;
+    contenedor.scrollTo({ left: Math.max(0, destino), behavior: 'smooth' });
   }, [grupoEfectivo]);
 
   function elegirSubcategoria(slug) {
@@ -570,13 +576,14 @@ export default function Productos({
         </div>
       )}
 
-      {!hayMasParaRevelar && cargandoMas && productosPorComprado.length > 0 && (
-        <p className="muted" style={{ textAlign: 'center', padding: '12px 0' }}>
-          Cargando más artículos de esta subcategoría en segundo plano…
-        </p>
-      )}
-
-      {!hayMasParaRevelar && !cargandoMas && (subcatAnterior || subcatSiguiente) && (
+      {/* En cuanto no queda nada más que revelar de lo ya traído, se ofrece
+          saltar a la subcategoría vecina — aunque el recorrido de esta
+          siga completándose de fondo (cargandoMas), el cliente no debe
+          quedarse mirando un aviso de "cargando" sin poder hacer nada: si
+          "Siguiente" todavía no se conoce (la última página real aún no ha
+          llegado), el botón sale deshabilitado y se activa solo en cuanto
+          esté listo, sin bloquear el resto de la navegación mientras tanto. */}
+      {!hayMasParaRevelar && (subcatAnterior || subcatSiguiente || cargandoMas) && (
         <div style={{ padding: '12px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <button disabled={!subcatAnterior} onClick={() => subcatAnterior && elegirSubcategoria(subcatAnterior.slug)} style={{ flex: 1 }}>
