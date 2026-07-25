@@ -35,6 +35,7 @@ import {
 } from './indiceStore.js';
 import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras, resumenGlobal } from './compradosStore.js';
 import { articulosNuevos } from './novedadesStore.js';
+import { cambiosRecientes } from './stockStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 
@@ -617,6 +618,22 @@ app.get('/api/novedades', requireSession, (req, res) => {
       const info = buscarPorArticulo(articulo);
       if (!info) return null;
       return { ...info, desde };
+    })
+    .filter(Boolean);
+  res.json({ productos });
+});
+
+// Cambios de stock notables de los últimos 7 días (agotado, repuesto, cruce
+// del umbral de 10 cajas, o bajada de al menos el 50% de golpe) — ver
+// stockStore.js. Tampoco depende de la cuenta que pregunta, es el mismo
+// catálogo general para cualquiera.
+app.get('/api/cambios-stock', requireSession, (req, res) => {
+  const cambios = cambiosRecientes();
+  const productos = cambios
+    .map(({ articulo, stockAntes, stockDespues, fecha }) => {
+      const info = buscarPorArticulo(articulo);
+      if (!info) return null;
+      return { ...info, stockAntes, stockDespues, fecha };
     })
     .filter(Boolean);
   res.json({ productos });

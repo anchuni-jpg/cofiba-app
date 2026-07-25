@@ -26,7 +26,7 @@ function haceCuanto(desde) {
   return `hace ${dias} días`;
 }
 
-function FilaProducto({ p, max, onAbrir, novedad }) {
+function FilaProducto({ p, max, onAbrir, novedad, cambioStock }) {
   return (
     <button
       onClick={() => onAbrir(p)}
@@ -49,12 +49,13 @@ function FilaProducto({ p, max, onAbrir, novedad }) {
         <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {p.nombre || p.referencia || p.articulo}
         </p>
-        {novedad ? (
+        {(novedad || cambioStock) && (
           <p className="muted" style={{ margin: '2px 0 0' }}>
             {p.categoriaNombre}
-            {p.precioFinal ? ` · ${p.precioFinal}€` : ''}
+            {cambioStock ? ` · ${p.stockAntes} → ${p.stockDespues} uds.` : p.precioFinal ? ` · ${p.precioFinal}€` : ''}
           </p>
-        ) : (
+        )}
+        {!novedad && !cambioStock && (
           <>
             <p className="muted" style={{ margin: '2px 0 0' }}>
               {p.categoriaNombre ? `${p.categoriaNombre} · ` : ''}
@@ -72,7 +73,7 @@ function FilaProducto({ p, max, onAbrir, novedad }) {
           </>
         )}
       </div>
-      {novedad ? (
+      {novedad && (
         <span
           style={{
             fontSize: 11,
@@ -86,7 +87,23 @@ function FilaProducto({ p, max, onAbrir, novedad }) {
         >
           {haceCuanto(p.desde)}
         </span>
-      ) : (
+      )}
+      {cambioStock && (
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: '#fff',
+            background: p.stockDespues > p.stockAntes ? 'var(--accent)' : 'var(--danger)',
+            borderRadius: 8,
+            padding: '3px 8px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {p.stockDespues > p.stockAntes ? '▲' : '▼'} {haceCuanto(p.fecha)}
+        </span>
+      )}
+      {!novedad && !cambioStock && (
         <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--accent)', minWidth: 60, textAlign: 'right' }}>
           {formatoEuro(p.importe)}
         </p>
@@ -99,7 +116,8 @@ function FilaProducto({ p, max, onAbrir, novedad }) {
 // listado de Estadísticas (más comprados, por categoría o novedades).
 function ModalProducto({ p, onCerrar }) {
   if (!p) return null;
-  const esNovedad = p.desde != null && p.veces == null;
+  const esCambioStock = p.stockAntes != null;
+  const esNovedad = p.desde != null && !esCambioStock;
   return (
     <div
       onClick={onCerrar}
@@ -158,13 +176,13 @@ function ModalProducto({ p, onCerrar }) {
                 <td>{p.stock} uds.</td>
               </tr>
             )}
-            {!esNovedad && (
+            {!esNovedad && !esCambioStock && (
               <tr>
                 <td>Cajas compradas</td>
                 <td>{p.veces}</td>
               </tr>
             )}
-            {!esNovedad && p.importe != null && (
+            {!esNovedad && !esCambioStock && p.importe != null && (
               <tr>
                 <td style={{ fontWeight: 600 }}>Importe total</td>
                 <td style={{ fontWeight: 600, color: 'var(--accent)' }}>{formatoEuro(p.importe)}</td>
@@ -174,6 +192,14 @@ function ModalProducto({ p, onCerrar }) {
               <tr>
                 <td>Novedad</td>
                 <td>{haceCuanto(p.desde)}</td>
+              </tr>
+            )}
+            {esCambioStock && (
+              <tr>
+                <td style={{ fontWeight: 600 }}>Cambio de stock</td>
+                <td style={{ fontWeight: 600, color: p.stockDespues > p.stockAntes ? 'var(--accent)' : 'var(--danger)' }}>
+                  {p.stockAntes} → {p.stockDespues} uds. ({haceCuanto(p.fecha)})
+                </td>
               </tr>
             )}
           </tbody>
@@ -196,7 +222,8 @@ export default function Estadisticas() {
   // falta pedir nada nuevo, el desglose ya trae sus propios productos.
   const [categoriaAbierta, setCategoriaAbierta] = useState(null);
   const [novedades, setNovedades] = useState(null);
-  const [vista, setVista] = useState('masComprado'); // masComprado | novedades
+  const [cambiosStock, setCambiosStock] = useState(null);
+  const [vista, setVista] = useState('masComprado'); // masComprado | novedades | stock
   const [productoModal, setProductoModal] = useState(null);
 
   useEffect(() => {
@@ -209,6 +236,12 @@ export default function Estadisticas() {
       .catch(() => {
         // Silencioso a propósito: es un dato complementario, no algo que
         // deba impedir ver el resto de Estadísticas si falla.
+      });
+    api
+      .cambiosStockCached((cacheado) => setCambiosStock(cacheado.productos))
+      .then((data) => setCambiosStock(data.productos))
+      .catch(() => {
+        // Silencioso a propósito, mismo motivo que arriba.
       });
   }, []);
 
@@ -289,6 +322,19 @@ export default function Estadisticas() {
       >
         Nuevas entradas{novedades?.length ? ` (${novedades.length})` : ''}
       </button>
+      <button
+        onClick={() => setVista('stock')}
+        style={{
+          flex: 1,
+          fontSize: 12,
+          padding: '8px 6px',
+          background: vista === 'stock' ? 'var(--accent)' : 'var(--surface-2)',
+          color: vista === 'stock' ? '#fff' : 'var(--text-primary)',
+          borderColor: vista === 'stock' ? 'var(--accent)' : 'var(--border)',
+        }}
+      >
+        Cambios de stock{cambiosStock?.length ? ` (${cambiosStock.length})` : ''}
+      </button>
     </div>
   );
 
@@ -343,6 +389,23 @@ export default function Estadisticas() {
                   novedades.map((p) => <FilaProducto key={p.articulo} p={p} onAbrir={setProductoModal} novedad />)
                 ) : (
                   <p className="muted">No hay artículos nuevos en los últimos 3 días.</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {vista === 'stock' && (
+            <>
+              <p className="muted" style={{ marginBottom: 4 }}>
+                Cambios notables de los últimos 7 días: agotado, repuesto, o una bajada fuerte de existencias.
+              </p>
+              <div style={{ marginBottom: 20 }}>
+                {cambiosStock && cambiosStock.length > 0 ? (
+                  cambiosStock.map((p, idx) => (
+                    <FilaProducto key={`${p.articulo}-${idx}`} p={p} onAbrir={setProductoModal} cambioStock />
+                  ))
+                ) : (
+                  <p className="muted">Sin cambios de stock notables en los últimos 7 días.</p>
                 )}
               </div>
             </>

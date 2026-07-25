@@ -159,6 +159,22 @@ export const api = {
     await setCache(CLAVE, { datos: frescos, cuando: Date.now() });
     return frescos;
   },
+  cambiosStock() {
+    return request('/cambios-stock');
+  },
+  // Mismo motivo que novedadesCached: los cambios de stock solo se detectan
+  // una vez por recorrido del catálogo (cada ~6h), así que pedirlo de
+  // verdad más de una vez al día no puede traer nada nuevo.
+  async cambiosStockCached(onCacheHit) {
+    const CLAVE = 'cambios-stock';
+    const UN_DIA_MS = 24 * 60 * 60 * 1000;
+    const cacheado = await getCache(CLAVE);
+    if (cacheado) onCacheHit?.(cacheado.datos);
+    if (cacheado && Date.now() - cacheado.cuando < UN_DIA_MS) return cacheado.datos;
+    const frescos = await this.cambiosStock();
+    await setCache(CLAVE, { datos: frescos, cuando: Date.now() });
+    return frescos;
+  },
   // El PDF no puede enlazarse directo (necesita nuestra sesión, no la del
   // navegador) — se trae como blob autenticado y quien llama decide qué
   // hacer con él (abrirlo, descargarlo).
