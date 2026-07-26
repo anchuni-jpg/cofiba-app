@@ -8,7 +8,8 @@ function nivelStock(stock, undVenta) {
   if (!Number.isFinite(stock)) return null;
   const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
   const cajas = stock / unidadesPorCaja;
-  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
+  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 // No existe ningún endpoint de "informes" en cofiba.es — estos datos salen
@@ -40,7 +41,7 @@ function haceCuanto(desde) {
 // Todo el casillero es el botón que abre la ficha (igual que en Catálogo/
 // Búsqueda/Histórico) — solo el paso +/- queda fuera, con su propio
 // stopPropagation, para no disparar la ficha al tocar - o +.
-function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onAñadir, pending, enCarrito }) {
+function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onAñadir, pending, enCarrito, noDisponible }) {
   const stock = nivelStock(p.stock, p.undVenta);
   return (
     <div
@@ -126,12 +127,16 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onAñadir, pendin
           <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--accent)', minWidth: 60, textAlign: 'right' }}>
             {formatoEuro(p.importe)}
           </p>
-          {onAñadir && (
-            <div className="qty-stepper" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => onAñadir(p, -1)}>-</button>
-              <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending?.[p.articulo] ?? 0}</span>
-              <button onClick={() => onAñadir(p, 1)}>+</button>
-            </div>
+          {noDisponible ? (
+            <span style={{ fontSize: 10, color: 'var(--danger)' }}>No disponible</span>
+          ) : (
+            onAñadir && (
+              <div className="qty-stepper" onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => onAñadir(p, -1)}>-</button>
+                <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending?.[p.articulo] ?? 0}</span>
+                <button onClick={() => onAñadir(p, 1)}>+</button>
+              </div>
+            )
           )}
         </div>
       )}
@@ -144,7 +149,7 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onAñadir, pendin
 // de stock o el aviso de restock) — siempre trae toda la info (buscarPorArticulo
 // va incluido en el objeto en los cuatro casos), así que "también suelen
 // comprar" y el paso +/- funcionan igual en cualquiera de ellos.
-function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending }) {
+function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending, noDisponibles }) {
   // Los hooks van antes que cualquier return condicional — el efecto en sí
   // ya comprueba `p` por dentro.
   const [relacionados, setRelacionados] = useState(null);
@@ -262,7 +267,9 @@ function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending }) {
           </tbody>
         </table>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          {onAñadir ? (
+          {noDisponibles?.has(p.articulo) ? (
+            <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600 }}>Ya no está disponible</span>
+          ) : onAñadir ? (
             <div className="qty-stepper">
               <button onClick={() => onAñadir(p, -1)}>-</button>
               <span style={{ minWidth: 20, textAlign: 'center' }}>{pending?.[p.articulo] ?? 0}</span>
@@ -302,6 +309,16 @@ function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending }) {
                   </p>
                   <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
                     {r.precioFinal ? `${r.precioFinal}€` : '—'}
+                    {(() => {
+                      const info = nivelStock(r.stock, r.undVenta);
+                      return (
+                        info && (
+                          <span style={{ display: 'block', fontSize: 9, fontWeight: 600, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                            {info.texto}
+                          </span>
+                        )
+                      );
+                    })()}
                   </p>
                   {onAñadir && (
                     <button
@@ -350,6 +367,12 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
   // arriba), para que Estadísticas se pida igual que el resto de la app en
   // vez de tener su propio botón especial de "un toque y ya".
   const [pending, setPending] = useState({});
+  // Artículos que cofiba.es acaba de rechazar al intentar añadirlos (ver
+  // ARTICULO_NO_DISPONIBLE en el servidor) — igual que en Histórico, aquí
+  // no se esconde la fila (es una estadística real de lo que ya se compró),
+  // solo se deja de ofrecer repetir el pedido hasta que vuelva a estar
+  // disponible.
+  const [noDisponibles, setNoDisponibles] = useState(new Set());
 
   function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
@@ -368,6 +391,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
       .then(() => onCartChanged?.())
       .catch((e) => {
         setPending((s) => ({ ...s, [p.articulo]: anterior }));
+        if (e.code === 'ARTICULO_NO_DISPONIBLE') setNoDisponibles((s) => new Set(s).add(p.articulo));
         setError(e.message);
       });
   }
@@ -507,6 +531,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
             onAñadir={añadir}
             pending={pending}
             enCarrito={enCarritoOSesion(p.articulo)}
+            noDisponible={noDisponibles.has(p.articulo)}
           />
         ))}
         <ModalProducto
@@ -515,6 +540,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
           onCerrar={() => setProductoModal(null)}
           onAñadir={añadir}
           pending={pending}
+          noDisponibles={noDisponibles}
         />
       </div>
     );
@@ -630,6 +656,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
                     onAñadir={añadir}
                     pending={pending}
                     enCarrito={enCarritoOSesion(p.articulo)}
+                    noDisponible={noDisponibles.has(p.articulo)}
                   />
                 ))}
               </div>
@@ -695,6 +722,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
         onCerrar={() => setProductoModal(null)}
         onAñadir={añadir}
         pending={pending}
+        noDisponibles={noDisponibles}
       />
     </div>
   );

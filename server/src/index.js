@@ -39,6 +39,7 @@ import { articulosNuevos } from './novedadesStore.js';
 import { cambiosRecientes } from './stockStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
+import { marcarNoDisponible, filtrarDisponibles } from './noDisponibleStore.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
 // try/catch (p. ej. en un rastreo de fondo) tumbaba TODO el servidor en vez
@@ -266,7 +267,11 @@ app.get('/api/productos', requireSession, async (req, res) => {
     // un rastreo en curso o uno reciente, así que llamarlo aquí también es
     // barato y asegura que las marcas siempre acaban apareciendo.
     asegurarComprados(req.usuario, req.cofiba);
-    const productos = marcarComprados(req.usuario, resultado.productos);
+    // Se filtra aquí (no al construir/cachear resultado.productos) para que
+    // la marca de "no disponible" — que caduca sola a los 7 días — se
+    // aplique siempre en fresco, sin depender de cuándo se rastreó esta
+    // página por última vez.
+    const productos = filtrarDisponibles(marcarComprados(req.usuario, resultado.productos));
     let subcategorias = resultado.subcategorias;
     // Quita de los chips las subcategorías que el índice del catálogo ya
     // sabe que no tienen ningún producto — antes se enseñaban todas (vienen
@@ -375,6 +380,10 @@ app.post('/api/carrito/item', requireSession, async (req, res) => {
     const result = await anadirAlCarrito(req.cofiba, { articulo, cantidad });
     res.json(result);
   } catch (e) {
+    // cofiba.es sigue enseñándolo en sus listados pero ya no lo vende de
+    // verdad — se oculta de los listados una temporada (ver
+    // noDisponibleStore.js) para que nadie más tropiece con el mismo error.
+    if (e.code === 'ARTICULO_NO_DISPONIBLE') marcarNoDisponible(articulo);
     const status = e.code === 'CALIBRATION_NEEDED' ? 501 : 502;
     res.status(status).json({ error: e.message, code: e.code, debugHtml: e.debugHtml });
   }
@@ -679,7 +688,7 @@ app.get('/api/relacionados', requireSession, (req, res) => {
   if (!info?.subcategoria) return res.json({ productos: [] });
 
   const { conteoGlobal } = resumenGlobal();
-  const productos = productosPorSubcategoria(info.categoria, info.subcategoria)
+  const productos = filtrarDisponibles(productosPorSubcategoria(info.categoria, info.subcategoria))
     .filter((p) => p.articulo !== articulo)
     .map((p) => ({ ...p, vecesGlobal: conteoGlobal.get(p.articulo) || 0 }))
     .sort((a, b) => b.vecesGlobal - a.vecesGlobal)
@@ -770,7 +779,7 @@ app.get('/api/buscar', requireSession, async (req, res) => {
     construyendo: st.estado === 'construyendo',
     parcial: st.estado === 'construyendo',
     progreso: st.progreso,
-    resultados: marcarComprados(req.usuario, buscarEnIndice(termino)),
+    resultados: filtrarDisponibles(marcarComprados(req.usuario, buscarEnIndice(termino))),
     totalIndice: st.total,
     actualizado: st.actualizado,
   });

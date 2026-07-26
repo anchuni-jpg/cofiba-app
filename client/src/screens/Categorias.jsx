@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense, lazy } from 'react';
 import { api } from '../api.js';
 import { ISLAS } from '../filtroIsla.js';
+// La librería de lectura de códigos de barras pesa varios cientos de KB —
+// cargarla solo al pulsar el botón de la cámara (en vez de en el bundle
+// principal) evita que TODA visita a la app pague ese peso de más solo por
+// si acaso alguien escanea algo.
+const BarcodeScanner = lazy(() => import('../components/BarcodeScanner.jsx'));
 
 // Datos propios de Cofiba (no de la cuenta del cliente) — verificados a mano
 // en /contacto.html y el pie de página de cofiba.es (Port de Cariño 16 A,
@@ -41,6 +46,7 @@ export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCa
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [escaneando, setEscaneando] = useState(false);
 
   useEffect(() => {
     let huboCache = false;
@@ -79,7 +85,25 @@ export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCa
         <button type="submit" aria-label="Buscar">
           🔍
         </button>
+        <button type="button" onClick={() => setEscaneando(true)} aria-label="Escanear código de barras">
+          📷
+        </button>
       </form>
+
+      {escaneando && (
+        <Suspense fallback={null}>
+          <BarcodeScanner
+            onCerrar={() => setEscaneando(false)}
+            onDetectado={(codigo) => {
+              setEscaneando(false);
+              // El escaneo lleva directo a la ficha ampliada del producto (si
+              // hay una coincidencia exacta), no solo a la lista de
+              // resultados — ver el efecto en Busqueda.jsx que consume esto.
+              onSearch(codigo, { escaneado: true });
+            }}
+          />
+        </Suspense>
+      )}
 
       {error && <div className="error-banner">{error}</div>}
       {loading && <p className="muted">Cargando categorías…</p>}

@@ -7,7 +7,8 @@ function nivelStock(stock, undVenta) {
   if (!Number.isFinite(stock)) return null;
   const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
   const cajas = stock / unidadesPorCaja;
-  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
+  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 export default function Carrito({ onCartChanged, onPedidoFinalizado }) {

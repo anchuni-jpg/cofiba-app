@@ -33,6 +33,7 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
     }
     const err = new Error(data.error || `Error ${res.status}`);
     err.debugHtml = data.debugHtml;
+    err.code = data.code;
     throw err;
   }
   return data;

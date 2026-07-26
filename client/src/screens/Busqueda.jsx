@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Suspense, lazy } from 'react';
 import { api } from '../api.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
+
+// Igual que en Categorias.jsx: solo se descarga si de verdad se usa.
+const BarcodeScanner = lazy(() => import('../components/BarcodeScanner.jsx'));
 
 // "Und. de venta" llega como texto con formato español ("12,00"); se muestra
 // como tamaño de caja legible ("caja de 12 uds"). Duplica formatoCaja de
@@ -18,7 +21,8 @@ function nivelStock(stock, undVenta) {
   if (!Number.isFinite(stock)) return null;
   const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
   const cajas = stock / unidadesPorCaja;
-  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
+  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 // Igual que en Productos.jsx: en vez de sustituir la lista entera en cada
@@ -39,6 +43,8 @@ function combinarResultados(anteriores, frescos) {
 
 export default function Busqueda({
   termino,
+  codigoEscaneado,
+  onCodigoConsumido,
   onBack,
   onCartChanged,
   codigosEnCarrito,
@@ -53,6 +59,13 @@ export default function Busqueda({
   // lo que se está escribiendo, para no relanzar la búsqueda en cada tecla.
   const [terminoActivo, setTerminoActivo] = useState(termino);
   const [campo, setCampo] = useState(termino);
+  const [escaneando, setEscaneando] = useState(false);
+  // Código de barras a la espera de un resultado exacto — al llegar
+  // `resultados`, si alguno coincide de verdad (ean/referencia/articulo) se
+  // abre su ficha directamente en vez de dejar solo la lista. Se consume
+  // (null) en cuanto se usa, tanto si hubo coincidencia como si no, para no
+  // intentarlo de nuevo en una búsqueda posterior sin relación.
+  const [autoAbrirCodigo, setAutoAbrirCodigo] = useState(null);
   const [resultados, setResultados] = useState(null);
   const [construyendo, setConstruyendo] = useState(false);
   const [progreso, setProgreso] = useState(null);
@@ -66,6 +79,10 @@ export default function Busqueda({
   const [visibles, setVisibles] = useState(TANDA);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState({});
+  // Artículos que cofiba.es acaba de rechazar al intentar añadirlos (ver
+  // ARTICULO_NO_DISPONIBLE en el servidor) — se quitan de la vista al
+  // momento, sin esperar a la próxima búsqueda.
+  const [noDisponibles, setNoDisponibles] = useState(new Set());
   const [zoomProducto, setZoomProducto] = useState(null);
   // "También suelen comprar" (afinidad por subcategoría + popularidad
   // global) — se pide solo al abrir la ficha, no para toda la lista.
@@ -102,6 +119,42 @@ export default function Busqueda({
     setTerminoActivo(q);
     setNonce((n) => n + 1);
   }
+
+  // Compartida por el escáner de aquí mismo y por el de Categorías (vía
+  // `codigoEscaneado`, más abajo) — lanza la búsqueda y deja el código
+  // marcado para que, en cuanto lleguen resultados, se intente abrir la
+  // ficha directamente.
+  function buscarPorCodigo(codigo) {
+    setCampo(codigo);
+    setTerminoActivo(codigo);
+    setAutoAbrirCodigo(codigo);
+    setNonce((n) => n + 1);
+  }
+
+  // Un escaneo hecho desde Categorías llega como prop (esta pantalla ni
+  // siquiera estaba montada todavía cuando ocurrió) — se consume una sola
+  // vez para no repetir la búsqueda si el componente se vuelve a renderizar.
+  useEffect(() => {
+    if (!codigoEscaneado) return;
+    buscarPorCodigo(codigoEscaneado);
+    onCodigoConsumido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigoEscaneado]);
+
+  // En cuanto hay resultados y queda un código de barras por resolver, se
+  // busca una coincidencia EXACTA (no basta con que el término aparezca
+  // dentro, como hace el buscador normal) por ean, referencia o articulo —
+  // y se abre su ficha sola. Si no hay ninguna coincidencia exacta, se deja
+  // la lista de resultados normal y ya está (no es un fallo, simplemente el
+  // código no se pudo emparejar con precisión).
+  useEffect(() => {
+    if (!autoAbrirCodigo || !resultados) return;
+    const match = resultados.find(
+      (p) => p.ean === autoAbrirCodigo || p.referencia === autoAbrirCodigo || p.articulo === autoAbrirCodigo
+    );
+    if (match) setZoomProducto(match);
+    setAutoAbrirCodigo(null);
+  }, [resultados, autoAbrirCodigo]);
 
   useEffect(() => {
     let cancelado = false;
@@ -186,11 +239,17 @@ export default function Busqueda({
       .then(() => onCartChanged())
       .catch((e) => {
         setPending((s) => ({ ...s, [p.articulo]: anterior }));
+        // cofiba.es lo sigue enseñando en su buscador pero ya no lo vende de
+        // verdad — se quita de esta vista al momento (el servidor ya lo
+        // esconde de las próximas búsquedas durante unos días).
+        if (e.code === 'ARTICULO_NO_DISPONIBLE') setNoDisponibles((s) => new Set(s).add(p.articulo));
         setError(e.message);
       });
   }
 
-  const resultadosFiltrados = resultados ? filtrarPorIsla(resultados, islaFiltro) : resultados;
+  const resultadosDisponibles =
+    resultados && noDisponibles.size ? resultados.filter((p) => !noDisponibles.has(p.articulo)) : resultados;
+  const resultadosFiltrados = resultadosDisponibles ? filtrarPorIsla(resultadosDisponibles, islaFiltro) : resultadosDisponibles;
 
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -223,7 +282,22 @@ export default function Busqueda({
         <button type="submit" aria-label="Buscar">
           🔍
         </button>
+        <button type="button" onClick={() => setEscaneando(true)} aria-label="Escanear código de barras">
+          📷
+        </button>
       </form>
+
+      {escaneando && (
+        <Suspense fallback={null}>
+          <BarcodeScanner
+            onCerrar={() => setEscaneando(false)}
+            onDetectado={(codigo) => {
+              setEscaneando(false);
+              buscarPorCodigo(codigo);
+            }}
+          />
+        </Suspense>
+      )}
 
       {error && <div className="error-banner">{error}</div>}
 
@@ -417,11 +491,15 @@ export default function Busqueda({
               })()}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <div className="qty-stepper">
-                <button onClick={() => añadir(zoomProducto, -1)}>-</button>
-                <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
-                <button onClick={() => añadir(zoomProducto, 1)}>+</button>
-              </div>
+              {noDisponibles.has(zoomProducto.articulo) ? (
+                <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600 }}>Ya no está disponible</span>
+              ) : (
+                <div className="qty-stepper">
+                  <button onClick={() => añadir(zoomProducto, -1)}>-</button>
+                  <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
+                  <button onClick={() => añadir(zoomProducto, 1)}>+</button>
+                </div>
+              )}
               <button onClick={() => setZoomProducto(null)}>Cerrar</button>
             </div>
 
@@ -453,6 +531,16 @@ export default function Busqueda({
                       </p>
                       <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
                         {r.precioFinal ? `${r.precioFinal}€` : '—'}
+                        {(() => {
+                          const info = nivelStock(r.stock, r.undVenta);
+                          return (
+                            info && (
+                              <span style={{ display: 'block', fontSize: 9, fontWeight: 600, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                                {info.texto}
+                              </span>
+                            )
+                          );
+                        })()}
                       </p>
                       <button
                         onClick={(e) => {

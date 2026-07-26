@@ -36,7 +36,11 @@ function nivelStock(stock, undVenta) {
   if (!Number.isFinite(stock)) return null;
   const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
   const cajas = stock / unidadesPorCaja;
-  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
+  // Agotado de verdad (0 cajas) es distinto de "queda poco" — mismo color de
+  // aviso que STOCK BAJO, pero con su propio texto para no dar a entender
+  // que todavía se puede pedir alguna caja cuando no queda ninguna.
+  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 export default function Productos({
@@ -78,6 +82,11 @@ export default function Productos({
   const [visibles, setVisibles] = useState(limite);
   const [pending, setPending] = useState({});
   const [zoomProducto, setZoomProducto] = useState(null);
+  // Artículos que cofiba.es acaba de rechazar al intentar añadirlos (ver
+  // ARTICULO_NO_DISPONIBLE en el servidor) — se quitan de la vista al
+  // momento, sin esperar a la próxima carga, para que nadie más tropiece
+  // con el mismo error en lo que queda de esta visita.
+  const [noDisponibles, setNoDisponibles] = useState(new Set());
   // "También suelen comprar" (afinidad por subcategoría + popularidad
   // global, no cesta real — cofiba.es no expone qué se compró junto en un
   // mismo pedido). Se pide solo al abrir la ficha, no para toda la lista.
@@ -380,6 +389,11 @@ export default function Productos({
       })
       .catch((e) => {
         setPending((s) => ({ ...s, [p.articulo]: anterior }));
+        // cofiba.es lo sigue enseñando en sus páginas pero ya no lo vende de
+        // verdad — se quita de esta vista al momento (el servidor ya lo
+        // esconde de las próximas cargas durante unos días), avisando por
+        // qué en vez de dejar que el artículo desaparezca sin explicación.
+        if (e.code === 'ARTICULO_NO_DISPONIBLE') setNoDisponibles((s) => new Set(s).add(p.articulo));
         actualizarSubcat(clave, (prev) => ({
           ...(prev || entradaVacia()),
           error: e.message,
@@ -398,7 +412,8 @@ export default function Productos({
     return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo) || (pending[articulo] ?? 0) > 0);
   }
 
-  const productosPorIsla = filtrarPorIsla(productos, islaFiltro);
+  const productosDisponibles = noDisponibles.size ? productos.filter((p) => !noDisponibles.has(p.articulo)) : productos;
+  const productosPorIsla = filtrarPorIsla(productosDisponibles, islaFiltro);
   const productosPorComprado = soloComprados ? productosPorIsla.filter((p) => p.comprado) : productosPorIsla;
   const productosFiltrados = productosPorComprado.slice(0, visibles);
   const hayMasParaRevelar = visibles < productosPorComprado.length;
@@ -714,11 +729,15 @@ export default function Productos({
               })()}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <div className="qty-stepper">
-                <button onClick={() => añadir(zoomProducto, -1)}>-</button>
-                <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
-                <button onClick={() => añadir(zoomProducto, 1)}>+</button>
-              </div>
+              {noDisponibles.has(zoomProducto.articulo) ? (
+                <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600 }}>Ya no está disponible</span>
+              ) : (
+                <div className="qty-stepper">
+                  <button onClick={() => añadir(zoomProducto, -1)}>-</button>
+                  <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
+                  <button onClick={() => añadir(zoomProducto, 1)}>+</button>
+                </div>
+              )}
               <button onClick={() => setZoomProducto(null)}>Cerrar</button>
             </div>
             {error && (
@@ -758,6 +777,16 @@ export default function Productos({
                       </p>
                       <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
                         {r.precioFinal ? `${r.precioFinal}€` : '—'}
+                        {(() => {
+                          const info = nivelStock(r.stock, r.undVenta);
+                          return (
+                            info && (
+                              <span style={{ display: 'block', fontSize: 9, fontWeight: 600, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                                {info.texto}
+                              </span>
+                            )
+                          );
+                        })()}
                       </p>
                       <button
                         onClick={(e) => {

@@ -18,7 +18,8 @@ function nivelStock(stock, undVenta) {
   if (!Number.isFinite(stock)) return null;
   const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
   const cajas = stock / unidadesPorCaja;
-  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
+  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 // Insensible a acentos/mayúsculas — duplica normalizar() de indiceStore.js
@@ -63,6 +64,11 @@ export default function Historico({
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState({});
+  // Artículos que cofiba.es acaba de rechazar al intentar añadirlos (ver
+  // ARTICULO_NO_DISPONIBLE en el servidor) — el histórico en sí no los
+  // esconde (es un hecho pasado real), pero deja de ofrecer repetir su
+  // compra hasta que vuelva a estar disponible.
+  const [noDisponibles, setNoDisponibles] = useState(new Set());
   const [zoomProducto, setZoomProducto] = useState(null);
   // "También suelen comprar" (afinidad por subcategoría + popularidad
   // global) — mismo patrón que Productos.jsx/Busqueda.jsx, se pide solo al
@@ -220,6 +226,11 @@ export default function Historico({
       .then(() => onCartChanged())
       .catch((e) => {
         setPending((s) => ({ ...s, [p.articulo]: anterior }));
+        // A diferencia de Catálogo/Búsqueda, aquí NO se quita la fila (es un
+        // hecho de compra real pasado, esconderlo falsearía el histórico) —
+        // solo se deja de ofrecer repetirla hasta que vuelva a estar
+        // disponible.
+        if (e.code === 'ARTICULO_NO_DISPONIBLE') setNoDisponibles((s) => new Set(s).add(p.articulo));
         setError(e.message);
       });
   }
@@ -352,11 +363,17 @@ export default function Historico({
                 onClick={(e) => e.stopPropagation()}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
               >
-                <div className="qty-stepper">
-                  <button onClick={() => añadir(p, -1)}>-</button>
-                  <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
-                  <button onClick={() => añadir(p, 1)}>+</button>
-                </div>
+                {noDisponibles.has(p.articulo) ? (
+                  <span className="muted" style={{ fontSize: 10, color: 'var(--danger)', textAlign: 'center' }}>
+                    No disponible
+                  </span>
+                ) : (
+                  <div className="qty-stepper">
+                    <button onClick={() => añadir(p, -1)}>-</button>
+                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                    <button onClick={() => añadir(p, 1)}>+</button>
+                  </div>
+                )}
                 {p.undVenta && (
                   <span className="muted" style={{ fontSize: 11 }}>
                     caja de {formatoCaja(p.undVenta)} uds
@@ -420,11 +437,21 @@ export default function Historico({
                   Ver más
                 </button>
               )}
-              <div className="qty-stepper" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
-                <button onClick={() => añadir(p, -1)}>-</button>
-                <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
-                <button onClick={() => añadir(p, 1)}>+</button>
-              </div>
+              {noDisponibles.has(p.articulo) ? (
+                <span
+                  className="muted"
+                  style={{ fontSize: 10, color: 'var(--danger)', display: 'block', marginTop: 4 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  No disponible
+                </span>
+              ) : (
+                <div className="qty-stepper" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => añadir(p, -1)}>-</button>
+                  <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                  <button onClick={() => añadir(p, 1)}>+</button>
+                </div>
+              )}
               {p.undVenta && (
                 <span className="muted" style={{ fontSize: 10 }}>
                   caja de {formatoCaja(p.undVenta)} uds
@@ -493,11 +520,15 @@ export default function Historico({
               })()}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <div className="qty-stepper">
-                <button onClick={() => añadir(zoomProducto, -1)}>-</button>
-                <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
-                <button onClick={() => añadir(zoomProducto, 1)}>+</button>
-              </div>
+              {noDisponibles.has(zoomProducto.articulo) ? (
+                <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600 }}>Ya no está disponible</span>
+              ) : (
+                <div className="qty-stepper">
+                  <button onClick={() => añadir(zoomProducto, -1)}>-</button>
+                  <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
+                  <button onClick={() => añadir(zoomProducto, 1)}>+</button>
+                </div>
+              )}
               <button onClick={() => setZoomProducto(null)}>Cerrar</button>
             </div>
 
@@ -529,6 +560,16 @@ export default function Historico({
                       </p>
                       <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
                         {r.precioFinal ? `${r.precioFinal}€` : '—'}
+                        {(() => {
+                          const info = nivelStock(r.stock, r.undVenta);
+                          return (
+                            info && (
+                              <span style={{ display: 'block', fontSize: 9, fontWeight: 600, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                                {info.texto}
+                              </span>
+                            )
+                          );
+                        })()}
                       </p>
                       <button
                         onClick={(e) => {
