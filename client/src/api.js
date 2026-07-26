@@ -138,8 +138,24 @@ export const api = {
   estadisticas() {
     return request('/estadisticas');
   },
-  estadisticasCached(onCacheHit) {
-    return conCache('estadisticas', () => this.estadisticas(), onCacheHit);
+  // A diferencia del resto de *Cached, aquí "más reciente" no siempre es
+  // "mejor": el servidor gratuito se reinicia a menudo (duerme por
+  // inactividad) y pierde el recorrido de compras acumulado, así que una
+  // respuesta fresca justo después de un reinicio puede traer MENOS datos
+  // que los que ya se habían visto — sin este cuidado, el cliente vería sus
+  // estadísticas "vaciarse" delante de sus ojos cada vez que entra después
+  // de un rato sin usar la app. Se guarda y se enseña siempre la mejor foto
+  // vista hasta ahora (más cajas contadas), nunca una peor aunque sea más
+  // nueva; en cuanto el recorrido de fondo del servidor alcanza (o supera)
+  // lo ya visto, esa sí la sustituye.
+  async estadisticasCached(onCacheHit) {
+    const CLAVE = 'estadisticas';
+    const cacheado = await getCache(CLAVE);
+    if (cacheado) onCacheHit?.(cacheado);
+    const frescos = await this.estadisticas();
+    const mejor = cacheado && (cacheado.totalLineas || 0) > (frescos.totalLineas || 0) ? cacheado : frescos;
+    await setCache(CLAVE, mejor);
+    return mejor;
   },
   novedades() {
     return request('/novedades');

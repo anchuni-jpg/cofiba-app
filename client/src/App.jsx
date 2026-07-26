@@ -372,7 +372,9 @@ export default function App() {
             }}
           />
         )}
-        {tab === 'estadisticas' && <Estadisticas onCartChanged={refreshCartCount} />}
+        {tab === 'estadisticas' && (
+          <Estadisticas onCartChanged={refreshCartCount} codigosEnCarrito={codigosEnCarrito} codigosSesion={codigosSesion} />
+        )}
       </div>
     </div>
   );

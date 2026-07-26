@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import CarritoIcon from '../components/CarritoIcon.jsx';
+
+// Duplica nivelStock de Productos.jsx — 10 cajas o más: "STOCK" en verde,
+// sin número; por debajo: "STOCK BAJO" en el color de aviso.
+function nivelStock(stock, undVenta) {
+  if (!Number.isFinite(stock)) return null;
+  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
+  const cajas = stock / unidadesPorCaja;
+  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+}
 
 // No existe ningún endpoint de "informes" en cofiba.es — estos datos salen
 // de contar, en segundo plano, cuántas veces aparece cada artículo en
@@ -7,9 +17,10 @@ import { api } from '../api.js';
 // tardar la primera vez (recorre todo el histórico) y por eso `completo`
 // puede seguir en false un rato: las cifras ya se enseñan (con lo que haya
 // en caché local, al instante) pero todavía pueden crecer mientras el
-// recorrido de fondo continúa — y ese recorrido ahora se guarda en el
-// servidor a medida que avanza, así que un reinicio no le hace empezar de
-// cero otra vez.
+// recorrido de fondo continúa. El servidor gratuito además se duerme por
+// inactividad y pierde ese recorrido acumulado al despertar — por eso
+// api.js#estadisticasCached nunca deja que una respuesta más nueva pero más
+// pequeña "vacíe" lo que ya se había visto (ver el comentario allí).
 //
 // cofiba.es vende por CAJA, no por unidad suelta: el importe que manda el
 // servidor ya viene calculado como precio unitario × unidades por caja ×
@@ -26,7 +37,8 @@ function haceCuanto(desde) {
   return `hace ${dias} días`;
 }
 
-function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPedido }) {
+function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPedido, enCarrito }) {
+  const stock = nivelStock(p.stock, p.undVenta);
   return (
     <div
       style={{
@@ -57,11 +69,17 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPe
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {p.nombre || p.referencia || p.articulo}
+            {enCarrito && (
+              <span style={{ marginLeft: 5 }}>
+                <CarritoIcon size={11} />
+              </span>
+            )}
           </p>
           {(novedad || cambioStock) && (
             <p className="muted" style={{ margin: '2px 0 0' }}>
               {p.categoriaNombre}
               {cambioStock ? ` · ${p.stockAntes} → ${p.stockDespues} uds.` : p.precioFinal ? ` · ${p.precioFinal}€` : ''}
+              {stock && <span style={{ color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {stock.texto}</span>}
             </p>
           )}
           {!novedad && !cambioStock && (
@@ -69,6 +87,7 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPe
               <p className="muted" style={{ margin: '2px 0 0' }}>
                 {p.categoriaNombre ? `${p.categoriaNombre} · ` : ''}
                 {p.veces} {p.veces === 1 ? 'caja comprada' : 'cajas compradas'}
+                {stock && <span style={{ color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {stock.texto}</span>}
               </p>
               <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-1)', marginTop: 5, overflow: 'hidden' }}>
                 <div
@@ -139,11 +158,39 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPe
 }
 
 // Ventana emergente con el detalle de un artículo, tocando desde cualquier
-// listado de Estadísticas (más comprados, por categoría o novedades).
-function ModalProducto({ p, onCerrar }) {
+// listado de Estadísticas (más comprados, por categoría, novedades, cambios
+// de stock o el aviso de restock) — siempre trae toda la info (buscarPorArticulo
+// va incluido en el objeto en los cuatro casos), así que "también suelen
+// comprar" y el pedido rápido funcionan igual en cualquiera de ellos.
+function ModalProducto({ p, onCerrar, onPedir, pedidosEstado }) {
+  // Los hooks van antes que cualquier return condicional — el efecto en sí
+  // ya comprueba `p` por dentro.
+  const [relacionados, setRelacionados] = useState(null);
+  useEffect(() => {
+    if (!p) {
+      setRelacionados(null);
+      return;
+    }
+    let cancelado = false;
+    setRelacionados(null);
+    api
+      .relacionados(p.articulo)
+      .then((data) => {
+        if (!cancelado) setRelacionados(data.productos || []);
+      })
+      .catch(() => {
+        if (!cancelado) setRelacionados([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [p]);
+
   if (!p) return null;
   const esCambioStock = p.stockAntes != null;
   const esNovedad = p.desde != null && !esCambioStock;
+  const stock = nivelStock(p.stock, p.undVenta);
+  const estadoPedido = pedidosEstado?.[p.articulo];
   return (
     <div
       onClick={onCerrar}
@@ -199,7 +246,10 @@ function ModalProducto({ p, onCerrar }) {
             {Number.isFinite(p.stock) && (
               <tr>
                 <td>Stock</td>
-                <td>{p.stock} uds.</td>
+                <td>
+                  {p.stock} uds.
+                  {stock && <span style={{ color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {stock.texto}</span>}
+                </td>
               </tr>
             )}
             {!esNovedad && !esCambioStock && (
@@ -230,15 +280,73 @@ function ModalProducto({ p, onCerrar }) {
             )}
           </tbody>
         </table>
-        <button onClick={onCerrar} style={{ width: '100%', marginTop: 12 }}>
-          Cerrar
-        </button>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          {onPedir && p.categoria && (
+            <button
+              className="primary"
+              onClick={() => onPedir(p)}
+              disabled={estadoPedido === 'enviando'}
+              style={{ flex: 1 }}
+            >
+              {estadoPedido === 'hecho' ? '✓ Añadido al carrito' : estadoPedido === 'enviando' ? 'Añadiendo…' : '+ Pedir 1 caja'}
+            </button>
+          )}
+          <button onClick={onCerrar} style={{ flex: onPedir && p.categoria ? 'none' : 1 }}>
+            Cerrar
+          </button>
+        </div>
+
+        {relacionados && relacionados.length > 0 && (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+            <p className="muted" style={{ margin: '0 0 6px' }}>También suelen comprar</p>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+              {relacionados.map((r) => (
+                <div key={r.articulo} style={{ flexShrink: 0, width: 84, textAlign: 'center' }}>
+                  <div className="product-thumb" style={{ width: 84, height: 84, margin: '0 auto' }}>
+                    {r.imagen ? <img src={r.imagen} alt="" /> : '—'}
+                  </div>
+                  <p
+                    style={{
+                      fontSize: 10,
+                      margin: '3px 0 0',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                    }}
+                  >
+                    {r.nombre}
+                  </p>
+                  <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
+                    {r.precioFinal ? `${r.precioFinal}€` : '—'}
+                  </p>
+                  {onPedir && (
+                    <button
+                      onClick={() => onPedir(r)}
+                      disabled={pedidosEstado?.[r.articulo] === 'enviando'}
+                      style={{ fontSize: 10, padding: '2px 6px', marginTop: 2 }}
+                    >
+                      {pedidosEstado?.[r.articulo] === 'hecho' ? '✓ Añadido' : '+ Añadir'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-export default function Estadisticas({ onCartChanged }) {
+export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosSesion }) {
+  // Icono de carrito: igual que en Productos/Búsqueda/Histórico — distinto
+  // de "ya comprado" (aquí TODO lo es, por definición), marca lo que está
+  // en el carrito AHORA o se pidió en esta sesión.
+  function enCarritoOSesion(articulo) {
+    return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo));
+  }
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actualizando, setActualizando] = useState(false);
@@ -407,9 +515,10 @@ export default function Estadisticas({ onCartChanged }) {
             onAbrir={setProductoModal}
             onPedir={pedirRapido}
             estadoPedido={pedidosEstado[p.articulo]}
+            enCarrito={enCarritoOSesion(p.articulo)}
           />
         ))}
-        <ModalProducto p={productoModal} onCerrar={() => setProductoModal(null)} />
+        <ModalProducto p={productoModal} onCerrar={() => setProductoModal(null)} onPedir={pedirRapido} pedidosEstado={pedidosEstado} />
       </div>
     );
   }
@@ -447,7 +556,13 @@ export default function Estadisticas({ onCartChanged }) {
                 Productos que sueles comprar y estaban agotados o con muy poco stock.
               </p>
               {datos.restockHabituales.map((p) => (
-                <FilaProducto key={p.articulo} p={p} onAbrir={setProductoModal} cambioStock />
+                <FilaProducto
+                  key={p.articulo}
+                  p={p}
+                  onAbrir={setProductoModal}
+                  cambioStock
+                  enCarrito={enCarritoOSesion(p.articulo)}
+                />
               ))}
             </div>
           )}
@@ -461,7 +576,15 @@ export default function Estadisticas({ onCartChanged }) {
               </p>
               <div style={{ marginBottom: 20 }}>
                 {novedades && novedades.length > 0 ? (
-                  novedades.map((p) => <FilaProducto key={p.articulo} p={p} onAbrir={setProductoModal} novedad />)
+                  novedades.map((p) => (
+                    <FilaProducto
+                      key={p.articulo}
+                      p={p}
+                      onAbrir={setProductoModal}
+                      novedad
+                      enCarrito={enCarritoOSesion(p.articulo)}
+                    />
+                  ))
                 ) : (
                   <p className="muted">No hay artículos nuevos en los últimos 3 días.</p>
                 )}
@@ -477,7 +600,13 @@ export default function Estadisticas({ onCartChanged }) {
               <div style={{ marginBottom: 20 }}>
                 {cambiosStock && cambiosStock.length > 0 ? (
                   cambiosStock.map((p, idx) => (
-                    <FilaProducto key={`${p.articulo}-${idx}`} p={p} onAbrir={setProductoModal} cambioStock />
+                    <FilaProducto
+                      key={`${p.articulo}-${idx}`}
+                      p={p}
+                      onAbrir={setProductoModal}
+                      cambioStock
+                      enCarrito={enCarritoOSesion(p.articulo)}
+                    />
                   ))
                 ) : (
                   <p className="muted">Sin cambios de stock notables en los últimos 7 días.</p>
@@ -503,6 +632,7 @@ export default function Estadisticas({ onCartChanged }) {
                     onAbrir={setProductoModal}
                     onPedir={pedirRapido}
                     estadoPedido={pedidosEstado[p.articulo]}
+                    enCarrito={enCarritoOSesion(p.articulo)}
                   />
                 ))}
               </div>
@@ -562,7 +692,7 @@ export default function Estadisticas({ onCartChanged }) {
         </>
       )}
 
-      <ModalProducto p={productoModal} onCerrar={() => setProductoModal(null)} />
+      <ModalProducto p={productoModal} onCerrar={() => setProductoModal(null)} onPedir={pedirRapido} pedidosEstado={pedidosEstado} />
     </div>
   );
 }
