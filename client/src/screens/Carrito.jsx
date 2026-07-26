@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
+// Duplica nivelStock de Productos.jsx — 10 cajas o más: sin aviso; por
+// debajo, aviso de stock bajo para que no se quede a medias el pedido.
+function nivelStock(stock, undVenta) {
+  if (!Number.isFinite(stock)) return null;
+  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
+  const cajas = stock / unidadesPorCaja;
+  return cajas >= 10 ? { texto: 'STOCK', bajo: false } : { texto: 'STOCK BAJO', bajo: true };
+}
+
 export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
   const [carrito, setCarrito] = useState(null);
   const [error, setError] = useState(null);
@@ -138,6 +147,13 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
       {pedidoOk && <div className="install-banner">{pedidoOk}</div>}
       {loading && <p className="muted">Cargando carrito…</p>}
 
+      {carrito && carrito.lineas.some((l) => nivelStock(l.stock, l.undVenta)?.bajo) && (
+        <div className="error-banner">
+          Algún producto del carrito tiene stock bajo — revisa las cantidades antes de finalizar, por si no queda
+          suficiente para completar el pedido.
+        </div>
+      )}
+
       {carrito && (
         <>
           <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 12 }}>
@@ -168,6 +184,9 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
                   <p className="muted" style={{ margin: '2px 0 0' }}>
                     Ref. {l.codigo}
                     {l.precio ? ` · ${l.precio}€/ud` : ''}
+                    {nivelStock(l.stock, l.undVenta)?.bajo && (
+                      <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · STOCK BAJO</span>
+                    )}
                   </p>
                   <div className="qty-stepper" style={{ marginTop: 4 }}>
                     <button

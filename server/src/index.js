@@ -31,6 +31,7 @@ import {
   buscarEnIndice,
   buscarPorArticulo,
   subcategoriasConProductos,
+  productosPorSubcategoria,
   marcarActividad,
 } from './indiceStore.js';
 import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras, resumenGlobal } from './compradosStore.js';
@@ -296,8 +297,12 @@ app.get('/api/carrito', requireSession, async (req, res) => {
     // directamente en la web real, no desde nuestra app), se busca en el
     // índice del catálogo entero como segunda opción antes de rendirse.
     carrito.lineas = carrito.lineas.map((l) => {
-      const imagen = obtenerImagen(l.codigo) || buscarPorArticulo(l.codigo)?.imagen || null;
-      return { ...l, imagen };
+      const indexado = buscarPorArticulo(l.codigo);
+      const imagen = obtenerImagen(l.codigo) || indexado?.imagen || null;
+      // Stock de ahora mismo (del índice del catálogo, no de esta página —
+      // mi-compra.html no lo trae) para poder avisar si algo del carrito se
+      // ha quedado con poco antes de finalizar el pedido.
+      return { ...l, imagen, stock: indexado?.stock ?? null, undVenta: indexado?.undVenta ?? null };
     });
     res.json(carrito);
   } catch (e) {
@@ -570,6 +575,11 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
       stock: info?.stock ?? null,
       imagen: info?.imagen || null,
       categoriaNombre,
+      // Para poder añadir directo al carrito ("Repetir pedido") sin tener
+      // que ir a buscar el producto: categoria (slug) y origen son lo que
+      // pide anadirAlCarrito.
+      categoria: info?.categoria || null,
+      origen: info?.origen || null,
     };
     filas.push(fila);
 
@@ -595,6 +605,21 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
     }))
     .sort((a, b) => b.importe - a.importe);
 
+  // De los cambios de stock recientes (stockStore.js), cuáles son
+  // reposiciones (pasó de menos a más) de algo que ESTA cuenta ya ha
+  // comprado antes — para poder avisar "esto que sueles pedir ha vuelto a
+  // tener stock" en vez de un aviso genérico que no le dice nada a nadie
+  // en concreto.
+  const restockHabituales = cambiosRecientes()
+    .filter((c) => c.stockDespues > c.stockAntes && conteo.has(c.articulo))
+    .map((c) => {
+      const info = buscarPorArticulo(c.articulo);
+      if (!info) return null;
+      return { ...info, ...c, vecesCompradoAntes: conteo.get(c.articulo) };
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+
   res.json({
     disponible: true,
     completo,
@@ -604,6 +629,7 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
     totalImporte: Math.round(totalImporte * 100) / 100,
     masComprados: filas.slice(0, 15),
     porCategoria: categorias,
+    restockHabituales,
   });
 });
 
@@ -636,6 +662,28 @@ app.get('/api/cambios-stock', requireSession, (req, res) => {
       return { ...info, stockAntes, stockDespues, fecha };
     })
     .filter(Boolean);
+  res.json({ productos });
+});
+
+// "También suelen comprar": otros artículos de la MISMA subcategoría que el
+// que se está mirando, ordenados por cuántas veces los ha comprado
+// cualquier cuenta que use la app (no hay forma de saber qué se compró
+// junto en un mismo pedido — cofiba.es no expone esa relación — así que
+// esto es una aproximación por afinidad de subcategoría + popularidad
+// global, no una cesta real). Se pide bajo demanda (al abrir la ficha de un
+// producto), no para toda una lista de golpe.
+app.get('/api/relacionados', requireSession, (req, res) => {
+  const { articulo } = req.query;
+  if (!articulo) return res.status(400).json({ error: 'Falta el parámetro articulo.' });
+  const info = buscarPorArticulo(articulo);
+  if (!info?.subcategoria) return res.json({ productos: [] });
+
+  const { conteoGlobal } = resumenGlobal();
+  const productos = productosPorSubcategoria(info.categoria, info.subcategoria)
+    .filter((p) => p.articulo !== articulo)
+    .map((p) => ({ ...p, vecesGlobal: conteoGlobal.get(p.articulo) || 0 }))
+    .sort((a, b) => b.vecesGlobal - a.vecesGlobal)
+    .slice(0, 6);
   res.json({ productos });
 });
 

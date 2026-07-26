@@ -348,7 +348,7 @@ export default function App() {
           }}
         />
       )}
-      {tab === 'estadisticas' && <Estadisticas />}
+      {tab === 'estadisticas' && <Estadisticas onCartChanged={refreshCartCount} />}
 
       {/* Sin botón propio para "Productos": a esa pantalla solo se llega
           tocando una categoría desde Catálogo (o "Ver más" en Histórico) —

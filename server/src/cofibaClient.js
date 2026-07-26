@@ -576,6 +576,7 @@ export async function crawlCatalogo(session, esperarTurno, onProgreso) {
           marca: p.marca,
           precioFinal: p.precioFinal,
           undVenta: p.undVenta,
+          stock: p.stock,
           imagen: p.imagen,
           categoria: t.cat.slug,
           categoriaNombre: t.cat.nombre,

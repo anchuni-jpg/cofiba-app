@@ -78,8 +78,32 @@ export default function Productos({
   const [visibles, setVisibles] = useState(limite);
   const [pending, setPending] = useState({});
   const [zoomProducto, setZoomProducto] = useState(null);
+  // "También suelen comprar" (afinidad por subcategoría + popularidad
+  // global, no cesta real — cofiba.es no expone qué se compró junto en un
+  // mismo pedido). Se pide solo al abrir la ficha, no para toda la lista.
+  const [relacionados, setRelacionados] = useState(null);
   const contentRef = useRef(null);
   const chipsRef = useRef(null);
+
+  useEffect(() => {
+    if (!zoomProducto) {
+      setRelacionados(null);
+      return;
+    }
+    let cancelado = false;
+    setRelacionados(null);
+    api
+      .relacionados(zoomProducto.articulo)
+      .then((data) => {
+        if (!cancelado) setRelacionados(data.productos || []);
+      })
+      .catch(() => {
+        if (!cancelado) setRelacionados([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [zoomProducto]);
 
   // Cada subcategoría visitada tiene su propia entrada aquí (paginas
   // acumuladas, subcategorías, grupo resuelto...), en vez de un único estado
@@ -691,6 +715,55 @@ export default function Productos({
             </div>
             {error && (
               <p style={{ color: 'var(--danger)', fontSize: 11, margin: '8px 0 0' }}>{error}</p>
+            )}
+
+            {relacionados && relacionados.length > 0 && (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <p className="muted" style={{ margin: '0 0 6px' }}>También suelen comprar</p>
+                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+                  {relacionados.map((r) => (
+                    <div
+                      key={r.articulo}
+                      style={{
+                        flexShrink: 0,
+                        width: 84,
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setZoomProducto(r)}
+                    >
+                      <div className="product-thumb" style={{ width: 84, height: 84, margin: '0 auto' }}>
+                        {r.imagen ? <img src={r.imagen} alt="" /> : '—'}
+                      </div>
+                      <p
+                        style={{
+                          fontSize: 10,
+                          margin: '3px 0 0',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                        }}
+                      >
+                        {r.nombre}
+                      </p>
+                      <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
+                        {r.precioFinal ? `${r.precioFinal}€` : '—'}
+                      </p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          añadir(r, 1);
+                        }}
+                        style={{ fontSize: 10, padding: '2px 6px', marginTop: 2 }}
+                      >
+                        {pending[r.articulo] ? `✓ ${pending[r.articulo]}` : '+ Añadir'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>

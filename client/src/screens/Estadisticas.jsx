@@ -26,53 +26,63 @@ function haceCuanto(desde) {
   return `hace ${dias} días`;
 }
 
-function FilaProducto({ p, max, onAbrir, novedad, cambioStock }) {
+function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPedido }) {
   return (
-    <button
-      onClick={() => onAbrir(p)}
-      className="fila-clicable"
+    <div
       style={{
         display: 'flex',
         alignItems: 'center',
         width: '100%',
-        textAlign: 'left',
-        background: 'none',
-        border: 'none',
         padding: '12px 0',
         borderTop: '1px solid var(--border)',
-        cursor: 'pointer',
         gap: 10,
       }}
     >
-      <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {p.nombre || p.referencia || p.articulo}
-        </p>
-        {(novedad || cambioStock) && (
-          <p className="muted" style={{ margin: '2px 0 0' }}>
-            {p.categoriaNombre}
-            {cambioStock ? ` · ${p.stockAntes} → ${p.stockDespues} uds.` : p.precioFinal ? ` · ${p.precioFinal}€` : ''}
+      <button
+        onClick={() => onAbrir(p)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          flex: 1,
+          minWidth: 0,
+          textAlign: 'left',
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          gap: 10,
+        }}
+      >
+        <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {p.nombre || p.referencia || p.articulo}
           </p>
-        )}
-        {!novedad && !cambioStock && (
-          <>
+          {(novedad || cambioStock) && (
             <p className="muted" style={{ margin: '2px 0 0' }}>
-              {p.categoriaNombre ? `${p.categoriaNombre} · ` : ''}
-              {p.veces} {p.veces === 1 ? 'caja comprada' : 'cajas compradas'}
+              {p.categoriaNombre}
+              {cambioStock ? ` · ${p.stockAntes} → ${p.stockDespues} uds.` : p.precioFinal ? ` · ${p.precioFinal}€` : ''}
             </p>
-            <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-1)', marginTop: 5, overflow: 'hidden' }}>
-              <div
-                style={{
-                  height: '100%',
-                  width: `${Math.max(6, ((p.importe || 0) / max) * 100)}%`,
-                  background: 'var(--accent)',
-                }}
-              />
-            </div>
-          </>
-        )}
-      </div>
+          )}
+          {!novedad && !cambioStock && (
+            <>
+              <p className="muted" style={{ margin: '2px 0 0' }}>
+                {p.categoriaNombre ? `${p.categoriaNombre} · ` : ''}
+                {p.veces} {p.veces === 1 ? 'caja comprada' : 'cajas compradas'}
+              </p>
+              <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-1)', marginTop: 5, overflow: 'hidden' }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${Math.max(6, ((p.importe || 0) / max) * 100)}%`,
+                    background: 'var(--accent)',
+                  }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </button>
       {novedad && (
         <span
           style={{
@@ -104,11 +114,27 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock }) {
         </span>
       )}
       {!novedad && !cambioStock && (
-        <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--accent)', minWidth: 60, textAlign: 'right' }}>
-          {formatoEuro(p.importe)}
-        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--accent)', minWidth: 60, textAlign: 'right' }}>
+            {formatoEuro(p.importe)}
+          </p>
+          {onPedir && (
+            <button
+              onClick={() => onPedir(p)}
+              disabled={estadoPedido === 'enviando'}
+              style={{
+                fontSize: 11,
+                padding: '3px 8px',
+                color: estadoPedido === 'hecho' ? 'var(--accent)' : undefined,
+                borderColor: estadoPedido === 'hecho' ? 'var(--accent)' : undefined,
+              }}
+            >
+              {estadoPedido === 'hecho' ? '✓ Añadido' : estadoPedido === 'enviando' ? '…' : '+ Pedir'}
+            </button>
+          )}
+        </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -212,7 +238,7 @@ function ModalProducto({ p, onCerrar }) {
   );
 }
 
-export default function Estadisticas() {
+export default function Estadisticas({ onCartChanged }) {
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actualizando, setActualizando] = useState(false);
@@ -225,6 +251,27 @@ export default function Estadisticas() {
   const [cambiosStock, setCambiosStock] = useState(null);
   const [vista, setVista] = useState('masComprado'); // masComprado | novedades | stock
   const [productoModal, setProductoModal] = useState(null);
+  // "Repetir pedido" en un toque: articulo -> 'enviando' | 'hecho' | undefined.
+  const [pedidosEstado, setPedidosEstado] = useState({});
+
+  // Añade 1 caja directo al carrito sin salir de Estadísticas — es la
+  // versión honesta de "recordatorio de recompra": cofiba.es no da fecha de
+  // cada compra pasada, así que en vez de adivinar "te toca reponer el
+  // día X" (dato que no tenemos), se deja lo más comprado siempre a un
+  // toque de volver a pedirlo.
+  function pedirRapido(p) {
+    setPedidosEstado((s) => ({ ...s, [p.articulo]: 'enviando' }));
+    api
+      .anadirAlCarrito({ categoria: p.categoria, articulo: p.articulo, cantidad: 1, origen: p.origen })
+      .then(() => {
+        setPedidosEstado((s) => ({ ...s, [p.articulo]: 'hecho' }));
+        onCartChanged?.();
+      })
+      .catch((e) => {
+        setPedidosEstado((s) => ({ ...s, [p.articulo]: undefined }));
+        setError(e.message);
+      });
+  }
 
   useEffect(() => {
     // Su propia caché con límite de un día (api.novedadesCached) — no hace
@@ -353,7 +400,14 @@ export default function Estadisticas() {
           total · de más a menos vendido
         </p>
         {categoria.productos.map((p) => (
-          <FilaProducto key={p.articulo} p={p} max={maxProducto} onAbrir={setProductoModal} />
+          <FilaProducto
+            key={p.articulo}
+            p={p}
+            max={maxProducto}
+            onAbrir={setProductoModal}
+            onPedir={pedirRapido}
+            estadoPedido={pedidosEstado[p.articulo]}
+          />
         ))}
         <ModalProducto p={productoModal} onCerrar={() => setProductoModal(null)} />
       </div>
@@ -377,6 +431,27 @@ export default function Estadisticas() {
 
       {!loading && datos?.disponible && (
         <>
+          {datos.restockHabituales?.length > 0 && (
+            <div
+              style={{
+                background: 'var(--accent-bg)',
+                borderRadius: 'var(--radius)',
+                padding: '10px 12px',
+                marginBottom: 14,
+              }}
+            >
+              <p style={{ fontWeight: 600, fontSize: 13, margin: '0 0 4px', color: 'var(--accent)' }}>
+                🔔 Ha{datos.restockHabituales.length === 1 ? '' : 'n'} vuelto a tener stock
+              </p>
+              <p className="muted" style={{ margin: '0 0 6px' }}>
+                Productos que sueles comprar y estaban agotados o con muy poco stock.
+              </p>
+              {datos.restockHabituales.map((p) => (
+                <FilaProducto key={p.articulo} p={p} onAbrir={setProductoModal} cambioStock />
+              ))}
+            </div>
+          )}
+
           {botonesVista}
 
           {vista === 'novedades' && (
@@ -421,7 +496,14 @@ export default function Estadisticas() {
 
               <div style={{ marginBottom: 20 }}>
                 {datos.masComprados.map((p) => (
-                  <FilaProducto key={p.articulo} p={p} max={maxComprado} onAbrir={setProductoModal} />
+                  <FilaProducto
+                    key={p.articulo}
+                    p={p}
+                    max={maxComprado}
+                    onAbrir={setProductoModal}
+                    onPedir={pedirRapido}
+                    estadoPedido={pedidosEstado[p.articulo]}
+                  />
                 ))}
               </div>
 

@@ -175,6 +175,11 @@ export const api = {
     await setCache(CLAVE, { datos: frescos, cuando: Date.now() });
     return frescos;
   },
+  // Bajo demanda, al abrir la ficha de un producto — no tiene sentido
+  // cachear esto por más de la sesión actual, cambia con cada artículo.
+  relacionados(articulo) {
+    return request(`/relacionados?articulo=${encodeURIComponent(articulo)}`);
+  },
   // El PDF no puede enlazarse directo (necesita nuestra sesión, no la del
   // navegador) — se trae como blob autenticado y quien llama decide qué
   // hacer con él (abrirlo, descargarlo).

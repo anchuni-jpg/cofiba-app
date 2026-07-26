@@ -238,6 +238,14 @@ export function subcategoriasConProductos(categoriaSlug) {
   return set;
 }
 
+// Para "también suelen comprar" (/api/relacionados): otros artículos de la
+// MISMA subcategoría, para que quien llama los ordene por lo que le
+// interese (frecuencia global de compra, por ejemplo).
+export function productosPorSubcategoria(categoriaSlug, subcategoriaSlug) {
+  const fuente = indiceParcial.length > indice.length ? indiceParcial : indice;
+  return fuente.filter((p) => p.categoria === categoriaSlug && p.subcategoria === subcategoriaSlug);
+}
+
 export function buscarEnIndice(termino) {
   const t = normalizar(termino);
   if (!t) return [];
