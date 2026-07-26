@@ -37,10 +37,14 @@ function haceCuanto(desde) {
   return `hace ${dias} días`;
 }
 
-function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPedido, enCarrito }) {
+// Todo el casillero es el botón que abre la ficha (igual que en Catálogo/
+// Búsqueda/Histórico) — solo el paso +/- queda fuera, con su propio
+// stopPropagation, para no disparar la ficha al tocar - o +.
+function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onAñadir, pending, enCarrito }) {
   const stock = nivelStock(p.stock, p.undVenta);
   return (
     <div
+      onClick={() => onAbrir(p)}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -48,60 +52,45 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPe
         padding: '12px 0',
         borderTop: '1px solid var(--border)',
         gap: 10,
+        cursor: 'pointer',
       }}
     >
-      <button
-        onClick={() => onAbrir(p)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          flex: 1,
-          minWidth: 0,
-          textAlign: 'left',
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          cursor: 'pointer',
-          gap: 10,
-        }}
-      >
-        <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {p.nombre || p.referencia || p.articulo}
-            {enCarrito && (
-              <span style={{ marginLeft: 5 }}>
-                <CarritoIcon size={11} />
-              </span>
-            )}
+      <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {p.nombre || p.referencia || p.articulo}
+          {enCarrito && (
+            <span style={{ marginLeft: 5 }}>
+              <CarritoIcon size={11} />
+            </span>
+          )}
+        </p>
+        {(novedad || cambioStock) && (
+          <p className="muted" style={{ margin: '2px 0 0' }}>
+            {p.categoriaNombre}
+            {cambioStock ? ` · ${p.stockAntes} → ${p.stockDespues} uds.` : p.precioFinal ? ` · ${p.precioFinal}€` : ''}
+            {stock && <span style={{ color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {stock.texto}</span>}
           </p>
-          {(novedad || cambioStock) && (
+        )}
+        {!novedad && !cambioStock && (
+          <>
             <p className="muted" style={{ margin: '2px 0 0' }}>
-              {p.categoriaNombre}
-              {cambioStock ? ` · ${p.stockAntes} → ${p.stockDespues} uds.` : p.precioFinal ? ` · ${p.precioFinal}€` : ''}
+              {p.categoriaNombre ? `${p.categoriaNombre} · ` : ''}
+              {p.veces} {p.veces === 1 ? 'caja comprada' : 'cajas compradas'}
               {stock && <span style={{ color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {stock.texto}</span>}
             </p>
-          )}
-          {!novedad && !cambioStock && (
-            <>
-              <p className="muted" style={{ margin: '2px 0 0' }}>
-                {p.categoriaNombre ? `${p.categoriaNombre} · ` : ''}
-                {p.veces} {p.veces === 1 ? 'caja comprada' : 'cajas compradas'}
-                {stock && <span style={{ color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {stock.texto}</span>}
-              </p>
-              <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-1)', marginTop: 5, overflow: 'hidden' }}>
-                <div
-                  style={{
-                    height: '100%',
-                    width: `${Math.max(6, ((p.importe || 0) / max) * 100)}%`,
-                    background: 'var(--accent)',
-                  }}
-                />
-              </div>
-            </>
-          )}
-        </div>
-      </button>
+            <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-1)', marginTop: 5, overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.max(6, ((p.importe || 0) / max) * 100)}%`,
+                  background: 'var(--accent)',
+                }}
+              />
+            </div>
+          </>
+        )}
+      </div>
       {novedad && (
         <span
           style={{
@@ -137,19 +126,12 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPe
           <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--accent)', minWidth: 60, textAlign: 'right' }}>
             {formatoEuro(p.importe)}
           </p>
-          {onPedir && (
-            <button
-              onClick={() => onPedir(p)}
-              disabled={estadoPedido === 'enviando'}
-              style={{
-                fontSize: 11,
-                padding: '3px 8px',
-                color: estadoPedido === 'hecho' ? 'var(--accent)' : undefined,
-                borderColor: estadoPedido === 'hecho' ? 'var(--accent)' : undefined,
-              }}
-            >
-              {estadoPedido === 'hecho' ? '✓ Añadido' : estadoPedido === 'enviando' ? '…' : '+ Pedir'}
-            </button>
+          {onAñadir && (
+            <div className="qty-stepper" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => onAñadir(p, -1)}>-</button>
+              <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending?.[p.articulo] ?? 0}</span>
+              <button onClick={() => onAñadir(p, 1)}>+</button>
+            </div>
           )}
         </div>
       )}
@@ -161,8 +143,8 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onPedir, estadoPe
 // listado de Estadísticas (más comprados, por categoría, novedades, cambios
 // de stock o el aviso de restock) — siempre trae toda la info (buscarPorArticulo
 // va incluido en el objeto en los cuatro casos), así que "también suelen
-// comprar" y el pedido rápido funcionan igual en cualquiera de ellos.
-function ModalProducto({ p, onCerrar, onPedir, pedidosEstado }) {
+// comprar" y el paso +/- funcionan igual en cualquiera de ellos.
+function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending }) {
   // Los hooks van antes que cualquier return condicional — el efecto en sí
   // ya comprueba `p` por dentro.
   const [relacionados, setRelacionados] = useState(null);
@@ -190,7 +172,6 @@ function ModalProducto({ p, onCerrar, onPedir, pedidosEstado }) {
   const esCambioStock = p.stockAntes != null;
   const esNovedad = p.desde != null && !esCambioStock;
   const stock = nivelStock(p.stock, p.undVenta);
-  const estadoPedido = pedidosEstado?.[p.articulo];
   return (
     <div
       onClick={onCerrar}
@@ -280,20 +261,17 @@ function ModalProducto({ p, onCerrar, onPedir, pedidosEstado }) {
             )}
           </tbody>
         </table>
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          {onPedir && p.categoria && (
-            <button
-              className="primary"
-              onClick={() => onPedir(p)}
-              disabled={estadoPedido === 'enviando'}
-              style={{ flex: 1 }}
-            >
-              {estadoPedido === 'hecho' ? '✓ Añadido al carrito' : estadoPedido === 'enviando' ? 'Añadiendo…' : '+ Pedir 1 caja'}
-            </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          {onAñadir ? (
+            <div className="qty-stepper">
+              <button onClick={() => onAñadir(p, -1)}>-</button>
+              <span style={{ minWidth: 20, textAlign: 'center' }}>{pending?.[p.articulo] ?? 0}</span>
+              <button onClick={() => onAñadir(p, 1)}>+</button>
+            </div>
+          ) : (
+            <span />
           )}
-          <button onClick={onCerrar} style={{ flex: onPedir && p.categoria ? 'none' : 1 }}>
-            Cerrar
-          </button>
+          <button onClick={onCerrar}>Cerrar</button>
         </div>
 
         {relacionados && relacionados.length > 0 && (
@@ -301,7 +279,11 @@ function ModalProducto({ p, onCerrar, onPedir, pedidosEstado }) {
             <p className="muted" style={{ margin: '0 0 6px' }}>También suelen comprar</p>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
               {relacionados.map((r) => (
-                <div key={r.articulo} style={{ flexShrink: 0, width: 84, textAlign: 'center' }}>
+                <div
+                  key={r.articulo}
+                  style={{ flexShrink: 0, width: 84, textAlign: 'center', cursor: onAbrir ? 'pointer' : 'default' }}
+                  onClick={() => onAbrir?.(r)}
+                >
                   <div className="product-thumb" style={{ width: 84, height: 84, margin: '0 auto' }}>
                     {r.imagen ? <img src={r.imagen} alt="" /> : '—'}
                   </div>
@@ -321,13 +303,15 @@ function ModalProducto({ p, onCerrar, onPedir, pedidosEstado }) {
                   <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
                     {r.precioFinal ? `${r.precioFinal}€` : '—'}
                   </p>
-                  {onPedir && (
+                  {onAñadir && (
                     <button
-                      onClick={() => onPedir(r)}
-                      disabled={pedidosEstado?.[r.articulo] === 'enviando'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAñadir(r, 1);
+                      }}
                       style={{ fontSize: 10, padding: '2px 6px', marginTop: 2 }}
                     >
-                      {pedidosEstado?.[r.articulo] === 'hecho' ? '✓ Añadido' : '+ Añadir'}
+                      {pending?.[r.articulo] ? `✓ ${pending[r.articulo]}` : '+ Añadir'}
                     </button>
                   )}
                 </div>
@@ -359,24 +343,31 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
   const [cambiosStock, setCambiosStock] = useState(null);
   const [vista, setVista] = useState('masComprado'); // masComprado | novedades | stock
   const [productoModal, setProductoModal] = useState(null);
-  // "Repetir pedido" en un toque: articulo -> 'enviando' | 'hecho' | undefined.
-  const [pedidosEstado, setPedidosEstado] = useState({});
+  // Cuánto se ha pedido de cada artículo desde aquí en esta sesión —
+  // articulo -> cantidad. Mismo patrón que el paso +/- de Catálogo/
+  // Búsqueda/Histórico (nunca "recordatorio de recompra" por fecha:
+  // cofiba.es no guarda cuándo se compró cada cosa, ver el comentario de
+  // arriba), para que Estadísticas se pida igual que el resto de la app en
+  // vez de tener su propio botón especial de "un toque y ya".
+  const [pending, setPending] = useState({});
 
-  // Añade 1 caja directo al carrito sin salir de Estadísticas — es la
-  // versión honesta de "recordatorio de recompra": cofiba.es no da fecha de
-  // cada compra pasada, así que en vez de adivinar "te toca reponer el
-  // día X" (dato que no tenemos), se deja lo más comprado siempre a un
-  // toque de volver a pedirlo.
-  function pedirRapido(p) {
-    setPedidosEstado((s) => ({ ...s, [p.articulo]: 'enviando' }));
-    api
-      .anadirAlCarrito({ categoria: p.categoria, articulo: p.articulo, cantidad: 1, origen: p.origen })
-      .then(() => {
-        setPedidosEstado((s) => ({ ...s, [p.articulo]: 'hecho' }));
-        onCartChanged?.();
-      })
+  function añadir(p, delta) {
+    const anterior = pending[p.articulo] ?? 0;
+    const nueva = Math.max(0, anterior + delta);
+    if (nueva === anterior) return;
+    setPending((s) => ({ ...s, [p.articulo]: nueva }));
+
+    const promesa =
+      anterior === 0
+        ? api.anadirAlCarrito({ articulo: p.articulo, cantidad: nueva })
+        : nueva === 0
+        ? api.eliminarDelCarrito(p.articulo)
+        : api.actualizarCantidadCarrito({ articulo: p.articulo, cantidad: nueva });
+
+    promesa
+      .then(() => onCartChanged?.())
       .catch((e) => {
-        setPedidosEstado((s) => ({ ...s, [p.articulo]: undefined }));
+        setPending((s) => ({ ...s, [p.articulo]: anterior }));
         setError(e.message);
       });
   }
@@ -513,12 +504,18 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
             p={p}
             max={maxProducto}
             onAbrir={setProductoModal}
-            onPedir={pedirRapido}
-            estadoPedido={pedidosEstado[p.articulo]}
+            onAñadir={añadir}
+            pending={pending}
             enCarrito={enCarritoOSesion(p.articulo)}
           />
         ))}
-        <ModalProducto p={productoModal} onCerrar={() => setProductoModal(null)} onPedir={pedirRapido} pedidosEstado={pedidosEstado} />
+        <ModalProducto
+          p={productoModal}
+          onAbrir={setProductoModal}
+          onCerrar={() => setProductoModal(null)}
+          onAñadir={añadir}
+          pending={pending}
+        />
       </div>
     );
   }
@@ -630,8 +627,8 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
                     p={p}
                     max={maxComprado}
                     onAbrir={setProductoModal}
-                    onPedir={pedirRapido}
-                    estadoPedido={pedidosEstado[p.articulo]}
+                    onAñadir={añadir}
+                    pending={pending}
                     enCarrito={enCarritoOSesion(p.articulo)}
                   />
                 ))}
@@ -692,7 +689,13 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
         </>
       )}
 
-      <ModalProducto p={productoModal} onCerrar={() => setProductoModal(null)} onPedir={pedirRapido} pedidosEstado={pedidosEstado} />
+      <ModalProducto
+        p={productoModal}
+        onAbrir={setProductoModal}
+        onCerrar={() => setProductoModal(null)}
+        onAñadir={añadir}
+        pending={pending}
+      />
     </div>
   );
 }

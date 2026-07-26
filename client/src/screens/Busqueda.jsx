@@ -258,26 +258,12 @@ export default function Busqueda({
                     enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
                   }`}
                   key={p.articulo}
+                  onClick={() => setZoomProducto(p)}
+                  style={{ cursor: 'zoom-in' }}
                 >
-                  <div
-                    className="product-thumb"
-                    onClick={() => p.imagen && setZoomProducto(p)}
-                    style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
-                  >
-                    {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
-                  </div>
+                  <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p
-                      onClick={() => setZoomProducto(p)}
-                      style={{
-                        fontSize: 14,
-                        margin: 0,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        cursor: 'zoom-in',
-                      }}
-                    >
+                    <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {p.nombre}
                     </p>
                     <p className="muted" style={{ margin: '2px 0' }}>
@@ -303,7 +289,10 @@ export default function Busqueda({
                       })()}
                     </p>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                  >
                     <div className="qty-stepper">
                       <button onClick={() => añadir(p, -1)}>-</button>
                       <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
@@ -326,16 +315,11 @@ export default function Busqueda({
                     enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
                   }`}
                   key={p.articulo}
+                  onClick={() => setZoomProducto(p)}
+                  style={{ cursor: 'zoom-in' }}
                 >
-                  <div
-                    className="product-thumb"
-                    onClick={() => p.imagen && setZoomProducto(p)}
-                    style={{ cursor: p.imagen ? 'zoom-in' : 'default' }}
-                  >
-                    {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
-                  </div>
+                  <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
                   <p
-                    onClick={() => setZoomProducto(p)}
                     style={{
                       fontSize: 13,
                       margin: '4px 0 0',
@@ -345,7 +329,6 @@ export default function Busqueda({
                       display: '-webkit-box',
                       WebkitLineClamp: 2,
                       WebkitBoxOrient: 'vertical',
-                      cursor: 'zoom-in',
                     }}
                   >
                     {p.nombre}
@@ -368,7 +351,7 @@ export default function Busqueda({
                       );
                     })()}
                   </p>
-                  <div className="qty-stepper" style={{ marginTop: 4 }}>
+                  <div className="qty-stepper" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => añadir(p, -1)}>-</button>
                     <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                     <button onClick={() => añadir(p, 1)}>+</button>

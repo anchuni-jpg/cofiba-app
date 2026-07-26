@@ -272,6 +272,16 @@ input {
   padding: 0;
   font-size: 15px;
 }
+/* El "+" siempre en verde, en el paso +/- de cualquier pantalla — así se
+   reconoce de un vistazo como LA acción de añadir, en vez de un botón
+   genérico igual que el "-". Antes solo Estadísticas tenía un botón de
+   añadir destacado ("+ Pedir"); esto lo hace uniforme en toda la app en
+   vez de ser un caso especial de una sola pantalla. */
+.qty-stepper button:last-child {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
 
 .bottomnav {
   display: flex;
