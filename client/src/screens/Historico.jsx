@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { getCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
@@ -251,9 +251,41 @@ export default function Historico({
         return normalizar(p.nombre).includes(t) || normalizar(p.referencia || p.articulo).includes(t);
       })
     : productos;
-  const productosFiltrados = filtrarPorIsla(productosPorTexto, islaFiltro);
+  // Orden: categoría → subcategoría → nombre. El histórico llega de
+  // /consumo.html en orden cronológico (más reciente primero) — se
+  // reordena aquí, no en el servidor, porque solo aquí se conoce ya el
+  // "categoriaNombre"/"subcategoriaNombre" con el que agrupar (vienen del
+  // índice del catálogo, que puede completarse después de que ya se
+  // hubiera pedido esta página). El mismo artículo comprado varias veces
+  // en fechas distintas no se fusiona en una sola fila — sigue apareciendo
+  // una vez por compra, solo que ahora una junto a la otra.
+  const productosFiltrados = filtrarPorIsla(productosPorTexto, islaFiltro)
+    .slice()
+    .sort((a, b) => {
+      const catA = a.categoriaNombre || 'Sin categoría';
+      const catB = b.categoriaNombre || 'Sin categoría';
+      if (catA !== catB) return catA.localeCompare(catB, 'es');
+      const subA = a.subcategoriaNombre || a.subcategoria || 'Otros';
+      const subB = b.subcategoriaNombre || b.subcategoria || 'Otros';
+      if (subA !== subB) return subA.localeCompare(subB, 'es');
+      return normalizar(a.nombre || a.referencia || a.articulo).localeCompare(
+        normalizar(b.nombre || b.referencia || b.articulo),
+        'es'
+      );
+    });
   const visiblesLista = productosFiltrados.slice(0, visibles);
   const hayMasParaRevelar = visibles < productosFiltrados.length;
+
+  // Para saber, al pintar cada fila, si hace falta abrir un grupo nuevo
+  // (cabecera de categoría y/o subcategoría) comparando con la fila
+  // anterior YA VISIBLE — no con la anterior en la lista completa, que
+  // podría no estar pintada todavía si `visibles` la dejó fuera.
+  function grupoDe(p) {
+    return {
+      categoria: p.categoriaNombre || 'Sin categoría',
+      subcategoria: p.subcategoriaNombre || p.subcategoria || 'Otros',
+    };
+  }
 
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -309,17 +341,35 @@ export default function Historico({
 
       {vistaColumnas === 1 ? (
         <div>
-          {visiblesLista.map((p, idx) => (
-            // La clave incluye la posición: el mismo artículo puede aparecer
-            // más de una vez en el histórico real (comprado en fechas
-            // distintas), y repetir solo el articulo como key confundía a
-            // React (dos filas con la misma key "se superponían" visualmente).
-            <div
-              className={`product-row${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
-              key={`${p.articulo}-${idx}`}
-              onClick={() => setZoomProducto(p)}
-              style={{ cursor: 'zoom-in' }}
-            >
+          {visiblesLista.map((p, idx) => {
+            const grupo = grupoDe(p);
+            const grupoAnterior = idx > 0 ? grupoDe(visiblesLista[idx - 1]) : null;
+            const nuevaCategoria = !grupoAnterior || grupo.categoria !== grupoAnterior.categoria;
+            const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
+            return (
+              // La clave incluye la posición: el mismo artículo puede aparecer
+              // más de una vez en el histórico real (comprado en fechas
+              // distintas), y repetir solo el articulo como key confundía a
+              // React (dos filas con la misma key "se superponían" visualmente).
+              <div key={`${p.articulo}-${idx}`}>
+                {nuevaSubcategoria && (
+                  <div style={{ marginTop: idx === 0 ? 0 : 16 }}>
+                    {nuevaCategoria && (
+                      <p style={{ fontWeight: 700, fontSize: 13, margin: '0 0 2px' }}>{grupo.categoria}</p>
+                    )}
+                    <p
+                      className="muted"
+                      style={{ fontWeight: 600, fontSize: 11, margin: 0, textTransform: 'uppercase', letterSpacing: 0.4 }}
+                    >
+                      {grupo.subcategoria}
+                    </p>
+                  </div>
+                )}
+                <div
+                  className={`product-row${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
+                  onClick={() => setZoomProducto(p)}
+                  style={{ cursor: 'zoom-in' }}
+                >
               <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -381,17 +431,37 @@ export default function Historico({
                 )}
               </div>
             </div>
-          ))}
+          </div>
+            );
+          })}
         </div>
       ) : (
         <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${vistaColumnas}, 1fr)` }}>
-          {visiblesLista.map((p, idx) => (
-            <div
-              className={`producto-card${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
-              key={`${p.articulo}-${idx}`}
-              onClick={() => setZoomProducto(p)}
-              style={{ cursor: 'zoom-in' }}
-            >
+          {visiblesLista.map((p, idx) => {
+            const grupo = grupoDe(p);
+            const grupoAnterior = idx > 0 ? grupoDe(visiblesLista[idx - 1]) : null;
+            const nuevaCategoria = !grupoAnterior || grupo.categoria !== grupoAnterior.categoria;
+            const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
+            return (
+              <Fragment key={`${p.articulo}-${idx}`}>
+                {nuevaSubcategoria && (
+                  <div style={{ gridColumn: '1 / -1', marginTop: idx === 0 ? 0 : 10 }}>
+                    {nuevaCategoria && (
+                      <p style={{ fontWeight: 700, fontSize: 13, margin: '0 0 2px' }}>{grupo.categoria}</p>
+                    )}
+                    <p
+                      className="muted"
+                      style={{ fontWeight: 600, fontSize: 11, margin: 0, textTransform: 'uppercase', letterSpacing: 0.4 }}
+                    >
+                      {grupo.subcategoria}
+                    </p>
+                  </div>
+                )}
+                <div
+                  className={`producto-card${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
+                  onClick={() => setZoomProducto(p)}
+                  style={{ cursor: 'zoom-in' }}
+                >
               <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
               <p
                 style={{
@@ -457,8 +527,10 @@ export default function Historico({
                   caja de {formatoCaja(p.undVenta)} uds
                 </span>
               )}
-            </div>
-          ))}
+                </div>
+              </Fragment>
+            );
+          })}
         </div>
       )}
 

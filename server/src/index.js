@@ -520,6 +520,7 @@ app.get('/api/historico', requireSession, async (req, res) => {
         categoria: indexado?.categoria || null,
         categoriaNombre: indexado?.categoriaNombre || null,
         subcategoria: indexado?.subcategoria || null,
+        subcategoriaNombre: indexado?.subcategoriaNombre || null,
       };
     });
     // No merece la pena cachear una respuesta vacía: es casi seguro la

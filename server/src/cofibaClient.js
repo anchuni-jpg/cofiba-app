@@ -581,6 +581,7 @@ export async function crawlCatalogo(session, esperarTurno, onProgreso) {
           categoria: t.cat.slug,
           categoriaNombre: t.cat.nombre,
           subcategoria: t.sub?.slug || null,
+          subcategoriaNombre: t.sub?.nombre || null,
           origen: p.origen,
         });
       }
