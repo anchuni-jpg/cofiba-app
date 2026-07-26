@@ -518,7 +518,12 @@ export default function Productos({
       {vistaColumnas === 1 ? (
         <div>
           {productosFiltrados.map((p) => (
-            <div className={`product-row${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
+            <div
+              className={`product-row${p.comprado ? ' product-row-comprado' : ''}${
+                enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
+              }`}
+              key={p.articulo}
+            >
               <div
                 className="product-thumb"
                 onClick={() => p.imagen && setZoomProducto(p)}
@@ -527,7 +532,17 @@ export default function Productos({
                 {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <p
+                  onClick={() => setZoomProducto(p)}
+                  style={{
+                    fontSize: 14,
+                    margin: 0,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    cursor: 'zoom-in',
+                  }}
+                >
                   {p.nombre || p.referencia || p.articulo}
                 </p>
                 <p className="muted" style={{ margin: '2px 0' }}>
@@ -571,7 +586,12 @@ export default function Productos({
       ) : (
         <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${vistaColumnas}, 1fr)` }}>
           {productosFiltrados.map((p) => (
-            <div className={`producto-card${p.comprado ? ' product-row-comprado' : ''}`} key={p.articulo}>
+            <div
+              className={`producto-card${p.comprado ? ' product-row-comprado' : ''}${
+                enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
+              }`}
+              key={p.articulo}
+            >
               <div
                 className="product-thumb"
                 onClick={() => p.imagen && setZoomProducto(p)}
@@ -580,6 +600,7 @@ export default function Productos({
                 {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
               </div>
               <p
+                onClick={() => setZoomProducto(p)}
                 style={{
                   fontSize: 13,
                   margin: '4px 0 0',
@@ -589,6 +610,7 @@ export default function Productos({
                   display: '-webkit-box',
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: 'vertical',
+                  cursor: 'zoom-in',
                 }}
               >
                 {p.nombre || p.referencia || p.articulo}

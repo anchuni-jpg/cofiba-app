@@ -1,6 +1,7 @@
 :root {
   --accent: #20944b;
   --accent-bg: #e5f4ea;
+  --cart-bg: #9adcb2;
   --danger: #a32d2d;
   --success: #3b6d11;
   --surface-0: #f4f4f2;
@@ -184,6 +185,19 @@ input {
    su propio fondo opaco (ver `button` más arriba), así que no se tiñen. */
 .product-row-comprado {
   background: var(--accent-bg);
+  border-radius: var(--radius);
+  border-top-color: transparent;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* En el carrito ahora mismo (o pedido en esta sesión) → verde más oscuro y
+   saturado que el de "ya comprado alguna vez", para que destaque más. Va
+   después en la hoja de estilos a propósito: si un producto tiene las dos
+   clases a la vez (ya comprado antes Y en el carrito ahora), esta debe
+   ganar por orden de aparición, dado que tienen la misma especificidad. */
+.product-row-carrito {
+  background: var(--cart-bg);
   border-radius: var(--radius);
   border-top-color: transparent;
   padding-left: 8px;
