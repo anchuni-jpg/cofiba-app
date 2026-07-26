@@ -242,114 +242,12 @@ export default function App() {
   }
 
   return (
-    <>
-      <div className="topbar">
-        <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 24, flexShrink: 0 }} />
-        {cuenta?.datosFiscales?.Nombre && (
-          <p
-            className="muted"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              margin: '0 10px',
-              textAlign: 'center',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={cuenta.datosFiscales.Nombre}
-          >
-            {cuenta.datosFiscales.Nombre}
-          </p>
-        )}
-        <button className="danger-text" style={{ flexShrink: 0 }} onClick={() => (api.logout(), setLoggedIn(false))}>
-          Salir
-        </button>
-      </div>
-
-      {!isStandalone && !dismissedInstall && (
-        <div className="install-banner">
-          <span>
-            {deferred
-              ? 'Instala esta app en tu móvil para acceso rápido.'
-              : isIos
-              ? 'En Safari: pulsa Compartir → "Añadir a pantalla de inicio".'
-              : 'Instálala desde el menú del navegador.'}
-          </span>
-          {deferred ? (
-            <button
-              onClick={async () => {
-                deferred.prompt();
-                setDismissedInstall(true);
-              }}
-            >
-              Instalar
-            </button>
-          ) : (
-            <button onClick={() => setDismissedInstall(true)}>Vale</button>
-          )}
-        </div>
-      )}
-
-      {tab === 'categorias' && (
-        <Categorias
-          onOpenCategoria={(c) => {
-            setCategoria(c);
-            setSubcategoriaInicial(null);
-            setTab('productos');
-          }}
-          onSearch={(q) => {
-            setBusqueda(q);
-            setTab('busqueda');
-          }}
-          islaFiltro={islaFiltro}
-          onCambiarIsla={cambiarIsla}
-        />
-      )}
-      {tab === 'productos' && (
-        <Productos
-          categoria={categoria}
-          subcategoriaInicial={subcategoriaInicial}
-          onBack={() => setTab('categorias')}
-          onCartChanged={refreshCartCount}
-          cartCount={cartCount}
-          codigosEnCarrito={codigosEnCarrito}
-          codigosSesion={codigosSesion}
-          islaFiltro={islaFiltro}
-          vistaColumnas={vistaColumnas}
-          onCambiarVista={cambiarVista}
-        />
-      )}
-      {tab === 'busqueda' && (
-        <Busqueda
-          termino={busqueda}
-          onBack={() => setTab('categorias')}
-          onCartChanged={refreshCartCount}
-          codigosEnCarrito={codigosEnCarrito}
-          codigosSesion={codigosSesion}
-          islaFiltro={islaFiltro}
-          vistaColumnas={vistaColumnas}
-          onCambiarVista={cambiarVista}
-        />
-      )}
-      {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
-      {tab === 'historico' && (
-        <Historico
-          onCartChanged={refreshCartCount}
-          codigosEnCarrito={codigosEnCarrito}
-          codigosSesion={codigosSesion}
-          islaFiltro={islaFiltro}
-          vistaColumnas={vistaColumnas}
-          onCambiarVista={cambiarVista}
-          onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
-            setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
-            setSubcategoriaInicial(subcategoriaSlug || null);
-            setTab('productos');
-          }}
-        />
-      )}
-      {tab === 'estadisticas' && <Estadisticas onCartChanged={refreshCartCount} />}
-
+    // En móvil (columna) es una sola pantalla con la nav pegada abajo, como
+    // siempre. A partir de cierto ancho (o en apaisado) `.app-shell` pasa a
+    // fila y `.bottomnav` se convierte en un panel lateral fijo — el orden
+    // real en el DOM no cambia, solo el `order` en CSS por breakpoint, ver
+    // styles.css.
+    <div className="app-shell">
       {/* Sin botón propio para "Productos": a esa pantalla solo se llega
           tocando una categoría desde Catálogo (o "Ver más" en Histórico) —
           por eso no aparece aquí abajo, aunque su ruta siga existiendo. */}
@@ -367,6 +265,115 @@ export default function App() {
           Estadísticas
         </button>
       </div>
-    </>
+
+      <div className="app-main">
+        <div className="topbar">
+          <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 24, flexShrink: 0 }} />
+          {cuenta?.datosFiscales?.Nombre && (
+            <p
+              className="muted"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                margin: '0 10px',
+                textAlign: 'center',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={cuenta.datosFiscales.Nombre}
+            >
+              {cuenta.datosFiscales.Nombre}
+            </p>
+          )}
+          <button className="danger-text" style={{ flexShrink: 0 }} onClick={() => (api.logout(), setLoggedIn(false))}>
+            Salir
+          </button>
+        </div>
+
+        {!isStandalone && !dismissedInstall && (
+          <div className="install-banner">
+            <span>
+              {deferred
+                ? 'Instala esta app en tu móvil para acceso rápido.'
+                : isIos
+                ? 'En Safari: pulsa Compartir → "Añadir a pantalla de inicio".'
+                : 'Instálala desde el menú del navegador.'}
+            </span>
+            {deferred ? (
+              <button
+                onClick={async () => {
+                  deferred.prompt();
+                  setDismissedInstall(true);
+                }}
+              >
+                Instalar
+              </button>
+            ) : (
+              <button onClick={() => setDismissedInstall(true)}>Vale</button>
+            )}
+          </div>
+        )}
+
+        {tab === 'categorias' && (
+          <Categorias
+            onOpenCategoria={(c) => {
+              setCategoria(c);
+              setSubcategoriaInicial(null);
+              setTab('productos');
+            }}
+            onSearch={(q) => {
+              setBusqueda(q);
+              setTab('busqueda');
+            }}
+            islaFiltro={islaFiltro}
+            onCambiarIsla={cambiarIsla}
+          />
+        )}
+        {tab === 'productos' && (
+          <Productos
+            categoria={categoria}
+            subcategoriaInicial={subcategoriaInicial}
+            onBack={() => setTab('categorias')}
+            onCartChanged={refreshCartCount}
+            cartCount={cartCount}
+            codigosEnCarrito={codigosEnCarrito}
+            codigosSesion={codigosSesion}
+            islaFiltro={islaFiltro}
+            vistaColumnas={vistaColumnas}
+            onCambiarVista={cambiarVista}
+          />
+        )}
+        {tab === 'busqueda' && (
+          <Busqueda
+            termino={busqueda}
+            onBack={() => setTab('categorias')}
+            onCartChanged={refreshCartCount}
+            codigosEnCarrito={codigosEnCarrito}
+            codigosSesion={codigosSesion}
+            islaFiltro={islaFiltro}
+            vistaColumnas={vistaColumnas}
+            onCambiarVista={cambiarVista}
+          />
+        )}
+        {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
+        {tab === 'historico' && (
+          <Historico
+            onCartChanged={refreshCartCount}
+            codigosEnCarrito={codigosEnCarrito}
+            codigosSesion={codigosSesion}
+            islaFiltro={islaFiltro}
+            vistaColumnas={vistaColumnas}
+            onCambiarVista={cambiarVista}
+            onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
+              setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
+              setSubcategoriaInicial(subcategoriaSlug || null);
+              setTab('productos');
+            }}
+          />
+        )}
+        {tab === 'estadisticas' && <Estadisticas onCartChanged={refreshCartCount} />}
+      </div>
+    </div>
   );
 }

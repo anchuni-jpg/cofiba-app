@@ -48,6 +48,29 @@ body {
     max-width: min(92vw, 1200px);
   }
 }
+@media (min-width: 1300px) {
+  #root {
+    max-width: min(90vw, 1400px);
+  }
+}
+
+/* Contenedor de toda la pantalla logeada: en móvil es una columna normal
+   (contenido arriba, nav abajo). A partir del breakpoint de escritorio/
+   apaisado de más abajo pasa a fila, con la nav como panel lateral. */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.app-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  order: 1;
+}
 
 button {
   font: inherit;
@@ -238,6 +261,7 @@ input {
 
 .bottomnav {
   display: flex;
+  order: 2;
   border-top: 1px solid var(--border);
   position: sticky;
   bottom: 0;
@@ -259,6 +283,51 @@ input {
 .bottomnav button.active {
   color: var(--accent);
   border-top-color: var(--accent);
+}
+
+/* Escritorio (ancho de sobra) o móvil apaisado (ancho de sobra aunque la
+   pantalla sea pequeña): la nav de pestañas de abajo deja de tener sentido
+   pegada al fondo — pasa a ser un panel lateral fijo a la izquierda, como
+   cualquier app de escritorio, y el contenido usa el resto del ancho. */
+@media (min-width: 900px), (orientation: landscape) and (min-width: 640px) {
+  .app-shell {
+    flex-direction: row;
+  }
+  .app-main {
+    order: 2;
+  }
+  .bottomnav {
+    order: 1;
+    flex-direction: column;
+    width: 200px;
+    flex-shrink: 0;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    position: static;
+    padding-top: 10px;
+  }
+  .bottomnav button {
+    flex: none;
+    text-align: left;
+    padding: 12px 20px;
+    border-top: none;
+    border-left: 3px solid transparent;
+    font-size: 14px;
+    min-height: auto;
+  }
+  .bottomnav button.active {
+    border-top-color: transparent;
+    border-left-color: var(--accent);
+    background: var(--accent-bg);
+  }
+  .cat-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (min-width: 1300px) {
+  .cat-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .totals-table {
