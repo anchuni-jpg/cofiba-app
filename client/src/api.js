@@ -165,31 +165,50 @@ export const api = {
   // día: el catálogo de cofiba.es no cambia más a menudo que eso (se
   // renueva de madrugada), así que volver a mirarla el mismo día no puede
   // traer nada nuevo.
+  //
+  // Además protege contra el mismo problema que estadisticasCached: las
+  // novedades caducan solas a los 3 días (normal que la lista encoja), pero
+  // el servidor gratuito se duerme por inactividad y, al despertar, pierde
+  // el registro de qué artículos ya conocía — su primera respuesta puede
+  // venir vacía de golpe aunque ayer hubiera novedades reales. Por eso un
+  // "vacío" recién llegado solo se acepta si la caché ya tiene más de 3
+  // días (edad a partir de la cual sí es creíble que ya no quede ninguna);
+  // antes de eso se sigue enseñando lo último bueno que se vio, y no se
+  // toca su fecha para que la próxima entrada vuelva a intentarlo de verdad
+  // en vez de esperar otro día entero.
   async novedadesCached(onCacheHit) {
     const CLAVE = 'novedades';
     const UN_DIA_MS = 24 * 60 * 60 * 1000;
+    const TRES_DIAS_MS = 3 * UN_DIA_MS;
     const cacheado = await getCache(CLAVE);
     if (cacheado) onCacheHit?.(cacheado.datos);
     if (cacheado && Date.now() - cacheado.cuando < UN_DIA_MS) return cacheado.datos;
     const frescos = await this.novedades();
-    await setCache(CLAVE, { datos: frescos, cuando: Date.now() });
-    return frescos;
+    const cacheVigente = cacheado?.datos?.productos?.length > 0 && Date.now() - cacheado.cuando < TRES_DIAS_MS;
+    const vacioSospechoso = frescos.productos.length === 0 && cacheVigente;
+    const datos = vacioSospechoso ? cacheado.datos : frescos;
+    await setCache(CLAVE, { datos, cuando: vacioSospechoso ? cacheado.cuando : Date.now() });
+    return datos;
   },
   cambiosStock() {
     return request('/cambios-stock');
   },
-  // Mismo motivo que novedadesCached: los cambios de stock solo se detectan
-  // una vez por recorrido del catálogo (cada ~6h), así que pedirlo de
-  // verdad más de una vez al día no puede traer nada nuevo.
+  // Mismo motivo que novedadesCached (los cambios de stock solo se detectan
+  // una vez por recorrido del catálogo) y misma protección contra un
+  // reinicio del servidor, con la ventana de 7 días propia de esta lista.
   async cambiosStockCached(onCacheHit) {
     const CLAVE = 'cambios-stock';
     const UN_DIA_MS = 24 * 60 * 60 * 1000;
+    const SIETE_DIAS_MS = 7 * UN_DIA_MS;
     const cacheado = await getCache(CLAVE);
     if (cacheado) onCacheHit?.(cacheado.datos);
     if (cacheado && Date.now() - cacheado.cuando < UN_DIA_MS) return cacheado.datos;
     const frescos = await this.cambiosStock();
-    await setCache(CLAVE, { datos: frescos, cuando: Date.now() });
-    return frescos;
+    const cacheVigente = cacheado?.datos?.productos?.length > 0 && Date.now() - cacheado.cuando < SIETE_DIAS_MS;
+    const vacioSospechoso = frescos.productos.length === 0 && cacheVigente;
+    const datos = vacioSospechoso ? cacheado.datos : frescos;
+    await setCache(CLAVE, { datos, cuando: vacioSospechoso ? cacheado.cuando : Date.now() });
+    return datos;
   },
   // Bajo demanda, al abrir la ficha de un producto — no tiene sentido
   // cachear esto por más de la sesión actual, cambia con cada artículo.
