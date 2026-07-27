@@ -32,6 +32,23 @@ function formatoEuro(n) {
   return `${n}€`;
 }
 
+// Duplica formatoCaja/nivelStock de Productos.jsx — una función corta, no
+// vale la pena compartir el módulo por eso (mismo criterio que el resto de
+// la app). Así la lista de capturados enseña justo la misma info
+// (referencia, stock, caja) que si se navegara el catálogo normal.
+function formatoCaja(undVenta) {
+  const n = parseFloat(String(undVenta).replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(n)) return undVenta;
+  return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
+}
+function nivelStock(stock, undVenta) {
+  if (!Number.isFinite(stock)) return null;
+  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
+  const cajas = stock / unidadesPorCaja;
+  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
+  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
+}
+
 // Modo "captura continua": la cámara NO se cierra sola al leer un código —
 // se queda abierta para seguir leyendo uno tras otro, sumando cada
 // coincidencia real del catálogo a una lista en pantalla, hasta que el
@@ -79,25 +96,33 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         }
         capturadosCodigosRef.current.add(codigo);
         if (capturadosArticulosRef.current.has(match.articulo)) {
-          setCapturados((prev) =>
-            prev.map((c) =>
-              c.articulo === match.articulo ? { ...c, codigosVistos: [...c.codigosVistos, codigo] } : c
-            )
-          );
+          // Ya estaba en la lista — no suma cantidad, pero el último código
+          // leído (aunque sea de algo repetido) siempre se enseña el
+          // primero, a la izquierda, sin scroll.
+          setCapturados((prev) => {
+            const fila = prev.find((c) => c.articulo === match.articulo);
+            const resto = prev.filter((c) => c.articulo !== match.articulo);
+            return [{ ...fila, codigosVistos: [...fila.codigosVistos, codigo] }, ...resto];
+          });
           avisar(`Ya estaba en la lista: ${match.nombre || match.articulo}`);
           return;
         }
         capturadosArticulosRef.current.add(match.articulo);
+        // Al principio (no al final): el último capturado tiene que quedar
+        // siempre a la izquierda de la tira, visible sin desplazar nada.
         setCapturados((prev) => [
-          ...prev,
           {
             articulo: match.articulo,
             nombre: match.nombre || match.referencia || match.articulo,
+            referencia: match.referencia,
             imagen: match.imagen,
             precioFinal: match.precioFinal,
+            stock: match.stock,
+            undVenta: match.undVenta,
             cantidad: 1,
             codigosVistos: [codigo],
           },
+          ...prev,
         ]);
         avisar(`✓ ${match.nombre || match.articulo}`);
       })
@@ -223,29 +248,49 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
               No se capturó ningún código. Vuelve a "Seguir escaneando" o cierra.
             </p>
           ) : (
-            capturados.map((c) => (
-              <div key={c.articulo} className="product-row">
-                <div className="product-thumb">{c.imagen ? <img src={c.imagen} alt="" /> : '—'}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {c.nombre}
-                  </p>
-                  <p className="muted" style={{ margin: '2px 0 0' }}>
-                    {formatoEuro(c.precioFinal) || '—'}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <div className="qty-stepper">
-                    <button onClick={() => cambiarCantidad(c.articulo, -1)}>-</button>
-                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{c.cantidad}</span>
-                    <button onClick={() => cambiarCantidad(c.articulo, 1)}>+</button>
+            // Misma info que una fila normal de Catálogo/Búsqueda/Histórico
+            // (Ref., precio, insignia de stock, caja de N uds) — para que
+            // repasar lo capturado dé exactamente la misma confianza que
+            // navegar el catálogo, no una versión reducida.
+            capturados.map((c) => {
+              const stock = nivelStock(c.stock, c.undVenta);
+              return (
+                <div key={c.articulo} className="product-row">
+                  <div className="product-thumb">{c.imagen ? <img src={c.imagen} alt="" /> : '—'}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {c.nombre}
+                    </p>
+                    <p className="muted" style={{ margin: '2px 0' }}>
+                      Ref. {c.referencia || c.articulo}
+                    </p>
+                    <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+                      {formatoEuro(c.precioFinal) || '—'}
+                      {stock && (
+                        <span style={{ marginLeft: 5, fontSize: 11, color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                          {stock.texto}
+                        </span>
+                      )}
+                    </p>
                   </div>
-                  <button className="danger-text" onClick={() => quitarCapturado(c.articulo)} aria-label="Quitar">
-                    ✕
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                    <div className="qty-stepper">
+                      <button onClick={() => cambiarCantidad(c.articulo, -1)}>-</button>
+                      <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{c.cantidad}</span>
+                      <button onClick={() => cambiarCantidad(c.articulo, 1)}>+</button>
+                    </div>
+                    {c.undVenta && (
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        caja de {formatoCaja(c.undVenta)} uds
+                      </span>
+                    )}
+                    <button className="danger-text" onClick={() => quitarCapturado(c.articulo)} aria-label="Quitar">
+                      ✕ Quitar
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -305,18 +350,25 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
             }}
           />
           {mensaje && (
+            // En medio del visor y grande a propósito — es la confirmación
+            // de "esto es justo lo que se acaba de capturar" (o el aviso de
+            // que no se encontró), tiene que verse clarísimo sin tener que
+            // fijarse en una esquina pequeña.
             <div
               style={{
                 position: 'absolute',
-                top: '10%',
+                top: '50%',
                 left: 16,
                 right: 16,
+                transform: 'translateY(-50%)',
                 textAlign: 'center',
-                background: 'rgba(0,0,0,0.75)',
+                background: 'rgba(0,0,0,0.8)',
                 color: '#fff',
-                padding: '8px 12px',
+                padding: '16px 18px',
                 borderRadius: 'var(--radius)',
-                fontSize: 13,
+                fontSize: 20,
+                fontWeight: 700,
+                lineHeight: 1.3,
               }}
             >
               {mensaje}
@@ -346,7 +398,9 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
           }}
         >
           {capturados.map((c, idx) => {
-            const esUltima = idx === capturados.length - 1;
+            // Ahora se añade al PRINCIPIO del array (ver procesarCodigo), así
+            // que la última captura es el índice 0, no el último.
+            const esUltima = idx === 0;
             const tamThumb = esUltima ? 64 : 44;
             return (
               <div
@@ -357,7 +411,14 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: 4,
+                  // Blanco fijo a propósito (no var(--surface-2)): esta tira
+                  // vive siempre sobre la cámara oscura, sea cual sea el
+                  // tema de la app — y por eso el texto de dentro también
+                  // necesita un color fijo oscuro, no heredar
+                  // --text-primary (que en modo oscuro es casi blanco y
+                  // quedaría invisible sobre este mismo fondo blanco).
                   background: '#fff',
+                  color: '#222',
                   borderRadius: 'var(--radius)',
                   padding: esUltima ? '8px 10px' : '6px 8px',
                   border: esUltima ? '2px solid var(--accent)' : 'none',

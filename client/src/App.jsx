@@ -71,6 +71,25 @@ export default function App() {
   const { deferred, isStandalone, isIos } = useInstallPrompt();
   const [dismissedInstall, setDismissedInstall] = useState(false);
   const [cuenta, setCuenta] = useState(null);
+  // El tema ya se decide (y se aplica al <html>) ANTES de que React arranque
+  // — ver el script bloqueante en index.html, para no parpadear claro→oscuro
+  // al cargar. Este estado solo existe para que el propio botón sepa qué
+  // icono/aria-label enseñar; el cambio real de color lo hace el atributo
+  // data-theme + las variables CSS, no React.
+  const [tema, setTema] = useState(() => document.documentElement.getAttribute('data-theme') || 'light');
+
+  function cambiarTema() {
+    const nuevo = tema === 'dark' ? 'light' : 'dark';
+    setTema(nuevo);
+    document.documentElement.setAttribute('data-theme', nuevo);
+    localStorage.setItem('cofiba:tema', nuevo);
+    // El color de la barra del navegador (Android/iOS con la app instalada)
+    // también se actualiza, para que no se quede verde claro sobre una app
+    // que por dentro ya está en oscuro.
+    document
+      .getElementById('meta-theme-color')
+      ?.setAttribute('content', nuevo === 'dark' ? '#191816' : '#20944b');
+  }
 
   function refreshCartCount(directCount, directCodigos) {
     if (Number.isFinite(directCount)) {
@@ -269,6 +288,14 @@ export default function App() {
       <div className="app-main">
         <div className="topbar">
           <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 24, flexShrink: 0 }} />
+          <button
+            className="theme-toggle"
+            onClick={cambiarTema}
+            aria-label={tema === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            title={tema === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+          >
+            {tema === 'dark' ? '☀️' : '🌙'}
+          </button>
           {cuenta?.datosFiscales?.Nombre && (
             <p
               className="muted"

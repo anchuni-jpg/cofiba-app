@@ -33,8 +33,6 @@ function normalizar(s) {
     .toLowerCase();
 }
 
-const TANDA = 20;
-
 export default function Historico({
   onCartChanged,
   codigosEnCarrito,
@@ -45,6 +43,16 @@ export default function Historico({
   onCambiarVista,
 }) {
   const [filtro, setFiltro] = useState('');
+  // Cuántos artículos revelar de golpe (y cuántos más cada "Ver más") —
+  // mismo control y misma clave de localStorage que Productos.jsx, para que
+  // sea UNA sola preferencia de "cuánto me gusta ver de golpe" en toda la
+  // app, no una distinta por pantalla.
+  const [limite, setLimite] = useState(() => Number(localStorage.getItem('cofiba:limite')) || 25);
+  function cambiarLimite(n) {
+    setLimite(n);
+    localStorage.setItem('cofiba:limite', String(n));
+    setVisibles(n);
+  }
   // Esto ya no es un historial que llevemos nosotros — lee directamente la
   // sección real "Comprados recientemente" de cofiba.es (/consumo.html), así
   // que refleja TODO lo comprado en la cuenta, no solo lo hecho desde la app.
@@ -54,13 +62,13 @@ export default function Historico({
   // página dos veces —una vez desde la caché local y otra con la respuesta
   // de verdad— sustituya en vez de duplicar. El recorrido de TODAS las
   // páginas se dispara solo con abrir la pestaña, sin esperar a que se pulse
-  // ningún botón — "Ver más" solo revela más de lo que ya se ha traído (20
-  // en 20, como en Búsqueda), nunca dispara una petición nueva por sí mismo.
+  // ningún botón — "Ver más" solo revela más de lo que ya se ha traído
+  // (según `limite`), nunca dispara una petición nueva por sí mismo.
   const [paginas, setPaginas] = useState([]);
   const [totalPaginas, setTotalPaginas] = useState(null);
   const [paginasCargadas, setPaginasCargadas] = useState(0);
   const [cargandoTodo, setCargandoTodo] = useState(true);
-  const [visibles, setVisibles] = useState(TANDA);
+  const [visibles, setVisibles] = useState(limite);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState({});
@@ -69,6 +77,18 @@ export default function Historico({
   // esconde (es un hecho pasado real), pero deja de ofrecer repetir su
   // compra hasta que vuelva a estar disponible.
   const [noDisponibles, setNoDisponibles] = useState(new Set());
+  // Categorías/subcategorías plegadas — tocar la franja verde de la
+  // cabecera pliega/despliega sus artículos, para poder repasar el
+  // histórico por grupos sin tener que desplazarse por cientos de filas.
+  const [colapsados, setColapsados] = useState(new Set());
+  function alternarColapso(clave) {
+    setColapsados((prev) => {
+      const copia = new Set(prev);
+      if (copia.has(clave)) copia.delete(clave);
+      else copia.add(clave);
+      return copia;
+    });
+  }
   const [zoomProducto, setZoomProducto] = useState(null);
   // "También te puede interesar" (afinidad por subcategoría + popularidad
   // global) — mismo patrón que Productos.jsx/Busqueda.jsx, se pide solo al
@@ -303,6 +323,9 @@ export default function Historico({
       subcategoria: p.subcategoriaNombre || p.subcategoria || 'Otros',
     };
   }
+  function claveGrupo(grupo) {
+    return `${grupo.categoria}||${grupo.subcategoria}`;
+  }
 
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -330,10 +353,22 @@ export default function Historico({
         value={filtro}
         onChange={(e) => {
           setFiltro(e.target.value);
-          setVisibles(TANDA);
+          setVisibles(limite);
         }}
-        style={{ marginBottom: 10 }}
+        style={{ marginBottom: 8 }}
       />
+
+      <select
+        value={limite}
+        onChange={(e) => cambiarLimite(Number(e.target.value))}
+        style={{ fontSize: 12, padding: '6px 8px', marginBottom: 10 }}
+        aria-label="Cuántos artículos mostrar"
+      >
+        <option value={10}>10 artículos</option>
+        <option value={25}>25 artículos</option>
+        <option value={50}>50 artículos</option>
+        <option value={100}>100 artículos</option>
+      </select>
 
       {error && <div className="error-banner">{error}</div>}
       {loading && (
@@ -367,6 +402,8 @@ export default function Historico({
             const grupoAnterior = idx > 0 ? grupoDe(visiblesLista[idx - 1]) : null;
             const nuevaCategoria = !grupoAnterior || grupo.categoria !== grupoAnterior.categoria;
             const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
+            const clave = claveGrupo(grupo);
+            const colapsado = colapsados.has(clave);
             return (
               // La clave incluye la posición: el mismo artículo puede aparecer
               // más de una vez en el histórico real (comprado en fechas
@@ -375,32 +412,43 @@ export default function Historico({
               <div key={`${p.articulo}-${idx}`}>
                 {nuevaSubcategoria && (
                   <div
+                    onClick={() => alternarColapso(clave)}
                     style={{
                       marginTop: idx === 0 ? 0 : 16,
                       marginBottom: 6,
                       background: 'var(--accent-bg)',
                       borderLeft: '4px solid var(--accent)',
                       borderRadius: 6,
-                      padding: '6px 10px',
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
                     }}
                   >
-                    {nuevaCategoria && (
-                      <p style={{ fontWeight: 700, fontSize: 13, margin: '0 0 2px' }}>{grupo.categoria}</p>
-                    )}
-                    <p
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 11,
-                        margin: 0,
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.4,
-                        color: 'var(--accent)',
-                      }}
-                    >
-                      {grupo.subcategoria}
-                    </p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {nuevaCategoria && (
+                        <p style={{ fontWeight: 700, fontSize: 16, margin: '0 0 3px' }}>{grupo.categoria}</p>
+                      )}
+                      <p
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 14,
+                          margin: 0,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                          color: 'var(--accent)',
+                        }}
+                      >
+                        {grupo.subcategoria}
+                      </p>
+                    </div>
+                    <span style={{ fontSize: 18, color: 'var(--accent)', flexShrink: 0 }}>
+                      {colapsado ? '▸' : '▾'}
+                    </span>
                   </div>
                 )}
+                {!colapsado && (
                 <div
                   className={`product-row${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
                   onClick={() => setZoomProducto(p)}
@@ -467,6 +515,7 @@ export default function Historico({
                 )}
               </div>
             </div>
+                )}
           </div>
             );
           })}
@@ -478,10 +527,13 @@ export default function Historico({
             const grupoAnterior = idx > 0 ? grupoDe(visiblesLista[idx - 1]) : null;
             const nuevaCategoria = !grupoAnterior || grupo.categoria !== grupoAnterior.categoria;
             const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
+            const clave = claveGrupo(grupo);
+            const colapsado = colapsados.has(clave);
             return (
               <Fragment key={`${p.articulo}-${idx}`}>
                 {nuevaSubcategoria && (
                   <div
+                    onClick={() => alternarColapso(clave)}
                     style={{
                       gridColumn: '1 / -1',
                       marginTop: idx === 0 ? 0 : 10,
@@ -489,26 +541,36 @@ export default function Historico({
                       background: 'var(--accent-bg)',
                       borderLeft: '4px solid var(--accent)',
                       borderRadius: 6,
-                      padding: '6px 10px',
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
                     }}
                   >
-                    {nuevaCategoria && (
-                      <p style={{ fontWeight: 700, fontSize: 13, margin: '0 0 2px' }}>{grupo.categoria}</p>
-                    )}
-                    <p
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 11,
-                        margin: 0,
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.4,
-                        color: 'var(--accent)',
-                      }}
-                    >
-                      {grupo.subcategoria}
-                    </p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {nuevaCategoria && (
+                        <p style={{ fontWeight: 700, fontSize: 16, margin: '0 0 3px' }}>{grupo.categoria}</p>
+                      )}
+                      <p
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 14,
+                          margin: 0,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                          color: 'var(--accent)',
+                        }}
+                      >
+                        {grupo.subcategoria}
+                      </p>
+                    </div>
+                    <span style={{ fontSize: 18, color: 'var(--accent)', flexShrink: 0 }}>
+                      {colapsado ? '▸' : '▾'}
+                    </span>
                   </div>
                 )}
+                {!colapsado && (
                 <div
                   className={`producto-card${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
                   onClick={() => setZoomProducto(p)}
@@ -587,6 +649,7 @@ export default function Historico({
                 </span>
               )}
                 </div>
+                )}
               </Fragment>
             );
           })}
@@ -595,7 +658,7 @@ export default function Historico({
 
       {hayMasParaRevelar && (
         <div style={{ padding: '12px 0', textAlign: 'center' }}>
-          <button onClick={() => setVisibles((v) => v + TANDA)} style={{ width: '100%' }}>
+          <button onClick={() => setVisibles((v) => v + limite)} style={{ width: '100%' }}>
             Ver más ({productosFiltrados.length - visibles} más)
           </button>
         </div>

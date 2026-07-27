@@ -3,7 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#20944b" />
+    <meta name="theme-color" content="#20944b" id="meta-theme-color" />
+    <!-- Bloqueante y a propósito lo primero del <head>: decide el tema
+         ANTES de que se pinte nada, para no enseñar un parpadeo claro→oscuro
+         al cargar con el modo oscuro ya elegido de una vez anterior. -->
+    <script>
+      (function () {
+        try {
+          var guardado = localStorage.getItem('cofiba:tema');
+          var tema = guardado || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', tema);
+        } catch (e) {
+          // localStorage bloqueado (modo privado estricto) — se queda en claro.
+        }
+      })();
+    </script>
     <!-- iOS Safari no lee bien el manifest.webmanifest para el modo "app
     instalada" — sin estas etiquetas, añadir a pantalla de inicio en iPhone
     abre Safari con barras de navegador en vez de a pantalla completa. -->

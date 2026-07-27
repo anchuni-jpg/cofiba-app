@@ -3,6 +3,7 @@
   --accent-bg: #e5f4ea;
   --cart-bg: #9adcb2;
   --danger: #a32d2d;
+  --danger-bg: #fcebeb;
   --success: #3b6d11;
   --surface-0: #f4f4f2;
   --surface-1: #f1efe8;
@@ -12,6 +13,36 @@
   --text-muted: #888780;
   --border: #e2e0d8;
   --radius: 10px;
+}
+
+/* Modo oscuro — activado por el botón junto al logo (guarda la elección en
+   localStorage, ver App.jsx). Mismos nombres de variable que arriba, así
+   que todo lo que ya usa var(--...) se adapta solo; no hace falta tocar
+   selectores por toda la hoja. Las superficies mantienen el mismo undertone
+   cálido que el modo claro (no un gris frío) para que siga pareciendo la
+   misma app, no una completamente distinta. El verde de marca se aclara un
+   poco (queda apagado si no sobre un fondo casi negro) y los rojos también,
+   por la misma razón — ambos siguen leyéndose bien como texto sobre
+   --surface-0/1/2 oscuros. */
+:root[data-theme='dark'] {
+  --accent: #3ecb74;
+  --accent-bg: #16301f;
+  --cart-bg: #2c6b45;
+  --danger: #e2645d;
+  --danger-bg: #3a2020;
+  --success: #7bc94b;
+  --surface-0: #191816;
+  --surface-1: #211f1b;
+  --surface-2: #2a2723;
+  --text-primary: #f0efe9;
+  --text-secondary: #b9b7ac;
+  --text-muted: #8c8a7e;
+  --border: #3a3b35;
+  /* Le dice al propio navegador que use SU render nativo oscuro para lo que
+     esta hoja no controla directamente — la lista desplegable de <select>,
+     la barra de scroll, el autorrelleno — para que también salga legible
+     ahí, no solo en lo que sí tiene var(--...) puestas a mano. */
+  color-scheme: dark;
 }
 
 * {
@@ -75,6 +106,11 @@ body {
 
 button {
   font: inherit;
+  /* `color` NO se hereda solo en botones/inputs/selects (estilo nativo del
+     navegador, no del documento) — sin fijarlo aquí, el modo oscuro dejaba
+     el texto de cualquier botón normal en negro nativo sobre un fondo ya
+     oscuro, prácticamente invisible. */
+  color: var(--text-primary);
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -103,11 +139,16 @@ button.danger {
   border-color: var(--danger);
 }
 
-input {
+input,
+select {
   font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
+}
+input {
   width: 100%;
 }
 
@@ -379,7 +420,7 @@ input {
   font-size: 13px;
 }
 .error-banner {
-  background: #fcebeb;
+  background: var(--danger-bg);
   color: var(--danger);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -397,4 +438,28 @@ input {
   justify-content: space-between;
   gap: 8px;
   align-items: center;
+}
+
+/* El logo es un JPG con fondo blanco de verdad (no transparente) — en modo
+   claro no se nota (la barra de arriba ya es blanca), pero en modo oscuro
+   dejaría un rectángulo blanco feo pegado al conmutador. Una pastillita
+   blanca alrededor, SOLO en oscuro, lo enseña como una tarjeta a propósito
+   en vez de un fallo de recorte. */
+:root[data-theme='dark'] .topbar img {
+  background: #fff;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+
+.theme-toggle {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
