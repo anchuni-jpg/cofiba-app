@@ -87,7 +87,7 @@ export default function Productos({
   // momento, sin esperar a la próxima carga, para que nadie más tropiece
   // con el mismo error en lo que queda de esta visita.
   const [noDisponibles, setNoDisponibles] = useState(new Set());
-  // "También suelen comprar" (afinidad por subcategoría + popularidad
+  // "También te puede interesar" (afinidad por subcategoría + popularidad
   // global, no cesta real — cofiba.es no expone qué se compró junto en un
   // mismo pedido). Se pide solo al abrir la ficha, no para toda la lista.
   const [relacionados, setRelacionados] = useState(null);
@@ -746,7 +746,7 @@ export default function Productos({
 
             {relacionados && relacionados.length > 0 && (
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                <p className="muted" style={{ margin: '0 0 6px' }}>También suelen comprar</p>
+                <p className="muted" style={{ margin: '0 0 6px' }}>También te puede interesar</p>
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
                   {relacionados.map((r) => (
                     <div

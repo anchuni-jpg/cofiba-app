@@ -70,7 +70,7 @@ export default function Historico({
   // compra hasta que vuelva a estar disponible.
   const [noDisponibles, setNoDisponibles] = useState(new Set());
   const [zoomProducto, setZoomProducto] = useState(null);
-  // "También suelen comprar" (afinidad por subcategoría + popularidad
+  // "También te puede interesar" (afinidad por subcategoría + popularidad
   // global) — mismo patrón que Productos.jsx/Busqueda.jsx, se pide solo al
   // abrir la ficha, no para toda la lista.
   const [relacionados, setRelacionados] = useState(null);
@@ -123,13 +123,16 @@ export default function Historico({
     return { paginasCache, totalPaginasCache, siguientePageUrl: pageUrl };
   }
 
-  // Recorre TODO el histórico real de nuevo, de la primera página en
-  // adelante, pidiendo cada una con forzar=1 (salta la caché de 3 minutos
-  // del servidor). Antes, si la última vez ya se había llegado al final del
-  // histórico, reabrir Histórico se quedaba enseñando esa misma foto vieja
-  // para siempre sin volver a pedir nada — con esto, cada entrada (y cada
-  // pulsación de "Actualizar") vuelve a mirar de verdad si hay algo nuevo.
-  function recorrerTodo({ mostrarCache }) {
+  // Recorre TODO el histórico real, de la primera página en adelante. Solo
+  // el botón "Actualizar" fuerza (forzar=1, salta la caché de 3 minutos del
+  // servidor) — al entrar en la pestaña normalmente NO se fuerza nada: si ya
+  // se recorrió hace poco, cada página sale de la caché del servidor casi al
+  // instante, y si Cofiba.es no ha cambiado nada no hay motivo para volver a
+  // pedirlo todo desde cero cada vez (antes SÍ forzaba siempre, y eso era
+  // justo lo que dejaba el histórico "buscando todo el rato" compitiendo con
+  // la navegación real del catálogo, que comparte la misma cuenta/cola de
+  // cofiba.es).
+  function recorrerTodo({ mostrarCache, forzar }) {
     const miId = ++recorridoIdRef.current;
     const vigente = () => recorridoIdRef.current === miId;
 
@@ -151,9 +154,14 @@ export default function Historico({
 
       let pageUrl = null;
       do {
+        // Comprobado ANTES de pedir la siguiente página (no solo al final del
+        // bucle): si se salió de Histórico (cambio de pestaña) mientras
+        // esperábamos, esto para el recorrido en el acto en vez de lanzar
+        // una petición lenta de más que ya nadie va a ver.
+        if (!vigente()) return;
         let huboCache = false;
         const i = indice;
-        const promesa = api.historicoCached({ pageUrl, forzar: true }, (cacheado) => {
+        const promesa = api.historicoCached({ pageUrl, forzar }, (cacheado) => {
           if (!vigente() || i > 0) return;
           // Solo la página 1 usa el aviso instantáneo de caché — de la 2 en
           // adelante ya se está mirando de verdad, mostrar aquí una versión
@@ -194,7 +202,16 @@ export default function Historico({
   }
 
   useEffect(() => {
-    recorrerTodo({ mostrarCache: true });
+    recorrerTodo({ mostrarCache: true, forzar: false });
+    // Al salir de la pestaña (Histórico se desmonta: App.jsx solo lo renderiza
+    // con tab==='historico') se invalida el recorrido en curso — la
+    // pestaña en la que se esté ahora (Catálogo, Búsqueda...) tiene
+    // prioridad y no debe esperar detrás de páginas de /consumo.html que ya
+    // no le interesan a nadie en este momento. Al volver a Histórico, este
+    // mismo efecto se dispara de nuevo y retoma desde la caché.
+    return () => {
+      recorridoIdRef.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -203,7 +220,7 @@ export default function Historico({
   // para no hacer parpadear la lista — cada página se va sustituyendo en su
   // sitio según llega la respuesta fresca, igual que el recorrido automático.
   function actualizar() {
-    recorrerTodo({ mostrarCache: false });
+    recorrerTodo({ mostrarCache: false, forzar: true });
   }
 
   // No se espera a que cofiba.es confirme antes de reaccionar: el contador
@@ -353,13 +370,28 @@ export default function Historico({
               // React (dos filas con la misma key "se superponían" visualmente).
               <div key={`${p.articulo}-${idx}`}>
                 {nuevaSubcategoria && (
-                  <div style={{ marginTop: idx === 0 ? 0 : 16 }}>
+                  <div
+                    style={{
+                      marginTop: idx === 0 ? 0 : 16,
+                      marginBottom: 6,
+                      background: 'var(--accent-bg)',
+                      borderLeft: '4px solid var(--accent)',
+                      borderRadius: 6,
+                      padding: '6px 10px',
+                    }}
+                  >
                     {nuevaCategoria && (
                       <p style={{ fontWeight: 700, fontSize: 13, margin: '0 0 2px' }}>{grupo.categoria}</p>
                     )}
                     <p
-                      className="muted"
-                      style={{ fontWeight: 600, fontSize: 11, margin: 0, textTransform: 'uppercase', letterSpacing: 0.4 }}
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 11,
+                        margin: 0,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.4,
+                        color: 'var(--accent)',
+                      }}
                     >
                       {grupo.subcategoria}
                     </p>
@@ -445,13 +477,29 @@ export default function Historico({
             return (
               <Fragment key={`${p.articulo}-${idx}`}>
                 {nuevaSubcategoria && (
-                  <div style={{ gridColumn: '1 / -1', marginTop: idx === 0 ? 0 : 10 }}>
+                  <div
+                    style={{
+                      gridColumn: '1 / -1',
+                      marginTop: idx === 0 ? 0 : 10,
+                      marginBottom: 4,
+                      background: 'var(--accent-bg)',
+                      borderLeft: '4px solid var(--accent)',
+                      borderRadius: 6,
+                      padding: '6px 10px',
+                    }}
+                  >
                     {nuevaCategoria && (
                       <p style={{ fontWeight: 700, fontSize: 13, margin: '0 0 2px' }}>{grupo.categoria}</p>
                     )}
                     <p
-                      className="muted"
-                      style={{ fontWeight: 600, fontSize: 11, margin: 0, textTransform: 'uppercase', letterSpacing: 0.4 }}
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 11,
+                        margin: 0,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.4,
+                        color: 'var(--accent)',
+                      }}
                     >
                       {grupo.subcategoria}
                     </p>
@@ -606,7 +654,7 @@ export default function Historico({
 
             {relacionados && relacionados.length > 0 && (
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                <p className="muted" style={{ margin: '0 0 6px' }}>También suelen comprar</p>
+                <p className="muted" style={{ margin: '0 0 6px' }}>También te puede interesar</p>
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
                   {relacionados.map((r) => (
                     <div

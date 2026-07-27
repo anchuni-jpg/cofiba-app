@@ -675,26 +675,31 @@ app.get('/api/cambios-stock', requireSession, (req, res) => {
   res.json({ productos });
 });
 
-// "También suelen comprar": otros artículos de la MISMA subcategoría que el
-// que se está mirando, ordenados por cuántas veces los ha comprado
-// cualquier cuenta que use la app (no hay forma de saber qué se compró
-// junto en un mismo pedido — cofiba.es no expone esa relación — así que
-// esto es una aproximación por afinidad de subcategoría + popularidad
-// global, no una cesta real). Se pide bajo demanda (al abrir la ficha de un
-// producto), no para toda una lista de golpe.
+// "También te puede interesar": otros artículos AL AZAR de la MISMA
+// subcategoría que el que se está mirando (no hay forma de saber qué se
+// compró junto en un mismo pedido — cofiba.es no expone esa relación — así
+// que esto es una aproximación por afinidad de subcategoría, no una cesta
+// real). Antes se ordenaba por popularidad global y siempre salían los
+// mismos de siempre; al azar cada apertura de ficha enseña algo distinto de
+// la subcategoría, no solo lo más vendido. Se pide bajo demanda (al abrir
+// la ficha de un producto), no para toda una lista de golpe.
 app.get('/api/relacionados', requireSession, (req, res) => {
   const { articulo } = req.query;
   if (!articulo) return res.status(400).json({ error: 'Falta el parámetro articulo.' });
   const info = buscarPorArticulo(articulo);
   if (!info?.subcategoria) return res.json({ productos: [] });
 
-  const { conteoGlobal } = resumenGlobal();
-  const productos = filtrarDisponibles(productosPorSubcategoria(info.categoria, info.subcategoria))
-    .filter((p) => p.articulo !== articulo)
-    .map((p) => ({ ...p, vecesGlobal: conteoGlobal.get(p.articulo) || 0 }))
-    .sort((a, b) => b.vecesGlobal - a.vecesGlobal)
-    .slice(0, 6);
-  res.json({ productos });
+  const candidatos = filtrarDisponibles(productosPorSubcategoria(info.categoria, info.subcategoria)).filter(
+    (p) => p.articulo !== articulo
+  );
+  // Fisher-Yates parcial: solo hace falta barajar hasta sacar 6, no la lista
+  // entera si la subcategoría es grande.
+  const tope = Math.min(6, candidatos.length);
+  for (let i = 0; i < tope; i++) {
+    const j = i + Math.floor(Math.random() * (candidatos.length - i));
+    [candidatos[i], candidatos[j]] = [candidatos[j], candidatos[i]];
+  }
+  res.json({ productos: candidatos.slice(0, tope) });
 });
 
 // "Conectado ahora" = ha hecho alguna petición autenticada en los últimos 15

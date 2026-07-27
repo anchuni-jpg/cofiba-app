@@ -147,8 +147,8 @@ function FilaProducto({ p, max, onAbrir, novedad, cambioStock, onAñadir, pendin
 // Ventana emergente con el detalle de un artículo, tocando desde cualquier
 // listado de Estadísticas (más comprados, por categoría, novedades, cambios
 // de stock o el aviso de restock) — siempre trae toda la info (buscarPorArticulo
-// va incluido en el objeto en los cuatro casos), así que "también suelen
-// comprar" y el paso +/- funcionan igual en cualquiera de ellos.
+// va incluido en el objeto en los cuatro casos), así que "también te puede
+// interesar" y el paso +/- funcionan igual en cualquiera de ellos.
 function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending, noDisponibles }) {
   // Los hooks van antes que cualquier return condicional — el efecto en sí
   // ya comprueba `p` por dentro.
@@ -283,7 +283,7 @@ function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending, noDisponibles
 
         {relacionados && relacionados.length > 0 && (
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-            <p className="muted" style={{ margin: '0 0 6px' }}>También suelen comprar</p>
+            <p className="muted" style={{ margin: '0 0 6px' }}>También te puede interesar</p>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
               {relacionados.map((r) => (
                 <div
