@@ -17,10 +17,13 @@ const FORMATOS = [
   BarcodeFormat.CODE_39,
 ];
 
-// Mismo código detectado dos fotogramas seguidos (o mientras sigue delante
-// de la cámara) no debe contar como dos artículos — solo pasado este rato
-// se vuelve a aceptar el mismo código, tiempo de sobra para apartar la
-// cámara y apuntar al siguiente producto.
+// Cooldown corto SOLO para códigos que todavía no se han capturado bien
+// (fallo de red, o no encontrado) — mientras siguen delante de la cámara no
+// tiene sentido reintentarlo en cada fotograma, pero si de verdad falló se
+// puede volver a intentar pasado este rato. Un código YA capturado con
+// éxito no usa este cooldown en absoluto: se ignora para siempre en esta
+// sesión de escaneo (ver capturadosCodigosRef más abajo) — así, mantener el
+// mismo producto delante de la cámara un rato no lo suma más de una vez.
 const COOLDOWN_MS = 2500;
 const MENSAJE_MS = 2200;
 
@@ -46,6 +49,13 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
   const ultimoRef = useRef({ codigo: null, cuando: 0 });
   const procesandoRef = useRef(false);
   const mensajeTimeoutRef = useRef(null);
+  // Códigos que ya llevaron a una captura de verdad — se ignoran del todo a
+  // partir de ahí (ni se vuelve a pedir al servidor), para que tener el
+  // mismo producto delante de la cámara un rato no lo sume varias veces.
+  const capturadosCodigosRef = useRef(new Set());
+  // Artículos ya en la lista — un código DISTINTO que resulte ser el mismo
+  // producto (p. ej. ean vs. referencia) tampoco debe sumar cantidad.
+  const capturadosArticulosRef = useRef(new Set());
 
   function avisar(texto) {
     setMensaje(texto);
@@ -62,27 +72,33 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
           (p) => p.ean === codigo || p.referencia === codigo || p.articulo === codigo
         );
         if (!match) {
-          avisar(`✗ Sin coincidencia para "${codigo}"`);
+          // No se marca como capturado — un código que no se encontró SÍ se
+          // puede volver a intentar (puede que fuera una lectura a medias).
+          avisar(`✗ No encontrado: "${codigo}"`);
           return;
         }
-        setCapturados((prev) => {
-          const i = prev.findIndex((c) => c.articulo === match.articulo);
-          if (i >= 0) {
-            const copia = [...prev];
-            copia[i] = { ...copia[i], cantidad: copia[i].cantidad + 1 };
-            return copia;
-          }
-          return [
-            ...prev,
-            {
-              articulo: match.articulo,
-              nombre: match.nombre || match.referencia || match.articulo,
-              imagen: match.imagen,
-              precioFinal: match.precioFinal,
-              cantidad: 1,
-            },
-          ];
-        });
+        capturadosCodigosRef.current.add(codigo);
+        if (capturadosArticulosRef.current.has(match.articulo)) {
+          setCapturados((prev) =>
+            prev.map((c) =>
+              c.articulo === match.articulo ? { ...c, codigosVistos: [...c.codigosVistos, codigo] } : c
+            )
+          );
+          avisar(`Ya estaba en la lista: ${match.nombre || match.articulo}`);
+          return;
+        }
+        capturadosArticulosRef.current.add(match.articulo);
+        setCapturados((prev) => [
+          ...prev,
+          {
+            articulo: match.articulo,
+            nombre: match.nombre || match.referencia || match.articulo,
+            imagen: match.imagen,
+            precioFinal: match.precioFinal,
+            cantidad: 1,
+            codigosVistos: [codigo],
+          },
+        ]);
         avisar(`✓ ${match.nombre || match.articulo}`);
       })
       .catch(() => avisar('✗ Fallo al buscar ese código'))
@@ -101,6 +117,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       .decodeFromConstraints({ video: { facingMode: 'environment' } }, videoRef.current, (resultado) => {
         if (!resultado || !activo) return;
         const codigo = resultado.getText();
+        if (capturadosCodigosRef.current.has(codigo)) return;
         const ahora = Date.now();
         if (codigo === ultimoRef.current.codigo && ahora - ultimoRef.current.cuando < COOLDOWN_MS) return;
         if (procesandoRef.current) return;
@@ -134,7 +151,16 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
   }
 
   function quitarCapturado(articulo) {
-    setCapturados((prev) => prev.filter((c) => c.articulo !== articulo));
+    setCapturados((prev) => {
+      const fila = prev.find((c) => c.articulo === articulo);
+      // Si se quita de la lista a mano, se libera también del "ya
+      // capturado" — si el cliente vuelve a escanearlo, debe poder volver a
+      // añadirlo (los códigos concretos que se leyeron para esta fila
+      // quedan guardados en la propia fila, ver procesarCodigo).
+      fila?.codigosVistos?.forEach((c) => capturadosCodigosRef.current.delete(c));
+      capturadosArticulosRef.current.delete(articulo);
+      return prev.filter((c) => c.articulo !== articulo);
+    });
   }
 
   function cambiarCantidad(articulo, delta) {
@@ -185,7 +211,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
           <p style={{ margin: 0, fontWeight: 500 }}>
             Capturado{capturados.length === 1 ? '' : 's'} ({totalUnidades} caja{totalUnidades === 1 ? '' : 's'})
           </p>
-          <button className="danger-outline" onClick={onCerrar}>
+          <button className="danger" onClick={onCerrar}>
             Cerrar
           </button>
         </div>
@@ -255,7 +281,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         <p style={{ color: '#fff', margin: 0, fontSize: 14 }}>
           Apunta a un código de barras{capturados.length > 0 ? ` · ${totalUnidades} capturado${totalUnidades === 1 ? '' : 's'}` : ''}
         </p>
-        <button className="danger-outline" onClick={salirDeCamara}>
+        <button className="danger" onClick={salirDeCamara}>
           Salir
         </button>
       </div>
@@ -301,36 +327,51 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
 
       {/* Tira de lo capturado hasta ahora, visible mientras se sigue
           escaneando — así se ve "en directo" lo que ya se ha metido en la
-          lista sin tener que salir de la cámara para comprobarlo. */}
+          lista sin tener que salir de la cámara para comprobarlo. Bastante
+          más grande que un chip normal (era difícil distinguir qué se
+          acababa de capturar), y la última captura (siempre al final del
+          array — solo se añade al final) todavía más grande, a modo de
+          confirmación visual clara de "esto es justo lo que acabas de
+          leer". Si esto deja menos alto para el visor de la cámara arriba,
+          es aceptable — se encoge solo (flex:1 en el visor). */}
       {capturados.length > 0 && (
         <div
           style={{
             display: 'flex',
-            gap: 8,
+            alignItems: 'flex-end',
+            gap: 10,
             overflowX: 'auto',
-            padding: 12,
+            padding: 14,
             background: 'rgba(0,0,0,0.55)',
           }}
         >
-          {capturados.map((c) => (
-            <div
-              key={c.articulo}
-              style={{
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: '#fff',
-                borderRadius: 'var(--radius)',
-                padding: '4px 8px 4px 4px',
-              }}
-            >
-              <div className="product-thumb" style={{ width: 30, height: 30 }}>
-                {c.imagen ? <img src={c.imagen} alt="" /> : '—'}
+          {capturados.map((c, idx) => {
+            const esUltima = idx === capturados.length - 1;
+            const tamThumb = esUltima ? 64 : 44;
+            return (
+              <div
+                key={c.articulo}
+                style={{
+                  flexShrink: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 4,
+                  background: '#fff',
+                  borderRadius: 'var(--radius)',
+                  padding: esUltima ? '8px 10px' : '6px 8px',
+                  border: esUltima ? '2px solid var(--accent)' : 'none',
+                }}
+              >
+                <div className="product-thumb" style={{ width: tamThumb, height: tamThumb }}>
+                  {c.imagen ? <img src={c.imagen} alt="" /> : '—'}
+                </div>
+                <span style={{ fontSize: esUltima ? 13 : 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  ×{c.cantidad}
+                </span>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>×{c.cantidad}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

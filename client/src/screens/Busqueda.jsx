@@ -457,7 +457,7 @@ export default function Busqueda({
                   <button onClick={() => añadir(zoomProducto, 1)}>+</button>
                 </div>
               )}
-              <button className="danger-outline" onClick={() => setZoomProducto(null)}>
+              <button className="danger" onClick={() => setZoomProducto(null)}>
                 Cerrar
               </button>
             </div>

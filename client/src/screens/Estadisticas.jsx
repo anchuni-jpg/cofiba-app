@@ -286,7 +286,7 @@ function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending, noDisponibles
           ) : (
             <span />
           )}
-          <button className="danger-outline" onClick={onCerrar}>
+          <button className="danger" onClick={onCerrar}>
             Cerrar
           </button>
         </div>
