@@ -27,9 +27,11 @@ const FORMATOS = [
 const COOLDOWN_MS = 2500;
 const MENSAJE_MS = 2200;
 
+// El precio llega ya formateado del servidor como texto con coma decimal
+// (p. ej. "5,28"), igual que en Productos.jsx/Busqueda.jsx — Number(n) lo
+// convertiría en NaN y el precio nunca se vería, así que se interpola tal cual.
 function formatoEuro(n) {
-  if (n == null || !Number.isFinite(Number(n))) return null;
-  return `${n}€`;
+  return n ? `${n}€` : null;
 }
 
 // Duplica formatoCaja/nivelStock de Productos.jsx — una función corta, no
