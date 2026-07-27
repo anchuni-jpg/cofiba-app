@@ -643,6 +643,41 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
   });
 });
 
+// "Lo más comprado"/"Por categoría" (arriba) salen de /consumo.html, que no
+// trae fecha de compra en ningún sitio (comprobado en vivo) — no hay forma
+// honesta de acotarlos a "el último mes" o parecido, así que siempre son de
+// toda la cuenta. Lo único que SÍ tiene fecha real es el registro de
+// pedidos hechos desde esta misma app (pedidosStore.js) — esta ruta,
+// aparte de /api/estadisticas para no mezclar un cálculo pesado (recorrer
+// todo el índice del catálogo) con uno ligero que cambia cada vez que se
+// toca un botón de periodo, es la única que de verdad respeta el periodo
+// pedido.
+const DIA_MS = 24 * 60 * 60 * 1000;
+function desdePorPeriodo(periodo) {
+  const ahora = Date.now();
+  switch (periodo) {
+    case '1m':
+      return ahora - 30 * DIA_MS;
+    case '3m':
+      return ahora - 90 * DIA_MS;
+    case '6m':
+      return ahora - 180 * DIA_MS;
+    case '12m':
+      return ahora - 365 * DIA_MS;
+    case 'ano':
+      return new Date(new Date().getFullYear(), 0, 1).getTime();
+    default:
+      return null;
+  }
+}
+
+app.get('/api/facturacion', requireSession, (req, res) => {
+  const periodo = req.query.periodo || null;
+  const desde = desdePorPeriodo(periodo);
+  const { totalPedidos, totalImporte } = resumenFacturacion({ usuario: req.usuario, desde: desde ?? undefined });
+  res.json({ periodo, totalPedidos, totalImporte });
+});
+
 // Artículos detectados como nuevos en el catálogo en los últimos 3 días
 // (ver novedadesStore.js) — no depende del usuario que pregunta, es el
 // mismo catálogo general para cualquiera, así que no hace falta ningún

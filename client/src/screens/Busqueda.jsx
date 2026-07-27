@@ -43,8 +43,6 @@ function combinarResultados(anteriores, frescos) {
 
 export default function Busqueda({
   termino,
-  codigoEscaneado,
-  onCodigoConsumido,
   onBack,
   onCartChanged,
   codigosEnCarrito,
@@ -60,12 +58,6 @@ export default function Busqueda({
   const [terminoActivo, setTerminoActivo] = useState(termino);
   const [campo, setCampo] = useState(termino);
   const [escaneando, setEscaneando] = useState(false);
-  // Código de barras a la espera de un resultado exacto — al llegar
-  // `resultados`, si alguno coincide de verdad (ean/referencia/articulo) se
-  // abre su ficha directamente en vez de dejar solo la lista. Se consume
-  // (null) en cuanto se usa, tanto si hubo coincidencia como si no, para no
-  // intentarlo de nuevo en una búsqueda posterior sin relación.
-  const [autoAbrirCodigo, setAutoAbrirCodigo] = useState(null);
   const [resultados, setResultados] = useState(null);
   const [construyendo, setConstruyendo] = useState(false);
   const [progreso, setProgreso] = useState(null);
@@ -119,42 +111,6 @@ export default function Busqueda({
     setTerminoActivo(q);
     setNonce((n) => n + 1);
   }
-
-  // Compartida por el escáner de aquí mismo y por el de Categorías (vía
-  // `codigoEscaneado`, más abajo) — lanza la búsqueda y deja el código
-  // marcado para que, en cuanto lleguen resultados, se intente abrir la
-  // ficha directamente.
-  function buscarPorCodigo(codigo) {
-    setCampo(codigo);
-    setTerminoActivo(codigo);
-    setAutoAbrirCodigo(codigo);
-    setNonce((n) => n + 1);
-  }
-
-  // Un escaneo hecho desde Categorías llega como prop (esta pantalla ni
-  // siquiera estaba montada todavía cuando ocurrió) — se consume una sola
-  // vez para no repetir la búsqueda si el componente se vuelve a renderizar.
-  useEffect(() => {
-    if (!codigoEscaneado) return;
-    buscarPorCodigo(codigoEscaneado);
-    onCodigoConsumido?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codigoEscaneado]);
-
-  // En cuanto hay resultados y queda un código de barras por resolver, se
-  // busca una coincidencia EXACTA (no basta con que el término aparezca
-  // dentro, como hace el buscador normal) por ean, referencia o articulo —
-  // y se abre su ficha sola. Si no hay ninguna coincidencia exacta, se deja
-  // la lista de resultados normal y ya está (no es un fallo, simplemente el
-  // código no se pudo emparejar con precisión).
-  useEffect(() => {
-    if (!autoAbrirCodigo || !resultados) return;
-    const match = resultados.find(
-      (p) => p.ean === autoAbrirCodigo || p.referencia === autoAbrirCodigo || p.articulo === autoAbrirCodigo
-    );
-    if (match) setZoomProducto(match);
-    setAutoAbrirCodigo(null);
-  }, [resultados, autoAbrirCodigo]);
 
   useEffect(() => {
     let cancelado = false;
@@ -289,13 +245,7 @@ export default function Busqueda({
 
       {escaneando && (
         <Suspense fallback={null}>
-          <BarcodeScanner
-            onCerrar={() => setEscaneando(false)}
-            onDetectado={(codigo) => {
-              setEscaneando(false);
-              buscarPorCodigo(codigo);
-            }}
-          />
+          <BarcodeScanner onCerrar={() => setEscaneando(false)} onCartChanged={onCartChanged} />
         </Suspense>
       )}
 
@@ -425,7 +375,14 @@ export default function Busqueda({
                       );
                     })()}
                   </p>
-                  <div className="qty-stepper" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+                  {/* marginTop:'auto' empuja este bloque al fondo de la
+                      tarjeta, igual en toda la fila aunque el nombre ocupe
+                      1 o 2 líneas — ver el comentario largo en Productos.jsx. */}
+                  <div
+                    className="qty-stepper"
+                    style={{ marginTop: 'auto', paddingTop: 4 }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button onClick={() => añadir(p, -1)}>-</button>
                     <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                     <button onClick={() => añadir(p, 1)}>+</button>
@@ -500,7 +457,9 @@ export default function Busqueda({
                   <button onClick={() => añadir(zoomProducto, 1)}>+</button>
                 </div>
               )}
-              <button onClick={() => setZoomProducto(null)}>Cerrar</button>
+              <button className="danger-outline" onClick={() => setZoomProducto(null)}>
+                Cerrar
+              </button>
             </div>
 
             {relacionados && relacionados.length > 0 && (

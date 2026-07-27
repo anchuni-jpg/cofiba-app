@@ -634,7 +634,13 @@ export default function Productos({
                   );
                 })()}
               </p>
-              <div className="qty-stepper" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+              {/* marginTop: 'auto' (no un valor fijo) empuja este bloque —
+                  y todo lo que va detrás, la etiqueta de caja incluida — al
+                  fondo de la tarjeta pase lo que pase por encima (nombres
+                  de 1 o 2 líneas, con o sin insignia de stock...). Sin esto
+                  los botones de comprar quedaban a distinta altura entre
+                  tarjetas de la misma fila según cuánto ocupara el nombre. */}
+              <div className="qty-stepper" style={{ marginTop: 'auto', paddingTop: 4 }} onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => añadir(p, -1)}>-</button>
                 <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                 <button onClick={() => añadir(p, 1)}>+</button>
@@ -738,7 +744,9 @@ export default function Productos({
                   <button onClick={() => añadir(zoomProducto, 1)}>+</button>
                 </div>
               )}
-              <button onClick={() => setZoomProducto(null)}>Cerrar</button>
+              <button className="danger-outline" onClick={() => setZoomProducto(null)}>
+                Cerrar
+              </button>
             </div>
             {error && (
               <p style={{ color: 'var(--danger)', fontSize: 11, margin: '8px 0 0' }}>{error}</p>

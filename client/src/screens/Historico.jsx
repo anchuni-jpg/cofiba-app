@@ -314,7 +314,11 @@ export default function Historico({
           aria-label="Actualizar histórico"
           style={{ padding: '6px 10px', fontSize: 12 }}
         >
-          {cargandoTodo ? '⟳ Actualizando…' : '⟳ Actualizar'}
+          {/* Con número de página real (no solo "Actualizando…" fijo) — un
+              recorrido forzado de todo el histórico son varias páginas
+              lentas de cofiba.es, una por una; sin progreso visible parecía
+              colgado aunque estuviera avanzando de verdad. */}
+          {cargandoTodo ? `⟳ Actualizando… (${paginasCargadas}/${totalPaginas || '…'})` : '⟳ Actualizar'}
         </button>
         <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
           {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
@@ -555,21 +559,28 @@ export default function Historico({
                   Ver más
                 </button>
               )}
-              {noDisponibles.has(p.articulo) ? (
-                <span
-                  className="muted"
-                  style={{ fontSize: 10, color: 'var(--danger)', display: 'block', marginTop: 4 }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  No disponible
-                </span>
-              ) : (
-                <div className="qty-stepper" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => añadir(p, -1)}>-</button>
-                  <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
-                  <button onClick={() => añadir(p, 1)}>+</button>
-                </div>
-              )}
+              {/* Todo el bloque final (paso +/- o "No disponible", más la
+                  etiqueta de caja) va en marginTop:'auto' — empuja lo que
+                  sea que haya al fondo de la tarjeta, igual en toda la fila
+                  aunque el nombre o el botón "Ver más" ocupen distinto
+                  espacio arriba de una tarjeta a otra. */}
+              <div style={{ marginTop: 'auto', paddingTop: 4 }}>
+                {noDisponibles.has(p.articulo) ? (
+                  <span
+                    className="muted"
+                    style={{ fontSize: 10, color: 'var(--danger)', display: 'block' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    No disponible
+                  </span>
+                ) : (
+                  <div className="qty-stepper" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => añadir(p, -1)}>-</button>
+                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                    <button onClick={() => añadir(p, 1)}>+</button>
+                  </div>
+                )}
+              </div>
               {p.undVenta && (
                 <span className="muted" style={{ fontSize: 10 }}>
                   caja de {formatoCaja(p.undVenta)} uds
@@ -649,7 +660,9 @@ export default function Historico({
                   <button onClick={() => añadir(zoomProducto, 1)}>+</button>
                 </div>
               )}
-              <button onClick={() => setZoomProducto(null)}>Cerrar</button>
+              <button className="danger-outline" onClick={() => setZoomProducto(null)}>
+                Cerrar
+              </button>
             </div>
 
             {relacionados && relacionados.length > 0 && (

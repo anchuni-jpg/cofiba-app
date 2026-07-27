@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 
+const PERIODOS = [
+  { valor: '1m', etiqueta: '1 mes' },
+  { valor: '3m', etiqueta: '3 meses' },
+  { valor: '6m', etiqueta: '6 meses' },
+  { valor: '12m', etiqueta: '12 meses' },
+  { valor: 'ano', etiqueta: 'Año en curso' },
+];
+
 // Duplica nivelStock de Productos.jsx — 10 cajas o más: "STOCK" en verde,
 // sin número; por debajo: "STOCK BAJO" en el color de aviso.
 function nivelStock(stock, undVenta) {
@@ -278,7 +286,9 @@ function ModalProducto({ p, onAbrir, onCerrar, onAñadir, pending, noDisponibles
           ) : (
             <span />
           )}
-          <button onClick={onCerrar}>Cerrar</button>
+          <button className="danger-outline" onClick={onCerrar}>
+            Cerrar
+          </button>
         </div>
 
         {relacionados && relacionados.length > 0 && (
@@ -373,6 +383,13 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
   // solo se deja de ofrecer repetir el pedido hasta que vuelva a estar
   // disponible.
   const [noDisponibles, setNoDisponibles] = useState(new Set());
+  // Periodo para "Pedidos hechos desde la app" (única parte de Estadísticas
+  // con fecha real — ver el comentario largo junto a /api/facturacion en el
+  // servidor). '3m' por defecto: suficiente para hacerse una idea sin ser
+  // tan corto como para salir casi siempre vacío en una cuenta que no pide
+  // todos los meses.
+  const [periodo, setPeriodo] = useState('3m');
+  const [facturacionPeriodo, setFacturacionPeriodo] = useState(null);
 
   function añadir(p, delta) {
     const anterior = pending[p.articulo] ?? 0;
@@ -414,6 +431,23 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
         // Silencioso a propósito, mismo motivo que arriba.
       });
   }, []);
+
+  useEffect(() => {
+    let cancelado = false;
+    setFacturacionPeriodo(null);
+    api
+      .facturacion(periodo)
+      .then((data) => {
+        if (!cancelado) setFacturacionPeriodo(data);
+      })
+      .catch(() => {
+        // Silencioso: es un dato complementario dentro de la pestaña, no
+        // algo que deba tapar el resto de Estadísticas si falla.
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [periodo]);
 
   function cargar({ mostrarCache }) {
     setError(null);
@@ -673,6 +707,46 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
                 <div className="card" style={{ flex: 1, textAlign: 'center' }}>
                   <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--accent)' }}>{formatoEuro(datos.totalImporte)}</p>
                   <p className="muted" style={{ margin: '2px 0 0', fontSize: 11 }}>Importe total</p>
+                </div>
+              </div>
+
+              {/* A diferencia de los 3 cuadros de arriba (de siempre —
+                  cofiba.es no da fecha de cada compra pasada), esto SÍ tiene
+                  fecha real: son los pedidos hechos desde esta misma app. */}
+              <p style={{ fontWeight: 600, fontSize: 13, margin: '0 0 2px' }}>Pedidos hechos desde esta app</p>
+              <p className="muted" style={{ margin: '0 0 8px' }}>
+                Los cuadros de arriba son de toda tu cuenta (sin fecha); esto solo cuenta lo pedido desde aquí.
+              </p>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                {PERIODOS.map((op) => (
+                  <button
+                    key={op.valor}
+                    onClick={() => setPeriodo(op.valor)}
+                    style={{
+                      flex: '1 1 auto',
+                      fontSize: 11,
+                      padding: '6px 4px',
+                      background: periodo === op.valor ? 'var(--accent)' : 'var(--surface-2)',
+                      color: periodo === op.valor ? '#fff' : 'var(--text-primary)',
+                      borderColor: periodo === op.valor ? 'var(--accent)' : 'var(--border)',
+                    }}
+                  >
+                    {op.etiqueta}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+                <div className="card" style={{ flex: 1, textAlign: 'center' }}>
+                  <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--accent)' }}>
+                    {facturacionPeriodo ? facturacionPeriodo.totalPedidos : '—'}
+                  </p>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 11 }}>Pedidos</p>
+                </div>
+                <div className="card" style={{ flex: 1, textAlign: 'center' }}>
+                  <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--accent)' }}>
+                    {facturacionPeriodo ? formatoEuro(facturacionPeriodo.totalImporte) : '—'}
+                  </p>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 11 }}>Importe</p>
                 </div>
               </div>
 

@@ -55,12 +55,6 @@ export default function App() {
   // una navegación que no tiene nada que ver.
   const [subcategoriaInicial, setSubcategoriaInicial] = useState(null);
   const [busqueda, setBusqueda] = useState(null);
-  // Solo se rellena cuando la búsqueda vino de escanear un código de barras
-  // (no al escribir a mano) — le dice a Busqueda.jsx que, si encuentra una
-  // coincidencia exacta, abra directamente su ficha en vez de solo enseñar
-  // la lista de resultados. Se consume una sola vez (Busqueda.jsx lo limpia
-  // en cuanto lo usa) para que no se cuele en una búsqueda posterior.
-  const [codigoEscaneado, setCodigoEscaneado] = useState(null);
   // Filtro global de isla (Mallorca/Ibiza/Formentera) — se activa desde
   // Categorías pero afecta a Productos/Búsqueda/Histórico por igual, así que
   // vive aquí arriba. Persistido en localStorage (no sessionStorage): es una
@@ -328,13 +322,13 @@ export default function App() {
               setSubcategoriaInicial(null);
               setTab('productos');
             }}
-            onSearch={(q, opts) => {
+            onSearch={(q) => {
               setBusqueda(q);
-              setCodigoEscaneado(opts?.escaneado ? q : null);
               setTab('busqueda');
             }}
             islaFiltro={islaFiltro}
             onCambiarIsla={cambiarIsla}
+            onCartChanged={refreshCartCount}
           />
         )}
         {tab === 'productos' && (
@@ -354,8 +348,6 @@ export default function App() {
         {tab === 'busqueda' && (
           <Busqueda
             termino={busqueda}
-            codigoEscaneado={codigoEscaneado}
-            onCodigoConsumido={() => setCodigoEscaneado(null)}
             onBack={() => setTab('categorias')}
             onCartChanged={refreshCartCount}
             codigosEnCarrito={codigosEnCarrito}

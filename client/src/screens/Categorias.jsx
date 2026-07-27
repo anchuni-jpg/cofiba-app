@@ -41,7 +41,7 @@ function iconoCategoria(slug) {
   return '📦';
 }
 
-export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCambiarIsla }) {
+export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCambiarIsla, onCartChanged }) {
   const [categorias, setCategorias] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -92,16 +92,7 @@ export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCa
 
       {escaneando && (
         <Suspense fallback={null}>
-          <BarcodeScanner
-            onCerrar={() => setEscaneando(false)}
-            onDetectado={(codigo) => {
-              setEscaneando(false);
-              // El escaneo lleva directo a la ficha ampliada del producto (si
-              // hay una coincidencia exacta), no solo a la lista de
-              // resultados — ver el efecto en Busqueda.jsx que consume esto.
-              onSearch(codigo, { escaneado: true });
-            }}
-          />
+          <BarcodeScanner onCerrar={() => setEscaneando(false)} onCartChanged={onCartChanged} />
         </Suspense>
       )}
 

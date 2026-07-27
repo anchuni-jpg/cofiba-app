@@ -94,6 +94,14 @@ button.danger-text {
   border: none;
   background: none;
 }
+/* Botón "Cerrar" de las fichas ampliadas — a diferencia de .danger-text
+   (sin borde, para el "Salir" de la barra de arriba) este conserva el
+   aspecto de botón normal, solo en rojo, porque va al lado del paso +/- y
+   tiene que seguir leyéndose como un botón pulsable, no como texto suelto. */
+button.danger-outline {
+  color: var(--danger);
+  border-color: var(--danger);
+}
 
 input {
   font: inherit;

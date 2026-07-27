@@ -158,6 +158,12 @@ export const api = {
     await setCache(CLAVE, mejor);
     return mejor;
   },
+  // Ligera y siempre en vivo a propósito (sin caché): solo suma un array en
+  // memoria del servidor, no recorre nada de cofiba.es — no hace falta
+  // ahorrarse la petición como con el resto de Estadísticas.
+  facturacion(periodo) {
+    return request(`/facturacion${periodo ? `?periodo=${periodo}` : ''}`);
+  },
   novedades() {
     return request('/novedades');
   },
