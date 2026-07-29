@@ -185,13 +185,17 @@ export default function Productos({
             return {
               ...base,
               paginas: copia,
-              // data.subcategorias?.length (no solo `data.subcategorias ||`):
-              // un array vacío es "verdadero" en JS, así que `[] || base...`
-              // nunca caía al respaldo — si una respuesta puntual no traía
-              // la lista de subcategorías, se pisaba la buena que ya
-              // teníamos con un array vacío, y con ella se perdía la
-              // siguiente subcategoría a la que saltar con "Siguiente".
-              subcategorias: data.subcategorias?.length ? data.subcategorias : base.subcategorias,
+              // Se queda siempre con la lista MÁS LARGA vista hasta ahora, no
+              // solo "la fresca si no está vacía": un array vacío es
+              // "verdadero" en JS (`[] || base...` nunca caía al respaldo),
+              // pero además alguna respuesta puntual trae la lista
+              // INCOMPLETA sin llegar a estar vacía del todo — comparar
+              // longitudes cubre los dos casos y nunca deja que una lista
+              // peor pise a una mejor ya vista.
+              subcategorias:
+                (data.subcategorias?.length || 0) > (base.subcategorias?.length || 0)
+                  ? data.subcategorias
+                  : base.subcategorias,
               grupo: data.grupo || base.grupo,
               siguienteGrupoSlug: data.siguienteGrupo || null,
               debugSample: data.debug?.normalizedSample || null,

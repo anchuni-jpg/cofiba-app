@@ -383,24 +383,29 @@ const ALFABETICO = (a, b) =>
 const POR_NOMBRE = (a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' });
 
 // Última lista de subcategorías (con nombre real) vista de verdad para cada
-// categoría — el acordeón lateral debería salir en cualquier página de esa
-// categoría, pero alguna respuesta puntual (p. ej. una página intermedia con
-// un layout ligeramente distinto) a veces no lo trae. Sin este respaldo,
-// getProductosAgrupados calculaba "lista" (y por tanto siguienteGrupo/
-// idx) sobre un array vacío justo esa vez, y el botón "Siguiente" del
-// cliente se quedaba pegado en genérico y deshabilitado aunque sí hubiera
-// subcategoría siguiente de verdad — este caché en memoria (nunca se
-// borra, solo se sustituye por una lista más reciente cuando llega una
-// buena) evita que un único fallo de scrapeo tire abajo la navegación.
+// categoría — el acordeón lateral debería salir completo en cualquier
+// página de esa categoría, pero alguna respuesta puntual (p. ej. una página
+// intermedia con un layout ligeramente distinto) a veces lo trae vacío o
+// INCOMPLETO (le faltan subcategorías reales, sin llegar a estar del todo
+// vacío). Confiar sin más en "la de esta respuesta si no está vacía" dejaba
+// pasar justo ese caso incompleto: getProductosAgrupados calculaba idx/
+// siguienteGrupo sobre una lista más corta que la real esa vez, y si la
+// subcategoría actual quedaba (falsamente) como la última de esa lista
+// corta, el botón "Siguiente" del cliente se quedaba pegado en genérico y
+// deshabilitado aunque sí hubiera más subcategorías de verdad después.
+// Por eso aquí no se usa "la fresca si no está vacía": se usa siempre la
+// MÁS LARGA de las que se conocen (fresca de esta respuesta, alternativa, o
+// la ya cacheada) — nunca una más corta que la mejor ya vista — y el caché
+// solo crece, nunca se sustituye por una peor.
 const subcategoriasPorCategoria = new Map();
 
 function subcategoriasConRespaldo(categoriaSlug, subcategoriasFrescas, subcategoriasAlternativas) {
-  if (subcategoriasFrescas?.length) {
-    subcategoriasPorCategoria.set(categoriaSlug, subcategoriasFrescas);
-    return subcategoriasFrescas;
-  }
-  if (subcategoriasAlternativas?.length) return subcategoriasAlternativas;
-  return subcategoriasPorCategoria.get(categoriaSlug) || [];
+  const cacheada = subcategoriasPorCategoria.get(categoriaSlug) || [];
+  const candidatas = [subcategoriasFrescas, subcategoriasAlternativas, cacheada].filter((l) => l?.length);
+  if (!candidatas.length) return [];
+  const mejor = candidatas.reduce((a, b) => (b.length > a.length ? b : a));
+  if (mejor.length > cacheada.length) subcategoriasPorCategoria.set(categoriaSlug, mejor);
+  return mejor;
 }
 
 // cofiba.es's own page size is small (12 productos/página) and fixed by its
