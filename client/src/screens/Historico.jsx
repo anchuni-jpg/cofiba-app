@@ -39,9 +39,14 @@ export default function Historico({
   codigosSesion,
   onIrACategoria,
   islaFiltro,
-  vistaColumnas,
+  vista,
   onCambiarVista,
 }) {
+  // Mismo criterio que Productos.jsx/Busqueda.jsx: 'lista'/'lista-grande'
+  // son de fila, 'grid2'/'grid3' de rejilla; `grande` solo agranda la fila.
+  const esFila = vista === 'lista' || vista === 'lista-grande';
+  const grande = vista === 'lista-grande';
+  const columnas = vista === 'grid3' ? 3 : 2;
   const [filtro, setFiltro] = useState('');
   // Cuántos artículos revelar de golpe (y cuántos más cada "Ver más") —
   // mismo control y misma clave de localStorage que Productos.jsx, para que
@@ -77,17 +82,16 @@ export default function Historico({
   // esconde (es un hecho pasado real), pero deja de ofrecer repetir su
   // compra hasta que vuelva a estar disponible.
   const [noDisponibles, setNoDisponibles] = useState(new Set());
-  // Categorías/subcategorías plegadas — tocar la franja verde de la
-  // cabecera pliega/despliega sus artículos, para poder repasar el
-  // histórico por grupos sin tener que desplazarse por cientos de filas.
-  const [colapsados, setColapsados] = useState(new Set());
-  function alternarColapso(clave) {
-    setColapsados((prev) => {
-      const copia = new Set(prev);
-      if (copia.has(clave)) copia.delete(clave);
-      else copia.add(clave);
-      return copia;
-    });
+  // Categorías/subcategorías ya repasadas — tocar la franja verde de la
+  // cabecera QUITA el grupo entero de la vista (cabecera incluida, no solo
+  // sus artículos), para ir despejando la pantalla a medida que se procesa
+  // el pedido en vez de tener que desplazarse otra vez por lo ya revisado.
+  // Estado local (no localStorage): al salir de Histórico y volver a entrar
+  // (el componente se desmonta/monta con cada cambio de pestaña) este set
+  // se reinicia solo y todo vuelve a aparecer, listo para la próxima vez.
+  const [quitados, setQuitados] = useState(new Set());
+  function quitarGrupo(clave) {
+    setQuitados((prev) => new Set(prev).add(clave));
   }
   const [zoomProducto, setZoomProducto] = useState(null);
   // "También te puede interesar" (afinidad por subcategoría + popularidad
@@ -344,7 +348,7 @@ export default function Historico({
           {cargandoTodo ? `⟳ Actualizando… (${paginasCargadas}/${totalPaginas || '…'})` : '⟳ Actualizar'}
         </button>
         <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
-          {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
+          {vista === 'lista' ? '☰ Lista' : vista === 'lista-grande' ? '☰ Lista XL' : `▦ ${columnas}`}
         </button>
       </div>
 
@@ -395,7 +399,7 @@ export default function Historico({
         </p>
       )}
 
-      {vistaColumnas === 1 ? (
+      {esFila ? (
         <div>
           {visiblesLista.map((p, idx) => {
             const grupo = grupoDe(p);
@@ -403,16 +407,16 @@ export default function Historico({
             const nuevaCategoria = !grupoAnterior || grupo.categoria !== grupoAnterior.categoria;
             const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
             const clave = claveGrupo(grupo);
-            const colapsado = colapsados.has(clave);
+            const quitado = quitados.has(clave);
             return (
               // La clave incluye la posición: el mismo artículo puede aparecer
               // más de una vez en el histórico real (comprado en fechas
               // distintas), y repetir solo el articulo como key confundía a
               // React (dos filas con la misma key "se superponían" visualmente).
               <div key={`${p.articulo}-${idx}`}>
-                {nuevaSubcategoria && (
+                {nuevaSubcategoria && !quitado && (
                   <div
-                    onClick={() => alternarColapso(clave)}
+                    onClick={() => quitarGrupo(clave)}
                     style={{
                       marginTop: idx === 0 ? 0 : 16,
                       marginBottom: 6,
@@ -443,37 +447,39 @@ export default function Historico({
                         {grupo.subcategoria}
                       </p>
                     </div>
-                    <span style={{ fontSize: 18, color: 'var(--accent)', flexShrink: 0 }}>
-                      {colapsado ? '▸' : '▾'}
+                    <span style={{ fontSize: 12, color: 'var(--accent)', flexShrink: 0, fontWeight: 700 }}>
+                      ✕ Quitar
                     </span>
                   </div>
                 )}
-                {!colapsado && (
+                {!quitado && (
                 <div
-                  className={`product-row${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
+                  className={`product-row${grande ? ' product-row-lg' : ''}${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
                   onClick={() => setZoomProducto(p)}
                   style={{ cursor: 'zoom-in' }}
                 >
-              <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
+              <div className="product-thumb" style={grande ? { width: 92, height: 92 } : undefined}>
+                {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <p style={{ fontSize: grande ? 17 : 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {p.nombre || p.referencia || p.articulo}
                 </p>
-                <p className="muted" style={{ margin: '2px 0' }}>
+                <p className="muted" style={grande ? { fontSize: 14, margin: '4px 0' } : { margin: '2px 0' }}>
                   Ref. {p.referencia || p.articulo}
                 </p>
-                <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+                <p style={{ fontSize: grande ? 17 : 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                   {p.precioFinal ? `${p.precioFinal}€` : '—'}
                   {enCarritoOSesion(p.articulo) && (
                     <span style={{ marginLeft: 5 }}>
-                      <CarritoIcon />
+                      <CarritoIcon size={grande ? 17 : 13} />
                     </span>
                   )}
                   {(() => {
                     const info = nivelStock(p.stock, p.undVenta);
                     return (
                       info && (
-                        <span style={{ marginLeft: 5, fontSize: 11, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                        <span style={{ marginLeft: 5, fontSize: grande ? 13 : 11, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
                           {info.texto}
                         </span>
                       )
@@ -487,7 +493,7 @@ export default function Historico({
                       e.stopPropagation();
                       onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
                     }}
-                    style={{ fontSize: 11, padding: '3px 8px', marginTop: 3 }}
+                    style={{ fontSize: grande ? 13 : 11, padding: grande ? '5px 10px' : '3px 8px', marginTop: 3 }}
                   >
                     Ver más
                   </button>
@@ -502,14 +508,14 @@ export default function Historico({
                     No disponible
                   </span>
                 ) : (
-                  <div className="qty-stepper">
+                  <div className={grande ? 'qty-stepper qty-stepper-lg' : 'qty-stepper'}>
                     <button onClick={() => añadir(p, -1)}>-</button>
-                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: grande ? 16 : 13 }}>{pending[p.articulo] ?? 0}</span>
                     <button onClick={() => añadir(p, 1)}>+</button>
                   </div>
                 )}
                 {p.undVenta && (
-                  <span className="muted" style={{ fontSize: 11 }}>
+                  <span className="muted" style={{ fontSize: grande ? 13 : 11 }}>
                     caja de {formatoCaja(p.undVenta)} uds
                   </span>
                 )}
@@ -521,19 +527,19 @@ export default function Historico({
           })}
         </div>
       ) : (
-        <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${vistaColumnas}, 1fr)` }}>
+        <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${columnas}, 1fr)` }}>
           {visiblesLista.map((p, idx) => {
             const grupo = grupoDe(p);
             const grupoAnterior = idx > 0 ? grupoDe(visiblesLista[idx - 1]) : null;
             const nuevaCategoria = !grupoAnterior || grupo.categoria !== grupoAnterior.categoria;
             const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
             const clave = claveGrupo(grupo);
-            const colapsado = colapsados.has(clave);
+            const quitado = quitados.has(clave);
             return (
               <Fragment key={`${p.articulo}-${idx}`}>
-                {nuevaSubcategoria && (
+                {nuevaSubcategoria && !quitado && (
                   <div
-                    onClick={() => alternarColapso(clave)}
+                    onClick={() => quitarGrupo(clave)}
                     style={{
                       gridColumn: '1 / -1',
                       marginTop: idx === 0 ? 0 : 10,
@@ -565,12 +571,12 @@ export default function Historico({
                         {grupo.subcategoria}
                       </p>
                     </div>
-                    <span style={{ fontSize: 18, color: 'var(--accent)', flexShrink: 0 }}>
-                      {colapsado ? '▸' : '▾'}
+                    <span style={{ fontSize: 12, color: 'var(--accent)', flexShrink: 0, fontWeight: 700 }}>
+                      ✕ Quitar
                     </span>
                   </div>
                 )}
-                {!colapsado && (
+                {!quitado && (
                 <div
                   className={`producto-card${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
                   onClick={() => setZoomProducto(p)}

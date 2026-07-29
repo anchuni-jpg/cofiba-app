@@ -208,6 +208,20 @@ input {
   align-items: center;
 }
 
+/* Vista "Lista XL" (una de las 4 vistas: 2 en línea + 2 en rejilla) — fila
+   más alta y con más aire, pensada para que quepan ~4 en pantalla de golpe
+   sin tener que entrecerrar los ojos. El tamaño de la foto/fuentes se pone
+   inline por fila (ver Productos.jsx/Busqueda.jsx/Historico.jsx: variable
+   `grande`) — esta clase solo aporta el padding extra de la fila en sí. */
+.product-row-lg {
+  padding: 18px 0;
+}
+.qty-stepper-lg button {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+
 .product-thumb {
   width: 62px;
   height: 62px;

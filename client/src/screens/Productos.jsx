@@ -52,9 +52,16 @@ export default function Productos({
   codigosEnCarrito,
   codigosSesion,
   islaFiltro,
-  vistaColumnas,
+  vista,
   onCambiarVista,
 }) {
+  // 'lista'/'lista-grande' son ambas de fila (horizontal); 'grid2'/'grid3'
+  // son de rejilla (vertical, N columnas). `grande` solo afecta al tamaño
+  // dentro de la vista de fila — enseña unos 4 artículos de golpe en vez de
+  // los ~6-7 de la fila compacta normal.
+  const esFila = vista === 'lista' || vista === 'lista-grande';
+  const grande = vista === 'lista-grande';
+  const columnas = vista === 'grid3' ? 3 : 2;
   // La subcategoría activa se guarda junto a la clave del contexto que la
   // creó. Cuando cambia la categoría/búsqueda, la clave deja de coincidir y
   // el estado viejo se descarta en el MISMO render — sin efectos de reseteo
@@ -178,7 +185,13 @@ export default function Productos({
             return {
               ...base,
               paginas: copia,
-              subcategorias: data.subcategorias || base.subcategorias,
+              // data.subcategorias?.length (no solo `data.subcategorias ||`):
+              // un array vacío es "verdadero" en JS, así que `[] || base...`
+              // nunca caía al respaldo — si una respuesta puntual no traía
+              // la lista de subcategorías, se pisaba la buena que ya
+              // teníamos con un array vacío, y con ella se perdía la
+              // siguiente subcategoría a la que saltar con "Siguiente".
+              subcategorias: data.subcategorias?.length ? data.subcategorias : base.subcategorias,
               grupo: data.grupo || base.grupo,
               siguienteGrupoSlug: data.siguienteGrupo || null,
               debugSample: data.debug?.normalizedSample || null,
@@ -467,7 +480,7 @@ export default function Productos({
           Comprados
         </button>
         <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
-          {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
+          {vista === 'lista' ? '☰ Lista' : vista === 'lista-grande' ? '☰ Lista XL' : `▦ ${columnas}`}
         </button>
       </div>
 
@@ -530,11 +543,11 @@ export default function Productos({
         </p>
       )}
 
-      {vistaColumnas === 1 ? (
+      {esFila ? (
         <div>
           {productosFiltrados.map((p) => (
             <div
-              className={`product-row${p.comprado ? ' product-row-comprado' : ''}${
+              className={`product-row${grande ? ' product-row-lg' : ''}${p.comprado ? ' product-row-comprado' : ''}${
                 enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
               }`}
               key={p.articulo}
@@ -544,27 +557,43 @@ export default function Productos({
               onClick={() => setZoomProducto(p)}
               style={{ cursor: 'zoom-in' }}
             >
-              <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
+              <div className="product-thumb" style={grande ? { width: 92, height: 92 } : undefined}>
+                {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <p
+                  style={{
+                    fontSize: grande ? 17 : 14,
+                    margin: 0,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
                   {p.nombre || p.referencia || p.articulo}
                 </p>
-                <p className="muted" style={{ margin: '2px 0' }}>
+                <p className="muted" style={grande ? { fontSize: 14, margin: '4px 0' } : { margin: '2px 0' }}>
                   Ref. {p.referencia || p.articulo}
                   {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
                 </p>
-                <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+                <p style={{ fontSize: grande ? 17 : 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                   {p.precioFinal ? `${p.precioFinal}€` : '—'}
                   {enCarritoOSesion(p.articulo) && (
                     <span style={{ marginLeft: 5 }}>
-                      <CarritoIcon />
+                      <CarritoIcon size={grande ? 17 : 13} />
                     </span>
                   )}
                   {(() => {
                     const info = nivelStock(p.stock, p.undVenta);
                     return (
                       info && (
-                        <span style={{ marginLeft: 5, fontSize: 11, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                        <span
+                          style={{
+                            marginLeft: 5,
+                            fontSize: grande ? 13 : 11,
+                            color: info.bajo ? 'var(--danger)' : 'var(--accent)',
+                          }}
+                        >
                           {info.texto}
                         </span>
                       )
@@ -576,13 +605,15 @@ export default function Productos({
                 onClick={(e) => e.stopPropagation()}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
               >
-                <div className="qty-stepper">
+                <div className={grande ? 'qty-stepper qty-stepper-lg' : 'qty-stepper'}>
                   <button onClick={() => añadir(p, -1)}>-</button>
-                  <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                  <span style={{ minWidth: 14, textAlign: 'center', fontSize: grande ? 16 : 13 }}>
+                    {pending[p.articulo] ?? 0}
+                  </span>
                   <button onClick={() => añadir(p, 1)}>+</button>
                 </div>
                 {p.undVenta && (
-                  <span className="muted" style={{ fontSize: 11 }}>
+                  <span className="muted" style={{ fontSize: grande ? 13 : 11 }}>
                     caja de {formatoCaja(p.undVenta)} uds
                   </span>
                 )}
@@ -591,7 +622,7 @@ export default function Productos({
           ))}
         </div>
       ) : (
-        <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${vistaColumnas}, 1fr)` }}>
+        <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${columnas}, 1fr)` }}>
           {productosFiltrados.map((p) => (
             <div
               className={`producto-card${p.comprado ? ' product-row-comprado' : ''}${
@@ -660,6 +691,36 @@ export default function Productos({
           <button onClick={() => setVisibles((v) => v + limite)} style={{ width: '100%' }}>
             Ver más ({productosPorComprado.length - visibles} más)
           </button>
+        </div>
+      )}
+
+      {/* Mismo selector de subcategoría que arriba, repetido también al
+          final del listado — así no hace falta subir hasta la barra
+          superior para saltar de subcategoría tras revisar toda la lista.
+          Un poco más grueso que el de arriba (más fácil de acertar con el
+          dedo después de haber bajado toda la pantalla). */}
+      {subcategorias.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 0' }}>
+          {subcategorias.map((s) => {
+            const activa = grupoEfectivo === s.slug;
+            return (
+              <button
+                key={s.slug}
+                onClick={() => elegirSubcategoria(s.slug)}
+                style={{
+                  flexShrink: 0,
+                  fontSize: 13,
+                  padding: '10px 16px',
+                  whiteSpace: 'nowrap',
+                  background: activa ? 'var(--accent)' : 'var(--surface-2)',
+                  color: activa ? '#fff' : 'var(--text-primary)',
+                  borderColor: activa ? 'var(--accent)' : 'var(--border)',
+                }}
+              >
+                {s.nombre}
+              </button>
+            );
+          })}
         </div>
       )}
 

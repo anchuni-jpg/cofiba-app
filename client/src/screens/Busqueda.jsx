@@ -48,9 +48,14 @@ export default function Busqueda({
   codigosEnCarrito,
   codigosSesion,
   islaFiltro,
-  vistaColumnas,
+  vista,
   onCambiarVista,
 }) {
+  // Mismo criterio que Productos.jsx: 'lista'/'lista-grande' son de fila,
+  // 'grid2'/'grid3' de rejilla; `grande` solo agranda la fila.
+  const esFila = vista === 'lista' || vista === 'lista-grande';
+  const grande = vista === 'lista-grande';
+  const columnas = vista === 'grid3' ? 3 : 2;
   // La barra de búsqueda vive en esta misma pantalla (no solo en Categorías)
   // para poder encadenar una búsqueda tras otra sin tener que volver atrás.
   // `terminoActivo` es la que de verdad dispara la consulta; `campo` es solo
@@ -215,7 +220,7 @@ export default function Busqueda({
         </button>
         <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>Búsqueda</p>
         <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
-          {vistaColumnas === 1 ? '☰ Lista' : `▦ ${vistaColumnas}`}
+          {vista === 'lista' ? '☰ Lista' : vista === 'lista-grande' ? '☰ Lista XL' : `▦ ${columnas}`}
         </button>
       </div>
 
@@ -274,38 +279,54 @@ export default function Busqueda({
 
       {resultadosFiltrados && resultadosFiltrados.length > 0 && (
         <>
-          {vistaColumnas === 1 ? (
+          {esFila ? (
             <div>
               {resultadosFiltrados.slice(0, visibles).map((p) => (
                 <div
-                  className={`product-row${p.comprado ? ' product-row-comprado' : ''}${
+                  className={`product-row${grande ? ' product-row-lg' : ''}${p.comprado ? ' product-row-comprado' : ''}${
                     enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
                   }`}
                   key={p.articulo}
                   onClick={() => setZoomProducto(p)}
                   style={{ cursor: 'zoom-in' }}
                 >
-                  <div className="product-thumb">{p.imagen ? <img src={p.imagen} alt="" /> : '—'}</div>
+                  <div className="product-thumb" style={grande ? { width: 92, height: 92 } : undefined}>
+                    {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <p
+                      style={{
+                        fontSize: grande ? 17 : 14,
+                        margin: 0,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
                       {p.nombre}
                     </p>
-                    <p className="muted" style={{ margin: '2px 0' }}>
+                    <p className="muted" style={grande ? { fontSize: 14, margin: '4px 0' } : { margin: '2px 0' }}>
                       Ref. {p.referencia || p.articulo} · {p.categoriaNombre}
                       {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
                     </p>
-                    <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
+                    <p style={{ fontSize: grande ? 17 : 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                       {p.precioFinal ? `${p.precioFinal}€` : '—'}
                       {enCarritoOSesion(p.articulo) && (
                         <span style={{ marginLeft: 5 }}>
-                          <CarritoIcon />
+                          <CarritoIcon size={grande ? 17 : 13} />
                         </span>
                       )}
                       {(() => {
                         const info = nivelStock(p.stock, p.undVenta);
                         return (
                           info && (
-                            <span style={{ marginLeft: 5, fontSize: 11, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
+                            <span
+                              style={{
+                                marginLeft: 5,
+                                fontSize: grande ? 13 : 11,
+                                color: info.bajo ? 'var(--danger)' : 'var(--accent)',
+                              }}
+                            >
                               {info.texto}
                             </span>
                           )
@@ -317,13 +338,15 @@ export default function Busqueda({
                     onClick={(e) => e.stopPropagation()}
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
                   >
-                    <div className="qty-stepper">
+                    <div className={grande ? 'qty-stepper qty-stepper-lg' : 'qty-stepper'}>
                       <button onClick={() => añadir(p, -1)}>-</button>
-                      <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                      <span style={{ minWidth: 14, textAlign: 'center', fontSize: grande ? 16 : 13 }}>
+                        {pending[p.articulo] ?? 0}
+                      </span>
                       <button onClick={() => añadir(p, 1)}>+</button>
                     </div>
                     {p.undVenta && (
-                      <span className="muted" style={{ fontSize: 11 }}>
+                      <span className="muted" style={{ fontSize: grande ? 13 : 11 }}>
                         caja de {formatoCaja(p.undVenta)} uds
                       </span>
                     )}
@@ -332,7 +355,7 @@ export default function Busqueda({
               ))}
             </div>
           ) : (
-            <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${vistaColumnas}, 1fr)` }}>
+            <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${columnas}, 1fr)` }}>
               {resultadosFiltrados.slice(0, visibles).map((p) => (
                 <div
                   className={`producto-card${p.comprado ? ' product-row-comprado' : ''}${

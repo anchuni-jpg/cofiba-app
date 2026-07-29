@@ -60,10 +60,23 @@ export default function App() {
   // vive aquí arriba. Persistido en localStorage (no sessionStorage): es una
   // preferencia del dispositivo, tiene sentido que sobreviva a cerrar la app.
   const [islaFiltro, setIslaFiltro] = useState(() => localStorage.getItem('cofiba:isla-filtro') || null);
-  // Cuántas columnas usan las listas de productos (Productos/Búsqueda/
-  // Histórico) — 1 es la fila de siempre, 2/3 son tarjetas en rejilla más
-  // compactas. También preferencia de dispositivo, mismo motivo que la isla.
-  const [vistaColumnas, setVistaColumnas] = useState(() => Number(localStorage.getItem('cofiba:columnas')) || 1);
+  // Cómo se enseñan las listas de productos (Productos/Búsqueda/Histórico):
+  // 'lista' (fila compacta de siempre), 'lista-grande' (fila más grande,
+  // pensada para ver unos 4 artículos de golpe sin encoger nada), 'grid2'/
+  // 'grid3' (tarjetas en rejilla de 2 o 3 columnas). Preferencia de
+  // dispositivo, mismo motivo que la isla. `cofiba:columnas` es la misma
+  // clave de siempre — antes guardaba un número (1/2/3); si lo que hay
+  // guardado es uno de esos números viejos se traduce una sola vez al
+  // nombre nuevo equivalente, en vez de perder la preferencia del cliente.
+  const VISTAS = ['lista', 'lista-grande', 'grid2', 'grid3'];
+  function vistaInicial() {
+    const guardada = localStorage.getItem('cofiba:columnas');
+    if (VISTAS.includes(guardada)) return guardada;
+    if (guardada === '2') return 'grid2';
+    if (guardada === '3') return 'grid3';
+    return 'lista';
+  }
+  const [vista, setVista] = useState(vistaInicial);
   const [cartCount, setCartCount] = useState(0);
   const [codigosEnCarrito, setCodigosEnCarrito] = useState(new Set());
   const [codigosSesion, setCodigosSesion] = useState(cargarCompradosSesion);
@@ -131,11 +144,12 @@ export default function App() {
     });
   }
 
-  // 1 -> 2 -> 3 -> 1 ...
+  // lista -> lista-grande -> grid2 -> grid3 -> lista ...
   function cambiarVista() {
-    setVistaColumnas((actual) => {
-      const nuevo = actual >= 3 ? 1 : actual + 1;
-      localStorage.setItem('cofiba:columnas', String(nuevo));
+    setVista((actual) => {
+      const idx = VISTAS.indexOf(actual);
+      const nuevo = VISTAS[(idx + 1) % VISTAS.length];
+      localStorage.setItem('cofiba:columnas', nuevo);
       return nuevo;
     });
   }
@@ -368,7 +382,7 @@ export default function App() {
             codigosEnCarrito={codigosEnCarrito}
             codigosSesion={codigosSesion}
             islaFiltro={islaFiltro}
-            vistaColumnas={vistaColumnas}
+            vista={vista}
             onCambiarVista={cambiarVista}
           />
         )}
@@ -380,7 +394,7 @@ export default function App() {
             codigosEnCarrito={codigosEnCarrito}
             codigosSesion={codigosSesion}
             islaFiltro={islaFiltro}
-            vistaColumnas={vistaColumnas}
+            vista={vista}
             onCambiarVista={cambiarVista}
           />
         )}
@@ -391,7 +405,7 @@ export default function App() {
             codigosEnCarrito={codigosEnCarrito}
             codigosSesion={codigosSesion}
             islaFiltro={islaFiltro}
-            vistaColumnas={vistaColumnas}
+            vista={vista}
             onCambiarVista={cambiarVista}
             onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
               setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });

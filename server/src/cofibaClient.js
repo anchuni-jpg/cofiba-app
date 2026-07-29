@@ -382,6 +382,27 @@ const ALFABETICO = (a, b) =>
 
 const POR_NOMBRE = (a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' });
 
+// Última lista de subcategorías (con nombre real) vista de verdad para cada
+// categoría — el acordeón lateral debería salir en cualquier página de esa
+// categoría, pero alguna respuesta puntual (p. ej. una página intermedia con
+// un layout ligeramente distinto) a veces no lo trae. Sin este respaldo,
+// getProductosAgrupados calculaba "lista" (y por tanto siguienteGrupo/
+// idx) sobre un array vacío justo esa vez, y el botón "Siguiente" del
+// cliente se quedaba pegado en genérico y deshabilitado aunque sí hubiera
+// subcategoría siguiente de verdad — este caché en memoria (nunca se
+// borra, solo se sustituye por una lista más reciente cuando llega una
+// buena) evita que un único fallo de scrapeo tire abajo la navegación.
+const subcategoriasPorCategoria = new Map();
+
+function subcategoriasConRespaldo(categoriaSlug, subcategoriasFrescas, subcategoriasAlternativas) {
+  if (subcategoriasFrescas?.length) {
+    subcategoriasPorCategoria.set(categoriaSlug, subcategoriasFrescas);
+    return subcategoriasFrescas;
+  }
+  if (subcategoriasAlternativas?.length) return subcategoriasAlternativas;
+  return subcategoriasPorCategoria.get(categoriaSlug) || [];
+}
+
 // cofiba.es's own page size is small (12 productos/página) and fixed by its
 // template, so "más productos por página" means merging several of its real
 // pages behind the scenes into one bigger batch, rather than asking it for a
@@ -448,7 +469,7 @@ export async function getProductosAgrupados(session, opts, minimo = 48) {
   }
 
   let r = await mergePaginas(session, { categoria, subcategoria: grupoSlug }, pageUrl, minimo);
-  const lista = [...((r.subcategorias?.length ? r.subcategorias : subs) || [])].sort(POR_NOMBRE);
+  const lista = [...subcategoriasConRespaldo(categoria, r.subcategorias, subs)].sort(POR_NOMBRE);
   let idx = lista.findIndex((s) => s.slug === grupoSlug);
 
   // Salta grupos vacíos (subcategorías sin stock ahora mismo) para no servir

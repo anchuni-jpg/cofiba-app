@@ -27,6 +27,13 @@ const FORMATOS = [
 const COOLDOWN_MS = 2500;
 const MENSAJE_MS = 2200;
 
+// La retícula ocupa siempre este recuadro del visor (inset: '26% 10%' más
+// abajo) — ambos avisos de texto se anclan a sus bordes en vez de ir
+// centrados en toda la pantalla, así queda claro que hablan de lo que se
+// acaba de leer justo ahí, no de la cámara en general.
+const RETICULA_TOP = '26%';
+const RETICULA_BOTTOM = '26%'; // "bottom" del inset === distancia al borde inferior, o sea top real = 100% - 26% = 74%
+
 // El precio llega ya formateado del servidor como texto con coma decimal
 // (p. ej. "5,28"), igual que en Productos.jsx/Busqueda.jsx — Number(n) lo
 // convertiría en NaN y el precio nunca se vería, así que se interpola tal cual.
@@ -49,6 +56,50 @@ function nivelStock(stock, undVenta) {
   const cajas = stock / unidadesPorCaja;
   if (cajas >= 10) return { texto: 'STOCK', bajo: false };
   return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
+}
+
+// Un solo AudioContext reutilizado (crear uno por pitido es innecesario y
+// algunos navegadores limitan cuántos puede haber vivos a la vez). Se crea
+// perezosamente en el primer pitido, no al montar el componente — abrir la
+// cámara ya cuenta como gesto del usuario, así que no hace falta esperar a
+// nada más para poder reproducir sonido.
+let audioCtxCompartido = null;
+function obtenerAudioCtx() {
+  if (!audioCtxCompartido) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    audioCtxCompartido = new Ctx();
+  }
+  if (audioCtxCompartido.state === 'suspended') audioCtxCompartido.resume();
+  return audioCtxCompartido;
+}
+function pitido(frecuencia, duracion) {
+  const ctx = obtenerAudioCtx();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const ganancia = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = frecuencia;
+    ganancia.gain.setValueAtTime(0.25, ctx.currentTime);
+    ganancia.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duracion);
+    osc.connect(ganancia).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duracion);
+  } catch {
+    // Sin sonido en navegadores que no lo permitan (p. ej. sin gesto del
+    // usuario todavía) no debe romper el escaneo en sí.
+  }
+}
+// Un pitido agudo y corto para "capturado" (igual que un lector de barras de
+// caja real); dos graves para "no encontrado/fallo", claramente distinto al
+// oído sin tener que mirar la pantalla.
+function sonidoCaptura() {
+  pitido(1046.5, 0.11);
+}
+function sonidoError() {
+  pitido(220, 0.13);
+  setTimeout(() => pitido(180, 0.15), 140);
 }
 
 // Modo "captura continua": la cámara NO se cierra sola al leer un código —
@@ -93,6 +144,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         if (!match) {
           // No se marca como capturado — un código que no se encontró SÍ se
           // puede volver a intentar (puede que fuera una lectura a medias).
+          sonidoError();
           avisar(`✗ No encontrado: "${codigo}"`);
           return;
         }
@@ -106,6 +158,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
             const resto = prev.filter((c) => c.articulo !== match.articulo);
             return [{ ...fila, codigosVistos: [...fila.codigosVistos, codigo] }, ...resto];
           });
+          sonidoCaptura();
           avisar(`Ya estaba en la lista: ${match.nombre || match.articulo}`);
           return;
         }
@@ -126,9 +179,13 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
           },
           ...prev,
         ]);
+        sonidoCaptura();
         avisar(`✓ ${match.nombre || match.articulo}`);
       })
-      .catch(() => avisar('✗ Fallo al buscar ese código'))
+      .catch(() => {
+        sonidoError();
+        avisar('✗ Fallo al buscar ese código');
+      })
       .finally(() => {
         procesandoRef.current = false;
       });
@@ -345,30 +402,54 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
           <div
             style={{
               position: 'absolute',
-              inset: '26% 10%',
+              inset: `${RETICULA_TOP} 10% ${RETICULA_BOTTOM}`,
               border: '2px solid var(--accent)',
               borderRadius: 8,
               boxShadow: '0 0 0 2000px rgba(0,0,0,0.4)',
             }}
           />
-          {mensaje && (
-            // En medio del visor y grande a propósito — es la confirmación
-            // de "esto es justo lo que se acaba de capturar" (o el aviso de
-            // que no se encontró), tiene que verse clarísimo sin tener que
-            // fijarse en una esquina pequeña.
+          {capturados.length > 0 && (
+            // Justo ENCIMA de la retícula, fijo mientras haya algo capturado
+            // (no un aviso que se apaga solo como `mensaje` de abajo) — el
+            // nombre de lo último capturado, para saber sin duda qué se
+            // acaba de meter en la lista.
             <div
               style={{
                 position: 'absolute',
-                top: '50%',
+                top: RETICULA_TOP,
                 left: 16,
                 right: 16,
-                transform: 'translateY(-50%)',
+                transform: 'translateY(calc(-100% - 10px))',
+                textAlign: 'center',
+                color: 'var(--accent)',
+                fontSize: 15,
+                fontWeight: 700,
+                textShadow: '0 1px 4px rgba(0,0,0,0.9)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {capturados[0].nombre}
+            </div>
+          )}
+          {mensaje && (
+            // Justo DEBAJO de la retícula (no en medio de la pantalla) — verde
+            // cuando confirma una captura, rojizo cuando avisa de que no se
+            // encontró o falló, para distinguirlos también por color.
+            <div
+              style={{
+                position: 'absolute',
+                top: `calc(100% - ${RETICULA_BOTTOM})`,
+                left: 16,
+                right: 16,
+                transform: 'translateY(10px)',
                 textAlign: 'center',
                 background: 'rgba(0,0,0,0.8)',
-                color: '#fff',
-                padding: '16px 18px',
+                color: mensaje.startsWith('✗') ? '#ff8a80' : 'var(--accent)',
+                padding: '14px 16px',
                 borderRadius: 'var(--radius)',
-                fontSize: 20,
+                fontSize: 19,
                 fontWeight: 700,
                 lineHeight: 1.3,
               }}

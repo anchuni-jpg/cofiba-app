@@ -216,6 +216,17 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
             {carrito.lineas.length === 0 && <p className="muted">El carrito está vacío.</p>}
           </div>
 
+          {/* Orden pedido: justo debajo del listado va lo más importante —
+              el propio botón de finalizar — y el resto (importe,
+              observaciones, actualizar/borrar, pedido mínimo) va
+              detrás en ese mismo orden, no repartido por toda la pantalla. */}
+          <button className="primary" style={{ width: '100%', marginTop: 4, marginBottom: 4 }} onClick={finalizar}>
+            Finalizar pedido
+          </button>
+          <p className="muted" style={{ marginBottom: 12, fontSize: 12 }}>
+            Genera un pedido real en tu cuenta de cofiba.es con el contenido actual del carrito.
+          </p>
+
           <div className="card" style={{ marginBottom: 12 }}>
             <table className="totals-table">
               <tbody>
@@ -237,11 +248,6 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
             </table>
           </div>
 
-          <p className="muted" style={{ marginBottom: 12 }}>
-            Pedido mínimo para envío: 100€ (entregas en Mallorca) · 200€ (resto de islas y península). Por debajo de
-            ese importe, cofiba.es informa por email del coste del transporte antes de prepararlo.
-          </p>
-
           <label className="muted">Observaciones del pedido (opcional)</label>
           <textarea
             value={observaciones}
@@ -250,10 +256,7 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
             style={{ width: '100%', margin: '4px 0 12px', fontFamily: 'inherit', fontSize: 14, padding: 8 }}
           />
 
-          <button className="primary" style={{ width: '100%', marginBottom: 8 }} onClick={finalizar}>
-            Finalizar pedido
-          </button>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <button style={{ flex: 1 }} onClick={cargar}>
               Actualizar
             </button>
@@ -261,8 +264,10 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
               Vaciar carrito
             </button>
           </div>
-          <p className="muted">
-            "Finalizar pedido" genera un pedido real en tu cuenta de cofiba.es con el contenido actual del carrito.
+
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Pedido mínimo para envío: 100€ (entregas en Mallorca) · 200€ (resto de islas y península). Por debajo de
+            ese importe, cofiba.es informa por email del coste del transporte antes de prepararlo.
           </p>
         </>
       )}
