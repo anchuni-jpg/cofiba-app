@@ -368,6 +368,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
   const [categoriaAbierta, setCategoriaAbierta] = useState(null);
   const [novedades, setNovedades] = useState(null);
   const [cambiosStock, setCambiosStock] = useState(null);
+  const [catalogoConstruyendo, setCatalogoConstruyendo] = useState(false);
   const [vista, setVista] = useState('masComprado'); // masComprado | novedades | stock
   const [productoModal, setProductoModal] = useState(null);
   // Cuánto se ha pedido de cada artículo desde aquí en esta sesión —
@@ -414,21 +415,19 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
   }
 
   useEffect(() => {
-    // Su propia caché con límite de un día (api.novedadesCached) — no hace
-    // falta volver a pedirla de verdad cada vez que se entra aquí en el
-    // mismo día, el catálogo no cambia más a menudo que eso.
+    // Se calcula en este mismo dispositivo (api.js#novedadesYCambiosStock),
+    // comparando contra la última foto del catálogo guardada aquí — no
+    // depende de que el servidor recuerde nada entre despliegues.
     api
-      .novedadesCached((cacheado) => setNovedades(cacheado.productos))
-      .then((data) => setNovedades(data.productos))
+      .novedadesYCambiosStock()
+      .then((data) => {
+        setNovedades(data.novedades);
+        setCambiosStock(data.cambiosStock);
+        setCatalogoConstruyendo(data.construyendo);
+      })
       .catch(() => {
         // Silencioso a propósito: es un dato complementario, no algo que
         // deba impedir ver el resto de Estadísticas si falla.
-      });
-    api
-      .cambiosStockCached((cacheado) => setCambiosStock(cacheado.productos))
-      .then((data) => setCambiosStock(data.productos))
-      .catch(() => {
-        // Silencioso a propósito, mismo motivo que arriba.
       });
   }, []);
 
@@ -480,6 +479,20 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
   const maxCategoria = Math.max(1, ...(datos?.porCategoria || []).map((c) => c.importe || 0));
   const maxComprado = Math.max(1, ...(datos?.masComprados || []).map((p) => p.importe || 0));
 
+  // De los cambios de stock detectados en este dispositivo, cuáles son
+  // reposiciones (pasó de menos a más) de algo que esta cuenta ya ha
+  // comprado antes ("masComprados" ya trae cuántas veces) — para avisar
+  // "esto que sueles pedir ha vuelto a tener stock" en vez de un aviso
+  // genérico. Antes lo calculaba el servidor (cruzando con su propio
+  // recuento de compras); ahora que la detección de cambios de stock vive
+  // en el dispositivo, el cruce se hace aquí mismo con los datos que ya
+  // hay a mano, sin pedir nada nuevo.
+  const vecesCompradoPorArticulo = new Map((datos?.masComprados || []).map((p) => [p.articulo, p.veces]));
+  const restockHabituales = (cambiosStock || [])
+    .filter((c) => c.stockDespues > c.stockAntes && vecesCompradoPorArticulo.has(c.articulo))
+    .map((c) => ({ ...c, vecesCompradoAntes: vecesCompradoPorArticulo.get(c.articulo) }))
+    .slice(0, 10);
+
   // Si la categoría abierta ya no existe en un refresco (raro, pero posible
   // si el nombre cambia), se vuelve sola al resumen en vez de enseñar una
   // pantalla rota.
@@ -511,7 +524,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
           borderColor: vista === 'masComprado' ? 'var(--accent)' : 'var(--border)',
         }}
       >
-        Lo más comprado en Cofiba
+        Lo más comprado
       </button>
       <button
         onClick={() => setVista('novedades')}
@@ -597,7 +610,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
 
       {!loading && datos?.disponible && (
         <>
-          {datos.restockHabituales?.length > 0 && (
+          {restockHabituales.length > 0 && (
             <div
               style={{
                 background: 'var(--accent-bg)',
@@ -607,12 +620,12 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
               }}
             >
               <p style={{ fontWeight: 600, fontSize: 13, margin: '0 0 4px', color: 'var(--accent)' }}>
-                🔔 Ha{datos.restockHabituales.length === 1 ? '' : 'n'} vuelto a tener stock
+                🔔 Ha{restockHabituales.length === 1 ? '' : 'n'} vuelto a tener stock
               </p>
               <p className="muted" style={{ margin: '0 0 6px' }}>
                 Productos que sueles comprar y estaban agotados o con muy poco stock.
               </p>
-              {datos.restockHabituales.map((p) => (
+              {restockHabituales.map((p) => (
                 <FilaProducto
                   key={p.articulo}
                   p={p}
@@ -643,7 +656,10 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
                     />
                   ))
                 ) : (
-                  <p className="muted">No hay artículos nuevos en los últimos 3 días.</p>
+                  <p className="muted">
+                    No hay artículos nuevos en los últimos 3 días.
+                    {catalogoConstruyendo && ' El catálogo se está rastreando de fondo — puede tardar un rato en completarse.'}
+                  </p>
                 )}
               </div>
             </>
@@ -666,7 +682,10 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
                     />
                   ))
                 ) : (
-                  <p className="muted">Sin cambios de stock notables en los últimos 7 días.</p>
+                  <p className="muted">
+                    Sin cambios de stock notables en los últimos 7 días.
+                    {catalogoConstruyendo && ' El catálogo se está rastreando de fondo — puede tardar un rato en completarse.'}
+                  </p>
                 )}
               </div>
             </>

@@ -2,8 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { crawlCatalogo } from './cofibaClient.js';
-import { actualizarDesdeIndice as actualizarNovedades } from './novedadesStore.js';
-import { actualizarDesdeIndice as actualizarStock } from './stockStore.js';
 
 // El buscador de cofiba.es (categoria/todas/true?buscar=) rellena el nombre
 // de cada producto con JavaScript que este scraper no ejecuta — confirmado
@@ -175,19 +173,6 @@ export function iniciarConstruccion(session) {
       actualizado = Date.now();
       estado = 'listo';
       guardarEnDisco();
-      // Compara contra lo ya conocido para detectar artículos nuevos y
-      // cambios de stock — ver novedadesStore.js / stockStore.js. Ninguno
-      // de los dos debe poder tirar este recorrido si falla.
-      try {
-        actualizarNovedades(nuevo);
-      } catch (e) {
-        console.error('[indiceStore] fallo actualizando novedades:', e.message);
-      }
-      try {
-        actualizarStock(nuevo);
-      } catch (e) {
-        console.error('[indiceStore] fallo actualizando cambios de stock:', e.message);
-      }
     } catch (e) {
       estado = 'error';
       ultimoError = e.message;

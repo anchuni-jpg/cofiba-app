@@ -35,8 +35,6 @@ import {
   marcarActividad,
 } from './indiceStore.js';
 import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras, resumenGlobal } from './compradosStore.js';
-import { articulosNuevos } from './novedadesStore.js';
-import { cambiosRecientes } from './stockStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 import { marcarNoDisponible, filtrarDisponibles } from './noDisponibleStore.js';
@@ -615,21 +613,6 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
     }))
     .sort((a, b) => b.importe - a.importe);
 
-  // De los cambios de stock recientes (stockStore.js), cuáles son
-  // reposiciones (pasó de menos a más) de algo que ESTA cuenta ya ha
-  // comprado antes — para poder avisar "esto que sueles pedir ha vuelto a
-  // tener stock" en vez de un aviso genérico que no le dice nada a nadie
-  // en concreto.
-  const restockHabituales = cambiosRecientes()
-    .filter((c) => c.stockDespues > c.stockAntes && conteo.has(c.articulo))
-    .map((c) => {
-      const info = buscarPorArticulo(c.articulo);
-      if (!info) return null;
-      return { ...info, ...c, vecesCompradoAntes: conteo.get(c.articulo) };
-    })
-    .filter(Boolean)
-    .slice(0, 10);
-
   res.json({
     disponible: true,
     completo,
@@ -639,7 +622,6 @@ app.get('/api/estadisticas', requireSession, async (req, res) => {
     totalImporte: Math.round(totalImporte * 100) / 100,
     masComprados: filas.slice(0, 15),
     porCategoria: categorias,
-    restockHabituales,
   });
 });
 
@@ -678,36 +660,23 @@ app.get('/api/facturacion', requireSession, (req, res) => {
   res.json({ periodo, totalPedidos, totalImporte });
 });
 
-// Artículos detectados como nuevos en el catálogo en los últimos 3 días
-// (ver novedadesStore.js) — no depende del usuario que pregunta, es el
-// mismo catálogo general para cualquiera, así que no hace falta ningún
-// rastreo por cuenta como en /api/estadisticas.
-app.get('/api/novedades', requireSession, (req, res) => {
-  const nuevos = articulosNuevos();
-  const productos = nuevos
-    .map(({ articulo, desde }) => {
-      const info = buscarPorArticulo(articulo);
-      if (!info) return null;
-      return { ...info, desde };
-    })
-    .filter(Boolean);
-  res.json({ productos });
-});
-
-// Cambios de stock notables de los últimos 7 días (agotado, repuesto, cruce
-// del umbral de 10 cajas, o bajada de al menos el 50% de golpe) — ver
-// stockStore.js. Tampoco depende de la cuenta que pregunta, es el mismo
-// catálogo general para cualquiera.
-app.get('/api/cambios-stock', requireSession, (req, res) => {
-  const cambios = cambiosRecientes();
-  const productos = cambios
-    .map(({ articulo, stockAntes, stockDespues, fecha }) => {
-      const info = buscarPorArticulo(articulo);
-      if (!info) return null;
-      return { ...info, stockAntes, stockDespues, fecha };
-    })
-    .filter(Boolean);
-  res.json({ productos });
+// Foto completa del catálogo tal y como está AHORA — nombre, precio, stock,
+// todo. Novedades y cambios de stock ya NO se detectan aquí: el plan
+// gratuito de Render borra el disco en cada despliegue, así que cualquier
+// "lo que ya conocíamos" que se guardara en el servidor se perdía justo
+// cuando más falta hacía (y con despliegues frecuentes, ni siquiera daba
+// tiempo a que sobreviviera un rastreo completo entre uno y el siguiente).
+// En vez de eso, el propio dispositivo del cliente guarda SU última foto
+// (en IndexedDB, ver api.js#novedadesYCambiosStock) y compara ahí — eso sí
+// sobrevive a que el servidor se reinicie las veces que haga falta, porque
+// no depende de él para nada más que traer el catálogo de ahora.
+app.get('/api/catalogo-snapshot', requireSession, (req, res) => {
+  const st = estadoActual();
+  res.json({
+    productos: indiceListo() || [],
+    actualizado: st.actualizado,
+    construyendo: st.estado === 'construyendo',
+  });
 });
 
 // "También te puede interesar": otros artículos AL AZAR de la MISMA
