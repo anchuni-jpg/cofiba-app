@@ -11,6 +11,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'novedades.json');
+// Misma foto fija del catálogo que usa indiceStore.js como semilla — ver
+// abajo por qué.
+const SEED_FILE = path.join(__dirname, '..', 'catalog-seed', 'indice-busqueda.json');
 
 const TRES_DIAS_MS = 3 * 24 * 60 * 60 * 1000;
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -32,9 +35,30 @@ function cargarDeDisco() {
     primeraVezPorArticulo = new Map(Object.entries(raw.primeraVez || {}));
     articulosConocidos = new Set(raw.conocidos || []);
     primerRecorridoHecho = articulosConocidos.size > 0;
+    if (primerRecorridoHecho) return;
   } catch {
-    // Arranque limpio (o sin .data persistente, como en el plan gratuito de
-    // Render tras un despliegue) — no pasa nada, se reconstruye solo.
+    // Sigue abajo e intenta la semilla en vez de rendirse.
+  }
+  // Arranque limpio (plan gratuito de Render: .data/ se borra en cada
+  // despliegue). Sin esto, el primer rastreo del catálogo tras CADA
+  // despliegue se trataba como "el primero de siempre" — no detectaba nada
+  // nuevo, solo fijaba la base de partida — así que hacían falta DOS
+  // rastreos completos (varios minutos/horas cada uno) sin ningún
+  // despliegue de por medio antes de que apareciera cualquier novedad real.
+  // Usando la misma foto fija del catálogo que ya usa indiceStore.js como
+  // semilla (se actualiza a mano de vez en cuando, ver ese archivo), el
+  // PRIMER rastreo tras el despliegue ya tiene con qué comparar: cualquier
+  // artículo que no estuviera en esa foto es una novedad real desde
+  // entonces, sin esperar a un segundo rastreo.
+  try {
+    const seed = JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'));
+    const productos = Array.isArray(seed.indice) ? seed.indice : [];
+    if (productos.length) {
+      articulosConocidos = new Set(productos.map((p) => p.articulo));
+      primerRecorridoHecho = true;
+    }
+  } catch {
+    // Sin semilla legible tampoco: arranca vacío del todo, como antes.
   }
 }
 cargarDeDisco();

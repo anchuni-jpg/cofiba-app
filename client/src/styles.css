@@ -267,6 +267,19 @@ input {
   padding-right: 8px;
 }
 
+/* En modo oscuro, el fondo verde oscuro de estas dos filas se confundía
+   con el fondo normal (también oscuro) de alrededor — casi no se
+   distinguía qué fila estaba marcada. Un contorno en un verde MÁS CLARO
+   que el propio --accent (no la misma variable: tiene que notarse como
+   borde, no fundirse con el texto/insignias que ya usan --accent) lo hace
+   evidente de un vistazo, sin tocar nada en modo claro donde el contraste
+   ya era bueno. Aplica igual a la fila (.product-row-*) que a la tarjeta
+   de rejilla (.producto-card.product-row-*). */
+:root[data-theme='dark'] .product-row-comprado,
+:root[data-theme='dark'] .product-row-carrito {
+  border: 1.5px solid #7ee8a8;
+}
+
 /* Vista en rejilla (2/3 columnas) de Productos/Búsqueda/Histórico — la
    alternativa a .product-row cuando vistaColumnas > 1. Tarjeta vertical:
    foto arriba, nombre/precio/+- abajo, en vez de la fila horizontal. */

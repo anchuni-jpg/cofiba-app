@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'stock-cambios.json');
+// Misma foto fija del catálogo que usa indiceStore.js como semilla — ver
+// cargarDeDisco() más abajo por qué.
+const SEED_FILE = path.join(__dirname, '..', 'catalog-seed', 'indice-busqueda.json');
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 const LIMITE = 500;
 
@@ -30,9 +33,26 @@ function cargarDeDisco() {
     const raw = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
     snapshot = new Map(Object.entries(raw.snapshot || {}));
     cambios = Array.isArray(raw.cambios) ? raw.cambios : [];
+    if (snapshot.size > 0) return;
   } catch {
-    // Arranque limpio (o sin .data persistente tras un despliegue) — no
-    // pasa nada, se reconstruye solo con el próximo par de recorridos.
+    // Sigue abajo e intenta la semilla en vez de rendirse.
+  }
+  // Arranque limpio (plan gratuito de Render: .data/ se borra en cada
+  // despliegue). Sin esto, el primer rastreo tras CADA despliegue no tenía
+  // ningún stock anterior con el que comparar (huboSnapshotPrevio=false) —
+  // solo fijaba la foto de partida, así que hacían falta DOS rastreos
+  // completos sin ningún despliegue de por medio antes de detectar
+  // cualquier cambio real. Usando la misma foto fija del catálogo que ya
+  // usa indiceStore.js como semilla, el PRIMER rastreo tras el despliegue
+  // ya tiene con qué comparar el stock de ahora.
+  try {
+    const seed = JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'));
+    const productos = Array.isArray(seed.indice) ? seed.indice : [];
+    for (const p of productos) {
+      if (Number.isFinite(p.stock)) snapshot.set(p.articulo, { stock: p.stock, undVenta: p.undVenta });
+    }
+  } catch {
+    // Sin semilla legible tampoco: arranca vacío del todo, como antes.
   }
 }
 cargarDeDisco();

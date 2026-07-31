@@ -86,6 +86,16 @@ export default function Productos({
   // isla (una elección deliberada y poco frecuente), dejarlo puesto sin
   // querer escondería productos nuevos sin que se note por qué.
   const [soloComprados, setSoloComprados] = useState(false);
+  // Buscador propio de la categoría: reutiliza el mismo índice global que
+  // Busqueda.jsx (api.buscar) y solo se queda con los resultados cuyo
+  // articulo.categoria coincide con esta categoría — como el índice no está
+  // troceado por subcategoría, "buscar en la categoría" ya cubre TODAS sus
+  // subcategorías de una vez, sin tener que ir cambiando de chip.
+  const [campoCat, setCampoCat] = useState('');
+  const [busquedaCatActiva, setBusquedaCatActiva] = useState('');
+  const [resultadosCat, setResultadosCat] = useState(null);
+  const [buscandoCat, setBuscandoCat] = useState(false);
+  const [errorCat, setErrorCat] = useState(null);
   const [visibles, setVisibles] = useState(limite);
   const [pending, setPending] = useState({});
   const [zoomProducto, setZoomProducto] = useState(null);
@@ -100,6 +110,7 @@ export default function Productos({
   const [relacionados, setRelacionados] = useState(null);
   const contentRef = useRef(null);
   const chipsRef = useRef(null);
+  const chipsRefAbajo = useRef(null);
 
   useEffect(() => {
     if (!zoomProducto) {
@@ -277,6 +288,18 @@ export default function Productos({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxKey, effNav.subcategoria]);
 
+  // La búsqueda de categoría es un estado aparte (no vive en `nav`), así que
+  // sin esto, cambiar de categoría con una búsqueda activa dejaba los
+  // resultados de la categoría ANTERIOR pegados en pantalla bajo el título
+  // de la nueva.
+  useEffect(() => {
+    setCampoCat('');
+    setBusquedaCatActiva('');
+    setResultadosCat(null);
+    setErrorCat(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxKey]);
+
   useEffect(() => {
     const categoriaSlug = categoria?.slug || 'todas';
     const subcatSolicitada = effNav.subcategoria;
@@ -312,19 +335,26 @@ export default function Productos({
   }, [ctxKey, effNav.subcategoria]);
 
   const entradaActiva = porSubcat[clave] || entradaVacia();
-  const productos = entradaActiva.paginas.flat();
+  // Con la búsqueda de categoría activa, la lista base es la de resultados
+  // (ya filtrados a esta categoría) en vez de la subcategoría que se
+  // estuviera navegando — todo lo de abajo (isla/comprados/visibles) sigue
+  // funcionando igual sobre esta lista, sin duplicar esa lógica.
+  const productos = busquedaCatActiva ? resultadosCat || [] : entradaActiva.paginas.flat();
   const subcategorias = entradaActiva.subcategorias;
   const grupoActual = entradaActiva.grupo;
   const siguienteGrupoSlug = entradaActiva.siguienteGrupoSlug;
   const cargandoMas = entradaActiva.cargandoMas;
-  const error = entradaActiva.error;
+  const error = busquedaCatActiva ? errorCat : entradaActiva.error;
   const errorDebugHtml = entradaActiva.errorDebugHtml;
   const debugSample = entradaActiva.debugSample;
   // Solo se enseña "Cargando productos…" a pantalla completa cuando de
   // verdad no hay nada que mostrar todavía (ni de caché ni de la red) — en
   // cuanto hay algo, aunque sea de caché, el cliente ya ve fotos mientras el
-  // recorrido de fondo sigue completando el resto.
-  const loading = productos.length === 0 && cargandoMas;
+  // recorrido de fondo sigue completando el resto. Con la búsqueda de
+  // categoría activa, "cargando" es simplemente `buscandoCat`, no depende
+  // del recorrido de fondo de la subcategoría (que puede seguir corriendo
+  // igual detrás, sin que le importe a la búsqueda).
+  const loading = busquedaCatActiva ? buscandoCat && !resultadosCat : productos.length === 0 && cargandoMas;
 
   // El servidor pudo auto-elegir la primera subcategoría (o saltar alguna
   // vacía): los chips y la navegación de bordes usan la que realmente sirvió.
@@ -348,16 +378,45 @@ export default function Productos({
   // Añadir `subcategorias.length` como dependencia fuerza a re-comprobarlo
   // también en ese momento.
   useEffect(() => {
-    if (!grupoEfectivo || !chipsRef.current) return;
-    const contenedor = chipsRef.current;
-    const el = contenedor.querySelector(`[data-slug="${grupoEfectivo}"]`);
-    if (!el) return;
-    const destino = el.offsetLeft - contenedor.clientWidth / 2 + el.clientWidth / 2;
-    contenedor.scrollTo({ left: Math.max(0, destino), behavior: 'smooth' });
+    if (!grupoEfectivo) return;
+    // Misma lógica para las dos filas de chips (la de arriba y la repetida
+    // al final del listado) — cada una centra su propio chip activo dentro
+    // de SU contenedor, independientemente de la otra.
+    for (const contenedor of [chipsRef.current, chipsRefAbajo.current]) {
+      if (!contenedor) continue;
+      const el = contenedor.querySelector(`[data-slug="${grupoEfectivo}"]`);
+      if (!el) continue;
+      const destino = el.offsetLeft - contenedor.clientWidth / 2 + el.clientWidth / 2;
+      contenedor.scrollTo({ left: Math.max(0, destino), behavior: 'smooth' });
+    }
   }, [grupoEfectivo, subcategorias.length]);
 
   function elegirSubcategoria(slug) {
     setNav({ key: ctxKey, subcategoria: slug });
+  }
+
+  function buscarEnCategoria() {
+    const q = campoCat.trim();
+    if (!q) return;
+    setBuscandoCat(true);
+    setErrorCat(null);
+    api
+      .buscar(q)
+      .then((data) => {
+        const propios = (data.resultados || []).filter((p) => p.categoria === ctxKey);
+        setResultadosCat(propios);
+        setBusquedaCatActiva(q);
+        setVisibles(limite);
+      })
+      .catch((e) => setErrorCat(e.message))
+      .finally(() => setBuscandoCat(false));
+  }
+  function limpiarBusquedaCat() {
+    setCampoCat('');
+    setBusquedaCatActiva('');
+    setResultadosCat(null);
+    setErrorCat(null);
+    setVisibles(limite);
   }
 
   // Al llegar al final de una subcategoría (nada más que revelar y ya no
@@ -444,6 +503,32 @@ export default function Productos({
         <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>{categoria?.nombre}</p>
       </div>
 
+      {/* Busca solo dentro de esta categoría (todas sus subcategorías a la
+          vez, no una por una) — reutiliza el índice global de Búsqueda, así
+          que encuentra por nombre/referencia/EAN igual que el buscador
+          normal, pero descartando lo que no sea de aquí. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          buscarEnCategoria();
+        }}
+        style={{ display: 'flex', gap: 8, marginBottom: 10 }}
+      >
+        <input
+          placeholder={`Buscar en ${categoria?.nombre || 'esta categoría'}...`}
+          value={campoCat}
+          onChange={(e) => setCampoCat(e.target.value)}
+        />
+        <button type="submit" aria-label="Buscar en la categoría">
+          🔍
+        </button>
+        {busquedaCatActiva && (
+          <button type="button" className="danger-text" onClick={limpiarBusquedaCat} aria-label="Quitar búsqueda">
+            ✕
+          </button>
+        )}
+      </form>
+
       {error && (
         <div className="error-banner">
           {error}
@@ -488,7 +573,7 @@ export default function Productos({
         </button>
       </div>
 
-      {subcategorias.length > 0 && (
+      {!busquedaCatActiva && subcategorias.length > 0 && (
         <div ref={chipsRef} style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
           {subcategorias.map((s) => {
             const activa = grupoEfectivo === s.slug;
@@ -514,8 +599,13 @@ export default function Productos({
         </div>
       )}
 
-      {loading && <p className="muted">Cargando productos…</p>}
-      {!loading && productos.length === 0 && !error && (
+      {loading && <p className="muted">{busquedaCatActiva ? 'Buscando…' : 'Cargando productos…'}</p>}
+      {!loading && busquedaCatActiva && productos.length === 0 && !error && (
+        <p className="muted">
+          No se encontró nada para "{busquedaCatActiva}" en {categoria?.nombre || 'esta categoría'}.
+        </p>
+      )}
+      {!loading && !busquedaCatActiva && productos.length === 0 && !error && (
         <>
           <p className="muted">No se encontraron productos.</p>
           {debugSample && (
@@ -532,8 +622,14 @@ export default function Productos({
       {!loading && productos.length > 0 && productosPorIsla.length > 0 && productosPorComprado.length === 0 && (
         <p className="muted">Ningún producto de esta pantalla está marcado como comprado.</p>
       )}
+      {!loading && busquedaCatActiva && productosPorComprado.length > 0 && (
+        <p className="muted" style={{ marginBottom: 4 }}>
+          {productosPorComprado.length} resultado{productosPorComprado.length === 1 ? '' : 's'} para "{busquedaCatActiva}" en{' '}
+          {categoria?.nombre || 'esta categoría'}
+        </p>
+      )}
 
-      {!loading && productos.length > 0 && grupoActual && (
+      {!busquedaCatActiva && !loading && productos.length > 0 && grupoActual && (
         <p
           style={{
             fontWeight: 600,
@@ -703,13 +799,14 @@ export default function Productos({
           superior para saltar de subcategoría tras revisar toda la lista.
           Un poco más grueso que el de arriba (más fácil de acertar con el
           dedo después de haber bajado toda la pantalla). */}
-      {subcategorias.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 0' }}>
+      {!busquedaCatActiva && subcategorias.length > 0 && (
+        <div ref={chipsRefAbajo} style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 0' }}>
           {subcategorias.map((s) => {
             const activa = grupoEfectivo === s.slug;
             return (
               <button
                 key={s.slug}
+                data-slug={s.slug}
                 onClick={() => elegirSubcategoria(s.slug)}
                 style={{
                   flexShrink: 0,
@@ -735,7 +832,7 @@ export default function Productos({
           "Siguiente" todavía no se conoce (la última página real aún no ha
           llegado), el botón sale deshabilitado y se activa solo en cuanto
           esté listo, sin bloquear el resto de la navegación mientras tanto. */}
-      {!hayMasParaRevelar && (subcatAnterior || subcatSiguiente || cargandoMas) && (
+      {!busquedaCatActiva && !hayMasParaRevelar && (subcatAnterior || subcatSiguiente || cargandoMas) && (
         <div style={{ padding: '12px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <button disabled={!subcatAnterior} onClick={() => subcatAnterior && elegirSubcategoria(subcatAnterior.slug)} style={{ flex: 1 }}>

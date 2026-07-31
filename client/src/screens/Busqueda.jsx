@@ -62,6 +62,10 @@ export default function Busqueda({
   // lo que se está escribiendo, para no relanzar la búsqueda en cada tecla.
   const [terminoActivo, setTerminoActivo] = useState(termino);
   const [campo, setCampo] = useState(termino);
+  // Mismo filtro "Comprados" que ya tenía Productos.jsx — no se recuerda
+  // entre búsquedas distintas (a diferencia del filtro de isla), para no
+  // esconder resultados nuevos sin que se note por qué.
+  const [soloComprados, setSoloComprados] = useState(false);
   const [escaneando, setEscaneando] = useState(false);
   const [resultados, setResultados] = useState(null);
   const [construyendo, setConstruyendo] = useState(false);
@@ -210,7 +214,9 @@ export default function Busqueda({
 
   const resultadosDisponibles =
     resultados && noDisponibles.size ? resultados.filter((p) => !noDisponibles.has(p.articulo)) : resultados;
-  const resultadosFiltrados = resultadosDisponibles ? filtrarPorIsla(resultadosDisponibles, islaFiltro) : resultadosDisponibles;
+  const resultadosPorIsla = resultadosDisponibles ? filtrarPorIsla(resultadosDisponibles, islaFiltro) : resultadosDisponibles;
+  const resultadosFiltrados =
+    resultadosPorIsla && soloComprados ? resultadosPorIsla.filter((p) => p.comprado) : resultadosPorIsla;
 
   return (
     <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -219,6 +225,19 @@ export default function Busqueda({
           ←
         </button>
         <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>Búsqueda</p>
+        <button
+          onClick={() => setSoloComprados((v) => !v)}
+          style={{
+            padding: '6px 10px',
+            fontSize: 12,
+            whiteSpace: 'nowrap',
+            background: soloComprados ? 'var(--accent)' : 'var(--surface-2)',
+            color: soloComprados ? '#fff' : 'var(--text-primary)',
+            borderColor: soloComprados ? 'var(--accent)' : 'var(--border)',
+          }}
+        >
+          Comprados
+        </button>
         <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
           {vista === 'lista' ? '☰ Lista' : vista === 'lista-grande' ? '☰ Lista XL' : `▦ ${columnas}`}
         </button>
@@ -273,8 +292,11 @@ export default function Busqueda({
         <p className="muted">No se encontraron productos para "{terminoActivo}".</p>
       )}
 
-      {resultados && resultados.length > 0 && resultadosFiltrados.length === 0 && (
+      {resultados && resultados.length > 0 && resultadosPorIsla.length === 0 && (
         <p className="muted">Ningún resultado es de la isla seleccionada.</p>
+      )}
+      {resultados && resultadosPorIsla.length > 0 && resultadosFiltrados.length === 0 && (
+        <p className="muted">Ningún resultado de esta búsqueda está marcado como comprado.</p>
       )}
 
       {resultadosFiltrados && resultadosFiltrados.length > 0 && (
