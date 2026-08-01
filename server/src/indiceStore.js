@@ -125,8 +125,17 @@ export function estadoActual() {
   return { estado, progreso, total: indice.length, actualizado, error: ultimoError };
 }
 
+// Mismo criterio que el resto de lectores del índice (buscarPorArticulo,
+// la búsqueda...): mientras un rastreo nuevo está en marcha, `indice` (el
+// último completo) sigue siendo mejor que nada hasta que `indiceParcial` lo
+// supere. Antes esto exigía `estado === 'listo'`, así que cada vez que el
+// índice caducaba (6h) o el servidor arrancaba de nuevo, devolvía null
+// durante TODO el rastreo (15min-1h+) y tiraba un índice completo y bueno
+// solo por estar reconstruyéndose — eso dejaba /api/catalogo-snapshot (y con
+// él, Nuevas entradas / Cambios de stock en Estadísticas) vacío ese rato.
 export function indiceListo() {
-  return estado === 'listo' ? indice : null;
+  const fuente = indiceParcial.length > indice.length ? indiceParcial : indice;
+  return fuente.length ? fuente : null;
 }
 
 export function necesitaConstruir() {
