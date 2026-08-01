@@ -6,6 +6,7 @@ import { ISLAS } from '../filtroIsla.js';
 // principal) evita que TODA visita a la app pague ese peso de más solo por
 // si acaso alguien escanea algo.
 const BarcodeScanner = lazy(() => import('../components/BarcodeScanner.jsx'));
+const TutorialViewer = lazy(() => import('../components/TutorialViewer.jsx'));
 
 // Datos propios de Cofiba (no de la cuenta del cliente) — verificados a mano
 // en /contacto.html y el pie de página de cofiba.es (Port de Cariño 16 A,
@@ -47,6 +48,7 @@ export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCa
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [escaneando, setEscaneando] = useState(false);
+  const [tutorial, setTutorial] = useState(false);
 
   useEffect(() => {
     let huboCache = false;
@@ -88,11 +90,20 @@ export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCa
         <button type="button" onClick={() => setEscaneando(true)} aria-label="Escanear código de barras">
           📷
         </button>
+        <button type="button" onClick={() => setTutorial(true)} aria-label="Cómo funciona la app">
+          ❓
+        </button>
       </form>
 
       {escaneando && (
         <Suspense fallback={null}>
           <BarcodeScanner onCerrar={() => setEscaneando(false)} onCartChanged={onCartChanged} />
+        </Suspense>
+      )}
+
+      {tutorial && (
+        <Suspense fallback={null}>
+          <TutorialViewer onCerrar={() => setTutorial(false)} />
         </Suspense>
       )}
 
