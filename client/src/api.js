@@ -164,110 +164,27 @@ export const api = {
   facturacion(periodo) {
     return request(`/facturacion${periodo ? `?periodo=${periodo}` : ''}`);
   },
-  catalogoSnapshot() {
-    return request('/catalogo-snapshot');
+  // Novedades (últimos 15 días) y cambios de stock notables (últimos 15
+  // días) — calculados EN EL SERVIDOR (novedadesStore.js/stockStore.js),
+  // comparando cada recorrido del catálogo contra el anterior, así que
+  // cualquier cuenta ve lo mismo desde el primer momento en vez de tener que
+  // esperar a que ESTE dispositivo concreto haya visitado dos veces para
+  // tener algo con qué comparar (ese era el problema del enfoque anterior).
+  // Se piden siempre frescos al servidor (esa es la fuente de verdad), pero
+  // se guarda lo encontrado en IndexedDB para que la pantalla tenga algo que
+  // enseñar al instante en la siguiente visita mientras se confirma que
+  // sigue igual — mismo patrón que categoriasCached/productosCached.
+  novedades() {
+    return request('/novedades');
   },
-  // Novedades y cambios de stock se calculan aquí, EN ESTE DISPOSITIVO, no
-  // en el servidor — el plan gratuito de Render borra su disco en cada
-  // despliegue, así que cualquier "lo que ya conocíamos" guardado ahí se
-  // perdía justo cuando más falta hacía para comparar, y con despliegues
-  // seguidos ni daba tiempo a que sobreviviera un rastreo completo entre
-  // uno y el siguiente. Aquí no hay ese problema: la última foto del
-  // catálogo vive en IndexedDB, en el propio móvil/navegador del cliente, y
-  // sobrevive a que el servidor se reinicie las veces que haga falta.
-  //
-  // Primera vez que se usa la app en este dispositivo: no hay foto anterior
-  // con la que comparar, así que no se marca nada como "nuevo" (si no, el
-  // catálogo entero parecería novedad el primer día) — solo se guarda esa
-  // foto como punto de partida.
-  async novedadesYCambiosStock() {
-    const CLAVE_SNAPSHOT = 'catalogo-snapshot-anterior';
-    const CLAVE_NOVEDADES = 'novedades-detectadas';
-    const CLAVE_CAMBIOS = 'cambios-stock-detectados';
-    // Info de producto (nombre/foto/precio/categoría) para poder ENSEÑAR
-    // cada novedad/cambio — separada de CLAVE_SNAPSHOT (que solo guarda
-    // stock/undVenta para comparar). Se acumula, nunca se vacía: si el
-    // catálogo de una respuesta puntual viene corto o vacío (recién
-    // desplegado, aún rastreándose), una novedad detectada hace un rato
-    // seguía "desapareciendo" del resultado porque ya no estaba en ESA
-    // respuesta para sacarle el nombre — con esto se sigue enseñando con
-    // los últimos datos buenos que se vieron de ese artículo.
-    const CLAVE_INFO = 'catalogo-info-productos';
-    const TRES_DIAS_MS = 3 * 24 * 60 * 60 * 1000;
-    const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
-    const unidadesPorCaja = (u) => parseFloat(String(u || '').replace(/\./g, '').replace(',', '.')) || 1;
-
-    const [data, anterior, novedadesGuardadas, cambiosGuardados, infoGuardada] = await Promise.all([
-      this.catalogoSnapshot(),
-      getCache(CLAVE_SNAPSHOT),
-      getCache(CLAVE_NOVEDADES),
-      getCache(CLAVE_CAMBIOS),
-      getCache(CLAVE_INFO),
-    ]);
-    const actuales = data.productos || [];
-    const ahora = Date.now();
-    const infoPorArticulo = { ...(infoGuardada || {}) };
-    for (const p of actuales) infoPorArticulo[p.articulo] = p;
-
-    let novedades = (novedadesGuardadas || []).filter((n) => ahora - n.desde <= TRES_DIAS_MS);
-    let cambios = (cambiosGuardados || []).filter((c) => ahora - c.fecha <= SIETE_DIAS_MS);
-
-    if (anterior?.porArticulo && actuales.length) {
-      const nuevosDetectados = [];
-      const cambiosDetectados = [];
-      for (const p of actuales) {
-        const previo = anterior.porArticulo[p.articulo];
-        if (!previo) {
-          nuevosDetectados.push({ articulo: p.articulo, desde: ahora });
-          continue;
-        }
-        if (!Number.isFinite(p.stock) || !Number.isFinite(previo.stock) || previo.stock === p.stock) continue;
-        const cajasAntes = previo.stock / unidadesPorCaja(previo.undVenta);
-        const cajasDespues = p.stock / unidadesPorCaja(p.undVenta);
-        const seAgoto = previo.stock > 0 && p.stock === 0;
-        const seRepuso = previo.stock === 0 && p.stock > 0;
-        const cruzoUmbral = (cajasAntes >= 10) !== (cajasDespues >= 10);
-        const bajadaFuerte = p.stock < previo.stock && previo.stock > 0 && (previo.stock - p.stock) / previo.stock >= 0.5;
-        if (seAgoto || seRepuso || cruzoUmbral || bajadaFuerte) {
-          cambiosDetectados.push({ articulo: p.articulo, stockAntes: previo.stock, stockDespues: p.stock, fecha: ahora });
-        }
-      }
-      if (nuevosDetectados.length) {
-        const yaDetectados = new Set(nuevosDetectados.map((n) => n.articulo));
-        novedades = [...nuevosDetectados, ...novedades.filter((n) => !yaDetectados.has(n.articulo))];
-      }
-      if (cambiosDetectados.length) {
-        const yaDetectados = new Set(cambiosDetectados.map((c) => c.articulo));
-        cambios = [...cambiosDetectados, ...cambios.filter((c) => !yaDetectados.has(c.articulo))].slice(0, 500);
-      }
-    }
-
-    // Solo se pisa la foto/listas guardadas si de verdad llegó catálogo
-    // fresco — con el índice del servidor aún "construyendo" (recién
-    // desplegado) `actuales` puede venir corto o vacío, y guardarlo tal
-    // cual perdería la foto buena que ya hubiera de antes.
-    if (actuales.length) {
-      const porArticulo = {};
-      for (const p of actuales) {
-        if (Number.isFinite(p.stock)) porArticulo[p.articulo] = { stock: p.stock, undVenta: p.undVenta };
-      }
-      await Promise.all([
-        setCache(CLAVE_SNAPSHOT, { porArticulo, cuando: ahora }),
-        setCache(CLAVE_NOVEDADES, novedades),
-        setCache(CLAVE_CAMBIOS, cambios),
-        setCache(CLAVE_INFO, infoPorArticulo),
-      ]);
-    }
-
-    const enriquecer = (entrada) => {
-      const info = infoPorArticulo[entrada.articulo];
-      return info ? { ...info, ...entrada } : null;
-    };
-    return {
-      construyendo: !!data.construyendo,
-      novedades: novedades.map(enriquecer).filter(Boolean).sort((a, b) => b.desde - a.desde),
-      cambiosStock: cambios.map(enriquecer).filter(Boolean).sort((a, b) => b.fecha - a.fecha),
-    };
+  novedadesCached(onCacheHit) {
+    return conCache('novedades', () => this.novedades(), onCacheHit);
+  },
+  cambiosStock() {
+    return request('/cambios-stock');
+  },
+  cambiosStockCached(onCacheHit) {
+    return conCache('cambios-stock', () => this.cambiosStock(), onCacheHit);
   },
   // Bajo demanda, al abrir la ficha de un producto — no tiene sentido
   // cachear esto por más de la sesión actual, cambia con cada artículo.

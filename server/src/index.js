@@ -19,6 +19,7 @@ import {
   eliminarDelCarrito,
   vaciarCarrito,
   finalizarPedido,
+  buscarProductosEnVivo,
 } from './cofibaClient.js';
 import { saveCredentials, loadCredentials, deleteCredentials } from './credentialStore.js';
 import { registrarImagenes, obtenerImagen } from './imagenStore.js';
@@ -38,6 +39,8 @@ import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasComp
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 import { marcarNoDisponible, filtrarDisponibles } from './noDisponibleStore.js';
+import { articulosNuevos } from './novedadesStore.js';
+import { cambiosRecientes } from './stockStore.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
 // try/catch (p. ej. en un rastreo de fondo) tumbaba TODO el servidor en vez
@@ -660,25 +663,6 @@ app.get('/api/facturacion', requireSession, (req, res) => {
   res.json({ periodo, totalPedidos, totalImporte });
 });
 
-// Foto completa del catálogo tal y como está AHORA — nombre, precio, stock,
-// todo. Novedades y cambios de stock ya NO se detectan aquí: el plan
-// gratuito de Render borra el disco en cada despliegue, así que cualquier
-// "lo que ya conocíamos" que se guardara en el servidor se perdía justo
-// cuando más falta hacía (y con despliegues frecuentes, ni siquiera daba
-// tiempo a que sobreviviera un rastreo completo entre uno y el siguiente).
-// En vez de eso, el propio dispositivo del cliente guarda SU última foto
-// (en IndexedDB, ver api.js#novedadesYCambiosStock) y compara ahí — eso sí
-// sobrevive a que el servidor se reinicie las veces que haga falta, porque
-// no depende de él para nada más que traer el catálogo de ahora.
-app.get('/api/catalogo-snapshot', requireSession, (req, res) => {
-  const st = estadoActual();
-  res.json({
-    productos: indiceListo() || [],
-    actualizado: st.actualizado,
-    construyendo: st.estado === 'construyendo',
-  });
-});
-
 // "También te puede interesar": otros artículos AL AZAR de la MISMA
 // subcategoría que el que se está mirando (no hay forma de saber qué se
 // compró junto en un mismo pedido — cofiba.es no expone esa relación — así
@@ -785,14 +769,63 @@ app.get('/api/buscar', requireSession, async (req, res) => {
   // Aunque el índice siga construyéndose, ya se busca sobre lo indexado
   // hasta ahora — así el usuario tiene resultados útiles en cuanto su
   // categoría se recorre, sin esperar a que termine todo el catálogo.
+  const delIndice = buscarEnIndice(termino);
+
+  // Además del índice (que solo se actualiza cada ~6h), se busca EN VIVO
+  // directamente en cofiba.es — por si hay artículos recién añadidos al
+  // catálogo que el rastreo de fondo todavía no ha alcanzado. Nunca debe
+  // poder tirar la búsqueda si cofiba.es tarda o falla: los resultados del
+  // índice ya son válidos por sí solos.
+  let deLaWeb = [];
+  try {
+    deLaWeb = await buscarProductosEnVivo(req.cofiba, termino);
+  } catch (e) {
+    console.error('[buscar] fallo la búsqueda en vivo:', e.message);
+  }
+  const yaVistos = new Set(delIndice.map((p) => p.articulo));
+  const soloEnVivo = deLaWeb.filter((p) => !yaVistos.has(p.articulo));
+
   res.json({
     construyendo: st.estado === 'construyendo',
     parcial: st.estado === 'construyendo',
     progreso: st.progreso,
-    resultados: filtrarDisponibles(marcarComprados(req.usuario, buscarEnIndice(termino))),
+    resultados: filtrarDisponibles(marcarComprados(req.usuario, [...delIndice, ...soloEnVivo])),
     totalIndice: st.total,
     actualizado: st.actualizado,
   });
+});
+
+// Novedades del catálogo (últimos 15 días) y cambios de stock notables
+// (agotado, repuesto, cruce del umbral de 10 cajas, o bajada de al menos el
+// 50% de golpe) — ver novedadesStore.js / stockStore.js. Se calculan en el
+// SERVIDOR cada vez que el índice completa un recorrido (indiceStore.js),
+// no comparando snapshots del propio dispositivo, así que cualquier cuenta
+// ve las mismas novedades reales desde el primer momento en vez de tener
+// que esperar a dos visitas suyas para tener algo con qué comparar. Si el
+// índice está desactualizado, se dispara un recorrido nuevo en segundo
+// plano (como en /api/buscar) para que la próxima consulta ya esté al día.
+app.get('/api/novedades', requireSession, (req, res) => {
+  if (necesitaConstruir()) iniciarConstruccion(req.cofiba);
+  const productos = articulosNuevos()
+    .map(({ articulo, desde }) => {
+      const info = buscarPorArticulo(articulo);
+      if (!info) return null;
+      return { ...info, desde };
+    })
+    .filter(Boolean);
+  res.json({ construyendo: estadoActual().estado === 'construyendo', productos });
+});
+
+app.get('/api/cambios-stock', requireSession, (req, res) => {
+  if (necesitaConstruir()) iniciarConstruccion(req.cofiba);
+  const productos = cambiosRecientes()
+    .map(({ articulo, stockAntes, stockDespues, fecha }) => {
+      const info = buscarPorArticulo(articulo);
+      if (!info) return null;
+      return { ...info, stockAntes, stockDespues, fecha };
+    })
+    .filter(Boolean);
+  res.json({ construyendo: estadoActual().estado === 'construyendo', productos });
 });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

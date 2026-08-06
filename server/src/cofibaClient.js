@@ -233,6 +233,115 @@ function extraerSubcategorias($, categoriaSlug) {
   return subcategorias;
 }
 
+// Extrae la lista de productos de una página de listado ya cargada en `$`
+// (categoría normal o búsqueda en vivo) — factorizado de getProductos para
+// que buscarProductosEnVivo (más abajo) pueda reusar el mismo parseo exacto
+// en vez de duplicarlo.
+function extraerProductos($, origenUrl) {
+  const imagenPorArticulo = new Map();
+  let ultimaImagen = null;
+  $('img[src*="BlobData"], button[data-articulo], a[data-articulo]').each((_, el) => {
+    const $el = $(el);
+    if (el.tagName === 'img') {
+      ultimaImagen = absolute($el.attr('src'));
+    } else {
+      const art = $el.attr('data-articulo');
+      if (art) imagenPorArticulo.set(art, ultimaImagen);
+    }
+  });
+
+  const productos = [];
+  $('button[data-articulo], a[data-articulo]').each((_, el) => {
+    const $btn = $(el);
+    const articulo = $btn.attr('data-articulo');
+    const nlinea = $btn.attr('data-nlinea');
+    if (!articulo) return;
+
+    const $card = closestByText($, $btn, /Referencia:/i) || $btn.parent();
+    const cardText = $card.text().replace(/\s+/g, ' ').trim();
+    const m = cardText.match(PRODUCT_TEXT_RE);
+
+    const refIdx = cardText.search(/Referencia:/i);
+    const posibleNombre =
+      refIdx > 0
+        ? cardText
+            .slice(0, refIdx)
+            .replace(/.*añadir al carrito/i, '')
+            .trim()
+        : '';
+    const nombreTexto =
+      posibleNombre && posibleNombre.length < 120 && !NOMBRE_BLOCKLIST.test(posibleNombre) ? posibleNombre : null;
+    const nombreAlt =
+      $card
+        .find('img')
+        .filter((_, img) => !!$(img).attr('alt')?.trim())
+        .first()
+        .attr('alt')
+        ?.trim() || null;
+    const referencia = m?.[1] || null;
+    const nombre = nombreTexto || nombreAlt || null;
+    const imagen = imagenPorArticulo.get(articulo) || null;
+
+    const stockTexto = $card.find("input[name='existencia']").attr('value');
+    const stockNum = stockTexto != null ? Math.round(parseFloat(stockTexto)) : null;
+    const stock = Number.isFinite(stockNum) ? stockNum : null;
+
+    productos.push({
+      articulo,
+      nlinea: nlinea || null,
+      referencia,
+      ean: m?.[2] || null,
+      marca: m?.[3] || null,
+      undVenta: m?.[4] || null,
+      pvp: m?.[5] || null,
+      dto: m?.[6] || null,
+      stock,
+      precioFinal: m?.[7] || null,
+      nombre,
+      imagen,
+      origen: origenUrl,
+    });
+  });
+  return productos;
+}
+
+// Búsqueda EN VIVO directamente contra cofiba.es, para complementar el
+// índice propio (que solo se actualiza cada ~6h) con productos añadidos al
+// catálogo tan recientemente que el rastreo de fondo aún no ha llegado a
+// ellos. Confirmado desde el propio botón de búsqueda de cofiba.es: el modo
+// "/true" (a diferencia del "/false" de categoría normal) SÍ filtra de
+// verdad por el término, pero dentro de esa plantilla el nombre de cada
+// tarjeta (.tituloListado) se manda vacío en el HTML — lo rellena JS suyo
+// que este scraper no ejecuta. Se rellena aparte con su propio endpoint de
+// sugerencias (/forms/search_json.php), emparejando por Referencia — mismo
+// enfoque que se usaba antes de construir el índice propio, con la misma
+// limitación conocida: esa lista de sugerencias es corta, así que la
+// cobertura de nombres aquí es parcial (mejor tener referencia+precio+foto
+// sin nombre que no tener el producto en absoluto).
+export async function buscarProductosEnVivo(session, termino) {
+  const { http } = session;
+  const url = `${BASE}/marca/todas/categoria/todas/true`;
+  const res = await http.get(url, { params: { buscar: termino } });
+  const $ = cheerio.load(res.data);
+  const productos = extraerProductos($, url);
+
+  let nombrePorReferencia = new Map();
+  try {
+    const jsonRes = await http.get(`${BASE}/forms/search_json.php`, { params: { term: termino, autocomplete: true } });
+    nombrePorReferencia = new Map(
+      (Array.isArray(jsonRes.data) ? jsonRes.data : []).filter((r) => r.value).map((r) => [r.id, r.value])
+    );
+  } catch {
+    // Sin sugerencias de nombre: se devuelven los productos igual (con
+    // nombre=null si tampoco venía en la tarjeta), mejor parcial que nada.
+  }
+
+  return productos.map((p) => ({
+    ...p,
+    nombre: p.nombre || (p.referencia ? nombrePorReferencia.get(p.referencia) : null) || null,
+  }));
+}
+
 export async function getProductos({ http }, { categoria, subcategoria, page = 1, pageUrl }) {
   // pageUrl llega del cliente tal cual (es la siguientePagina que nosotros
   // mismos le dimos antes) — pero nada impide mandar otra cosa a mano, y sin
@@ -268,88 +377,9 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
   // product's buy-form.
   const origenUrl = url;
 
-  // Product thumbnails: walk images and product buttons together in document
-  // order, and give each button whichever thumbnail was most recently seen
-  // before it. This is robust to stray non-product images anywhere on the
-  // page (a header logo pushed a plain positional zip off by one) since it
-  // only cares about what's immediately before each button, not a fixed index.
-  const imagenPorArticulo = new Map();
-  let ultimaImagen = null;
-  $('img[src*="BlobData"], button[data-articulo], a[data-articulo]').each((_, el) => {
-    const $el = $(el);
-    if (el.tagName === 'img') {
-      ultimaImagen = absolute($el.attr('src'));
-    } else {
-      const art = $el.attr('data-articulo');
-      if (art) imagenPorArticulo.set(art, ultimaImagen);
-    }
-  });
-
-  const productos = [];
-  $('button[data-articulo], a[data-articulo]').each((_, el) => {
-    const $btn = $(el);
-    const articulo = $btn.attr('data-articulo');
-    const nlinea = $btn.attr('data-nlinea');
-    if (!articulo) return;
-
-    const $card = closestByText($, $btn, /Referencia:/i) || $btn.parent();
-    const cardText = $card.text().replace(/\s+/g, ' ').trim();
-    const m = cardText.match(PRODUCT_TEXT_RE);
-
-    // The product name sits as plain text right before "Referencia:" (e.g.
-    // "...Añadir al carrito ABANICO ACRILICO 23CM MALLORCA... Referencia:
-    // 152407026..."), not in an alt attribute — pull it from cardText instead
-    // of relying on <img alt>, which most products here don't set.
-    const refIdx = cardText.search(/Referencia:/i);
-    const posibleNombre =
-      refIdx > 0
-        ? cardText
-            .slice(0, refIdx)
-            .replace(/.*añadir al carrito/i, '')
-            .trim()
-        : '';
-    const nombreTexto =
-      posibleNombre && posibleNombre.length < 120 && !NOMBRE_BLOCKLIST.test(posibleNombre) ? posibleNombre : null;
-    const nombreAlt =
-      $card
-        .find('img')
-        .filter((_, img) => !!$(img).attr('alt')?.trim())
-        .first()
-        .attr('alt')
-        ?.trim() || null;
-    const referencia = m?.[1] || null;
-    const nombre = nombreTexto || nombreAlt || null;
-    const imagen = imagenPorArticulo.get(articulo) || null;
-
-    // Stock real: cofiba.es lo manda oculto en cada tarjeta (lo usan sus
-    // propios botones +/- de esa página para no dejar pedir más de lo que
-    // hay — confirmado mirando el HTML crudo: <input type='hidden'
-    // name='existencia' id='existencia_list_N' value='224' />). Vive dentro
-    // del mismo $card que ya usamos para Referencia/EAN/etc., así que no
-    // hace falta correlacionar por índice de fila.
-    const stockTexto = $card.find("input[name='existencia']").attr('value');
-    const stockNum = stockTexto != null ? Math.round(parseFloat(stockTexto)) : null;
-    const stock = Number.isFinite(stockNum) ? stockNum : null;
-
-    productos.push({
-      articulo,
-      nlinea: nlinea || null,
-      referencia,
-      ean: m?.[2] || null,
-      marca: m?.[3] || null,
-      undVenta: m?.[4] || null,
-      pvp: m?.[5] || null,
-      dto: m?.[6] || null,
-      stock,
-      precioFinal: m?.[7] || null,
-      nombre,
-      imagen,
-      // Página real donde se vio este producto: la página 1 de la categoría
-      // solo contiene los <form> de compra de sus propios 12 productos, así
-      // que añadir desde páginas interiores fallaba sin esto.
-      origen: origenUrl,
-    });
-  });
+  // Parseo de las tarjetas de producto factorizado en extraerProductos (más
+  // arriba) — reusado también por buscarProductosEnVivo.
+  const productos = extraerProductos($, origenUrl);
 
   const normalized = $('body').text().replace(/\s+/g, ' ').trim();
   const totalPaginasTexto = normalized.match(/P[aá]gina\s*(?:\d+\s*)?de\s*(\d+)/i)?.[1];

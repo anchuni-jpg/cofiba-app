@@ -415,19 +415,29 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
   }
 
   useEffect(() => {
-    // Se calcula en este mismo dispositivo (api.js#novedadesYCambiosStock),
-    // comparando contra la última foto del catálogo guardada aquí — no
-    // depende de que el servidor recuerde nada entre despliegues.
+    // Calculadas en el SERVIDOR (novedadesStore.js/stockStore.js) comparando
+    // cada recorrido del catálogo contra el anterior — no en este
+    // dispositivo, así que salen igual de completas la primera vez que se
+    // entra que la décima. La caché local solo sirve para pintar algo al
+    // instante mientras se confirma que sigue igual (ver api.js#conCache).
     api
-      .novedadesYCambiosStock()
+      .novedadesCached((cacheado) => setNovedades(cacheado.productos))
       .then((data) => {
-        setNovedades(data.novedades);
-        setCambiosStock(data.cambiosStock);
-        setCatalogoConstruyendo(data.construyendo);
+        setNovedades(data.productos);
+        setCatalogoConstruyendo((c) => c || data.construyendo);
       })
       .catch(() => {
         // Silencioso a propósito: es un dato complementario, no algo que
         // deba impedir ver el resto de Estadísticas si falla.
+      });
+    api
+      .cambiosStockCached((cacheado) => setCambiosStock(cacheado.productos))
+      .then((data) => {
+        setCambiosStock(data.productos);
+        setCatalogoConstruyendo((c) => c || data.construyendo);
+      })
+      .catch(() => {
+        // Silencioso a propósito: mismo motivo que arriba.
       });
   }, []);
 
@@ -642,7 +652,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
           {vista === 'novedades' && (
             <>
               <p className="muted" style={{ marginBottom: 4 }}>
-                Artículos añadidos al catálogo en los últimos 3 días.
+                Artículos añadidos al catálogo en los últimos 15 días.
               </p>
               <div style={{ marginBottom: 20 }}>
                 {novedades && novedades.length > 0 ? (
@@ -657,7 +667,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
                   ))
                 ) : (
                   <p className="muted">
-                    No hay artículos nuevos en los últimos 3 días.
+                    No hay artículos nuevos en los últimos 15 días.
                     {catalogoConstruyendo && ' El catálogo se está rastreando de fondo — puede tardar un rato en completarse.'}
                   </p>
                 )}
@@ -668,7 +678,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
           {vista === 'stock' && (
             <>
               <p className="muted" style={{ marginBottom: 4 }}>
-                Cambios notables de los últimos 7 días: agotado, repuesto, o una bajada fuerte de existencias.
+                Cambios notables de los últimos 15 días: agotado, repuesto, o una bajada fuerte de existencias.
               </p>
               <div style={{ marginBottom: 20 }}>
                 {cambiosStock && cambiosStock.length > 0 ? (
@@ -683,7 +693,7 @@ export default function Estadisticas({ onCartChanged, codigosEnCarrito, codigosS
                   ))
                 ) : (
                   <p className="muted">
-                    Sin cambios de stock notables en los últimos 7 días.
+                    Sin cambios de stock notables en los últimos 15 días.
                     {catalogoConstruyendo && ' El catálogo se está rastreando de fondo — puede tardar un rato en completarse.'}
                   </p>
                 )}
