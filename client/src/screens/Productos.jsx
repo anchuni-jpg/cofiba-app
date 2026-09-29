@@ -115,12 +115,14 @@ export default function Productos({
   const colaRef = useRef([]);
   const consumiendoRef = useRef(false);
   const montadoRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Se pone a true también aquí: en desarrollo React monta, desmonta y
+    // vuelve a montar cada componente, y sin esto se quedaba en false.
+    montadoRef.current = true;
+    return () => {
       montadoRef.current = false;
-    },
-    []
-  );
+    };
+  }, []);
 
   async function ejecutarRecorrido(clv, categoriaSlug, subcatSolicitada) {
     if (enCursoRef.current.has(clv)) return;

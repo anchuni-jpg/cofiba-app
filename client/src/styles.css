@@ -120,6 +120,13 @@ button {
 button:active {
   transform: scale(0.98);
 }
+/* Sin esto un botón desactivado (p. ej. "Finalizar pedido" con el carrito
+   vacío) se veía igual que uno que sí se puede pulsar. */
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
 button.primary {
   background: var(--accent);
   color: #fff;
@@ -560,7 +567,7 @@ input {
 .ficha-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.97);
   display: flex;
   flex-direction: column;
   align-items: center;

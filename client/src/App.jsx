@@ -386,7 +386,7 @@ export default function App() {
           <Productos
             categoria={categoria}
             subcategoriaInicial={subcategoriaInicial}
-            onBack={() => setTab('categorias')}
+            onBack={() => setTab(vinoDeHistorico ? 'historico' : 'categorias')}
             onCartChanged={refreshCartCount}
             cartCount={cartCount}
             codigosEnCarrito={codigosEnCarrito}

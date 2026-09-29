@@ -107,10 +107,17 @@ export default function Historico({
             completo: data.completo,
             corriendo: data.corriendo,
           });
-          if (!data.sinCambios && data.productos && (data.productos.length > 0 || data.completo)) {
-            setProductos(data.productos);
-            setLoading(false);
-            setCache(CLAVE_CACHE, data.productos);
+          if (!data.sinCambios && data.productos) {
+            // Mientras el servidor no ha terminado, su lista puede ser más
+            // corta que la ya guardada en el dispositivo (p. ej. si se
+            // reinició y empieza de nuevo): no se pisa una lista mejor con
+            // una peor. Al completarse, manda siempre la del servidor.
+            setProductos((actual) => {
+              if (!data.completo && data.productos.length < actual.length) return actual;
+              if (data.completo || data.productos.length > 0) setCache(CLAVE_CACHE, data.productos);
+              return data.productos;
+            });
+            if (data.productos.length > 0) setLoading(false);
           }
           if (data.completo) setLoading(false);
           // Error del recorrido en el servidor (p. ej. cofiba.es no

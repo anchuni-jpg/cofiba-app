@@ -1,6 +1,7 @@
 import { getProductos, CONSUMO_URL } from './cofibaClient.js';
 import { encolarConsumo } from './consumoQueue.js';
 import { completarComprados, registrarCompras } from './compradosStore.js';
+import { marcarActividad } from './indiceStore.js';
 
 // Histórico completo de cada cuenta (/consumo.html de cofiba.es), recorrido
 // UNA sola vez en el servidor y servido entero al cliente en cada consulta.
@@ -60,6 +61,11 @@ async function recorrer(usuario, session, st) {
   try {
     while (st.siguiente && Date.now() - st.ultimoInteres < INTERES_MS) {
       const url = st.siguiente;
+      // Cuenta como uso real: el rastreo del catálogo cede el turno mientras
+      // alguien espera su histórico (cofiba.es atiende de una en una las
+      // peticiones de cada cuenta).
+      marcarActividad();
+      const t0 = Date.now();
       let res = null;
       let ultimoFallo = null;
       for (let intento = 0; intento <= REINTENTOS && !res; intento++) {
@@ -76,6 +82,7 @@ async function recorrer(usuario, session, st) {
       }
       if (!res) throw ultimoFallo || new Error('No se pudo leer el histórico');
 
+      console.log(`[historico] página ${st.indice + 1}/${res.totalPaginas || '?'} en ${Math.round((Date.now() - t0) / 1000)}s`);
       st.paginas[st.indice] = res.productos;
       registrarCompras(usuario, res.productos); // marcas de "ya comprado" desde ya
       st.totalPaginas = res.totalPaginas || st.totalPaginas;

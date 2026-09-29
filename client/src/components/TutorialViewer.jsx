@@ -7,10 +7,13 @@ import { useState } from 'react';
 const DIAPOSITIVAS = [
   { archivo: '/tutorial/slide-01-catalogo.jpg', titulo: 'Explora el catálogo' },
   { archivo: '/tutorial/slide-02-busqueda.jpg', titulo: 'Busca cualquier producto' },
-  { archivo: '/tutorial/slide-03-ficha-producto.jpg', titulo: 'Ficha ampliada del producto' },
-  { archivo: '/tutorial/slide-04-escaner.jpg', titulo: 'Escanea códigos de barras' },
-  { archivo: '/tutorial/slide-05-carrito.jpg', titulo: 'Revisa y confirma el pedido' },
-  { archivo: '/tutorial/slide-06-historico.jpg', titulo: 'Recompra en un toque' },
+  { archivo: '/tutorial/slide-03-categoria.jpg', titulo: 'Dentro de una categoría' },
+  { archivo: '/tutorial/slide-04-ficha-producto.jpg', titulo: 'Ficha ampliada' },
+  { archivo: '/tutorial/slide-05-escaner.jpg', titulo: 'Escanea códigos de barras' },
+  { archivo: '/tutorial/slide-06-escaner-revision.jpg', titulo: 'Revisa lo escaneado' },
+  { archivo: '/tutorial/slide-07-carrito.jpg', titulo: 'Revisa y envía el pedido' },
+  { archivo: '/tutorial/slide-08-envio.jpg', titulo: 'Confirmación del envío' },
+  { archivo: '/tutorial/slide-09-historico.jpg', titulo: 'Tu histórico de compras' },
 ];
 
 export default function TutorialViewer({ onCerrar }) {
