@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { getCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
+import FichaProducto from '../components/FichaProducto.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
 
 // Entrada vacía para una subcategoría de la que aún no se sabe nada — se usa
@@ -25,22 +26,6 @@ function formatoCaja(undVenta) {
   const n = parseFloat(String(undVenta).replace(/\./g, '').replace(',', '.'));
   if (!Number.isFinite(n)) return undVenta;
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
-}
-
-// El número exacto de unidades en stock no dice gran cosa por sí solo (¿224
-// unidades es mucho o poco si la caja es de 100?) — lo que importa es
-// cuántas CAJAS quedan. Con 10 cajas o más se enseña solo "STOCK" (en
-// verde, sin número: hay de sobra); por debajo, "STOCK BAJO" en el color de
-// aviso, para que salte a la vista sin tener que hacer la cuenta.
-function nivelStock(stock, undVenta) {
-  if (!Number.isFinite(stock)) return null;
-  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
-  const cajas = stock / unidadesPorCaja;
-  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
-  // Agotado de verdad (0 cajas) es distinto de "queda poco" — mismo color de
-  // aviso que STOCK BAJO, pero con su propio texto para no dar a entender
-  // que todavía se puede pedir alguna caja cuando no queda ninguna.
-  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 export default function Productos({
@@ -104,33 +89,6 @@ export default function Productos({
   // momento, sin esperar a la próxima carga, para que nadie más tropiece
   // con el mismo error en lo que queda de esta visita.
   const [noDisponibles, setNoDisponibles] = useState(new Set());
-  // "También te puede interesar" (afinidad por subcategoría + popularidad
-  // global, no cesta real — cofiba.es no expone qué se compró junto en un
-  // mismo pedido). Se pide solo al abrir la ficha, no para toda la lista.
-  const [relacionados, setRelacionados] = useState(null);
-  const contentRef = useRef(null);
-  const chipsRef = useRef(null);
-  const chipsRefAbajo = useRef(null);
-
-  useEffect(() => {
-    if (!zoomProducto) {
-      setRelacionados(null);
-      return;
-    }
-    let cancelado = false;
-    setRelacionados(null);
-    api
-      .relacionados(zoomProducto.articulo)
-      .then((data) => {
-        if (!cancelado) setRelacionados(data.productos || []);
-      })
-      .catch(() => {
-        if (!cancelado) setRelacionados([]);
-      });
-    return () => {
-      cancelado = true;
-    };
-  }, [zoomProducto]);
 
   // Cada subcategoría visitada tiene su propia entrada aquí (paginas
   // acumuladas, subcategorías, grupo resuelto...), en vez de un único estado
@@ -683,22 +641,6 @@ export default function Productos({
                       <CarritoIcon size={grande ? 17 : 13} />
                     </span>
                   )}
-                  {(() => {
-                    const info = nivelStock(p.stock, p.undVenta);
-                    return (
-                      info && (
-                        <span
-                          style={{
-                            marginLeft: 5,
-                            fontSize: grande ? 13 : 11,
-                            color: info.bajo ? 'var(--danger)' : 'var(--accent)',
-                          }}
-                        >
-                          {info.texto}
-                        </span>
-                      )
-                    );
-                  })()}
                 </p>
               </div>
               <div
@@ -754,16 +696,6 @@ export default function Productos({
                     <CarritoIcon size={11} />
                   </span>
                 )}
-                {(() => {
-                  const info = nivelStock(p.stock, p.undVenta);
-                  return (
-                    info && (
-                      <span style={{ marginLeft: 4, fontSize: 10, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
-                        {info.texto}
-                      </span>
-                    )
-                  );
-                })()}
               </p>
               {/* marginTop: 'auto' (no un valor fijo) empuja este bloque —
                   y todo lo que va detrás, la etiqueta de caja incluida — al
@@ -850,130 +782,15 @@ export default function Productos({
       )}
 
       {zoomProducto && (
-        <div
-          onClick={() => setZoomProducto(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.85)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50,
-            cursor: 'zoom-out',
-            padding: 16,
-            gap: 12,
-          }}
-        >
-          <img
-            src={zoomProducto.imagen}
-            alt=""
-            style={{ maxWidth: '100%', maxHeight: '65%', objectFit: 'contain' }}
-          />
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              cursor: 'default',
-              background: 'var(--surface-2)',
-              borderRadius: 'var(--radius)',
-              padding: '12px 14px',
-              width: '100%',
-              maxWidth: 420,
-            }}
-          >
-            <p style={{ fontSize: 13, fontWeight: 500, margin: '0 0 2px' }}>
-              {zoomProducto.nombre || zoomProducto.referencia || zoomProducto.articulo}
-            </p>
-            <p className="muted" style={{ margin: '0 0 8px' }}>
-              Ref. {zoomProducto.referencia || zoomProducto.articulo}
-              {zoomProducto.precioFinal ? ` · ${zoomProducto.precioFinal}€` : ''}
-              {zoomProducto.undVenta ? ` · caja de ${formatoCaja(zoomProducto.undVenta)} uds` : ''}
-              {(() => {
-                const info = nivelStock(zoomProducto.stock, zoomProducto.undVenta);
-                return (
-                  info && <span style={{ color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {info.texto}</span>
-                );
-              })()}
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              {noDisponibles.has(zoomProducto.articulo) ? (
-                <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600 }}>Ya no está disponible</span>
-              ) : (
-                <div className="qty-stepper">
-                  <button onClick={() => añadir(zoomProducto, -1)}>-</button>
-                  <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
-                  <button onClick={() => añadir(zoomProducto, 1)}>+</button>
-                </div>
-              )}
-              <button className="danger" onClick={() => setZoomProducto(null)}>
-                Cerrar
-              </button>
-            </div>
-            {error && (
-              <p style={{ color: 'var(--danger)', fontSize: 11, margin: '8px 0 0' }}>{error}</p>
-            )}
-
-            {relacionados && relacionados.length > 0 && (
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                <p className="muted" style={{ margin: '0 0 6px' }}>También te puede interesar</p>
-                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-                  {relacionados.map((r) => (
-                    <div
-                      key={r.articulo}
-                      style={{
-                        flexShrink: 0,
-                        width: 84,
-                        textAlign: 'center',
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => setZoomProducto(r)}
-                    >
-                      <div className="product-thumb" style={{ width: 84, height: 84, margin: '0 auto' }}>
-                        {r.imagen ? <img src={r.imagen} alt="" /> : '—'}
-                      </div>
-                      <p
-                        style={{
-                          fontSize: 10,
-                          margin: '3px 0 0',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                        }}
-                      >
-                        {r.nombre}
-                      </p>
-                      <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
-                        {r.precioFinal ? `${r.precioFinal}€` : '—'}
-                        {(() => {
-                          const info = nivelStock(r.stock, r.undVenta);
-                          return (
-                            info && (
-                              <span style={{ display: 'block', fontSize: 9, fontWeight: 600, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
-                                {info.texto}
-                              </span>
-                            )
-                          );
-                        })()}
-                      </p>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          añadir(r, 1);
-                        }}
-                        style={{ fontSize: 10, padding: '2px 6px', marginTop: 2 }}
-                      >
-                        {pending[r.articulo] ? `✓ ${pending[r.articulo]}` : '+ Añadir'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <FichaProducto
+          lista={productosPorComprado}
+          inicial={zoomProducto}
+          onCerrar={() => setZoomProducto(null)}
+          pending={pending}
+          añadir={añadir}
+          noDisponibles={noDisponibles}
+          error={error}
+        />
       )}
     </div>
   );

@@ -41,21 +41,14 @@ function formatoEuro(n) {
   return n ? `${n}€` : null;
 }
 
-// Duplica formatoCaja/nivelStock de Productos.jsx — una función corta, no
+// Duplica formatoCaja de Productos.jsx — una función corta, no
 // vale la pena compartir el módulo por eso (mismo criterio que el resto de
 // la app). Así la lista de capturados enseña justo la misma info
-// (referencia, stock, caja) que si se navegara el catálogo normal.
+// (referencia, caja) que si se navegara el catálogo normal.
 function formatoCaja(undVenta) {
   const n = parseFloat(String(undVenta).replace(/\./g, '').replace(',', '.'));
   if (!Number.isFinite(n)) return undVenta;
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
-}
-function nivelStock(stock, undVenta) {
-  if (!Number.isFinite(stock)) return null;
-  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
-  const cajas = stock / unidadesPorCaja;
-  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
-  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 // Un solo AudioContext reutilizado (crear uno por pitido es innecesario y
@@ -308,11 +301,10 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
             </p>
           ) : (
             // Misma info que una fila normal de Catálogo/Búsqueda/Histórico
-            // (Ref., precio, insignia de stock, caja de N uds) — para que
+            // (Ref., precio, caja de N uds) — para que
             // repasar lo capturado dé exactamente la misma confianza que
             // navegar el catálogo, no una versión reducida.
             capturados.map((c) => {
-              const stock = nivelStock(c.stock, c.undVenta);
               return (
                 <div key={c.articulo} className="product-row">
                   <div className="product-thumb">{c.imagen ? <img src={c.imagen} alt="" /> : '—'}</div>
@@ -325,11 +317,6 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
                     </p>
                     <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                       {formatoEuro(c.precioFinal) || '—'}
-                      {stock && (
-                        <span style={{ marginLeft: 5, fontSize: 11, color: stock.bajo ? 'var(--danger)' : 'var(--accent)' }}>
-                          {stock.texto}
-                        </span>
-                      )}
                     </p>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>

@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
-import { getCache } from '../localCache.js';
+import { getCache, setCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
+import FichaProducto from '../components/FichaProducto.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
 
 // Duplica formatoCaja de Productos.jsx/Busqueda.jsx — una línea, no vale la
@@ -10,16 +11,6 @@ function formatoCaja(undVenta) {
   const n = parseFloat(String(undVenta).replace(/\./g, '').replace(',', '.'));
   if (!Number.isFinite(n)) return undVenta;
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
-}
-
-// Duplica nivelStock de Productos.jsx — 10 cajas o más: "STOCK" en verde,
-// sin número; por debajo: "STOCK BAJO" en el color de aviso.
-function nivelStock(stock, undVenta) {
-  if (!Number.isFinite(stock)) return null;
-  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
-  const cajas = stock / unidadesPorCaja;
-  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
-  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
 }
 
 // Insensible a acentos/mayúsculas — duplica normalizar() de indiceStore.js
@@ -58,21 +49,15 @@ export default function Historico({
     localStorage.setItem('cofiba:limite', String(n));
     setVisibles(n);
   }
-  // Esto ya no es un historial que llevemos nosotros — lee directamente la
-  // sección real "Comprados recientemente" de cofiba.es (/consumo.html), así
-  // que refleja TODO lo comprado en la cuenta, no solo lo hecho desde la app.
-  //
-  // `paginas[i]` guarda los productos de la página real i-ésima. Se rellena
-  // por posición (nunca se concatena a ciegas) para que aplicar la misma
-  // página dos veces —una vez desde la caché local y otra con la respuesta
-  // de verdad— sustituya en vez de duplicar. El recorrido de TODAS las
-  // páginas se dispara solo con abrir la pestaña, sin esperar a que se pulse
-  // ningún botón — "Ver más" solo revela más de lo que ya se ha traído
-  // (según `limite`), nunca dispara una petición nueva por sí mismo.
-  const [paginas, setPaginas] = useState([]);
-  const [totalPaginas, setTotalPaginas] = useState(null);
-  const [paginasCargadas, setPaginasCargadas] = useState(0);
-  const [cargandoTodo, setCargandoTodo] = useState(true);
+  // Lee la sección real "Comprados recientemente" de cofiba.es
+  // (/consumo.html): TODO lo comprado en la cuenta, no solo desde la app.
+  // El recorrido de sus páginas lo hace el servidor (historicoStore.js) y
+  // recuerda por dónde iba; aquí solo se pregunta cada pocos segundos cómo
+  // va mientras la pestaña está abierta. Lo último visto se guarda en el
+  // dispositivo para pintarlo al instante la próxima vez.
+  const [productos, setProductos] = useState([]);
+  const [progreso, setProgreso] = useState({ paginasCargadas: 0, totalPaginas: null, completo: false, corriendo: true });
+  const cargandoTodo = !progreso.completo;
   const [visibles, setVisibles] = useState(limite);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -94,157 +79,73 @@ export default function Historico({
     setQuitados((prev) => new Set(prev).add(clave));
   }
   const [zoomProducto, setZoomProducto] = useState(null);
-  // "También te puede interesar" (afinidad por subcategoría + popularidad
-  // global) — mismo patrón que Productos.jsx/Busqueda.jsx, se pide solo al
-  // abrir la ficha, no para toda la lista.
-  const [relacionados, setRelacionados] = useState(null);
-  useEffect(() => {
-    if (!zoomProducto) {
-      setRelacionados(null);
-      return;
-    }
-    let cancelado = false;
-    setRelacionados(null);
-    api
-      .relacionados(zoomProducto.articulo)
-      .then((data) => {
-        if (!cancelado) setRelacionados(data.productos || []);
-      })
-      .catch(() => {
-        if (!cancelado) setRelacionados([]);
-      });
-    return () => {
-      cancelado = true;
-    };
-  }, [zoomProducto]);
-  // Cada llamada a recorrerTodo (al montar, o al pulsar "Actualizar") saca un
-  // número nuevo; una llamada en curso se sabe superada (y deja de tocar
-  // estado) en cuanto ve que ya no es la más reciente — así pulsar
-  // "Actualizar" mientras el recorrido automático seguía en marcha no acaba
-  // con dos recorridos escribiendo a la vez.
-  const recorridoIdRef = useRef(0);
+  // Cada bucle de consultas lleva su número; al salir de la pestaña o pulsar
+  // "Actualizar" el anterior se da por superado y deja de preguntar.
+  const bucleIdRef = useRef(0);
+  const CLAVE_CACHE = 'historico:v3';
 
-  const productos = paginas.flat();
-
-  // Reconstruye al instante (sin red) todo lo que ya se había recorrido en
-  // este dispositivo, encadenando la caché por su propio siguientePagina —
-  // así reabrir Histórico pinta algo de inmediato en vez de una pantalla en
-  // blanco mientras se confirma que sigue igual.
-  async function reconstruirDesdeCache() {
-    const paginasCache = [];
-    let totalPaginasCache = null;
-    let pageUrl = null;
-    do {
-      // "v2": mismo motivo que en api.js#historicoCached — clave nueva para
-      // no quedarse atascado en una caché completa de antes de que existiera
-      // el campo "categoria" (el botón "Ver más").
-      const cacheado = await getCache(`historico:v2:${pageUrl || ''}`);
-      if (!cacheado) break;
-      paginasCache.push(cacheado.productos);
-      totalPaginasCache = cacheado.totalPaginas;
-      pageUrl = cacheado.siguientePagina || null;
-    } while (pageUrl);
-    return { paginasCache, totalPaginasCache, siguientePageUrl: pageUrl };
-  }
-
-  // Recorre TODO el histórico real, de la primera página en adelante. Solo
-  // el botón "Actualizar" fuerza (forzar=1, salta la caché de 3 minutos del
-  // servidor) — al entrar en la pestaña normalmente NO se fuerza nada: si ya
-  // se recorrió hace poco, cada página sale de la caché del servidor casi al
-  // instante, y si Cofiba.es no ha cambiado nada no hay motivo para volver a
-  // pedirlo todo desde cero cada vez (antes SÍ forzaba siempre, y eso era
-  // justo lo que dejaba el histórico "buscando todo el rato" compitiendo con
-  // la navegación real del catálogo, que comparte la misma cuenta/cola de
-  // cofiba.es).
-  function recorrerTodo({ mostrarCache, forzar }) {
-    const miId = ++recorridoIdRef.current;
-    const vigente = () => recorridoIdRef.current === miId;
-
-    setCargandoTodo(true);
+  function consultar({ forzar }) {
+    const miId = ++bucleIdRef.current;
+    const vigente = () => bucleIdRef.current === miId;
+    let version = null;
+    let primera = true;
     setError(null);
+    if (forzar) setProgreso((p) => ({ ...p, completo: false, corriendo: true, paginasCargadas: 0 }));
 
     (async () => {
-      let indice = 0;
-      if (mostrarCache) {
-        const { paginasCache, totalPaginasCache } = await reconstruirDesdeCache();
-        if (!vigente()) return;
-        if (paginasCache.length) {
-          setPaginas(paginasCache);
-          setTotalPaginas(totalPaginasCache);
-          setPaginasCargadas(paginasCache.length);
-          setLoading(false);
-        }
-      }
-
-      let pageUrl = null;
-      do {
-        // Comprobado ANTES de pedir la siguiente página (no solo al final del
-        // bucle): si se salió de Histórico (cambio de pestaña) mientras
-        // esperábamos, esto para el recorrido en el acto en vez de lanzar
-        // una petición lenta de más que ya nadie va a ver.
-        if (!vigente()) return;
-        let huboCache = false;
-        const i = indice;
-        const promesa = api.historicoCached({ pageUrl, forzar }, (cacheado) => {
-          if (!vigente() || i > 0) return;
-          // Solo la página 1 usa el aviso instantáneo de caché — de la 2 en
-          // adelante ya se está mirando de verdad, mostrar aquí una versión
-          // vieja de una página posterior solo generaría parpadeo.
-          huboCache = true;
-          setPaginas((prev) => {
-            const copia = [...prev];
-            copia[i] = cacheado.productos;
-            return copia;
-          });
-          setTotalPaginas(cacheado.totalPaginas);
-          setLoading(false);
-        });
-
-        let data;
+      let fallosSeguidos = 0;
+      while (vigente()) {
         try {
-          data = await promesa;
+          const data = await api.historico({ version, forzar: forzar && primera });
+          primera = false;
+          if (!vigente()) return;
+          fallosSeguidos = 0;
+          version = data.version;
+          setProgreso({
+            paginasCargadas: data.paginasCargadas,
+            totalPaginas: data.totalPaginas,
+            completo: data.completo,
+            corriendo: data.corriendo,
+          });
+          if (!data.sinCambios && data.productos && (data.productos.length > 0 || data.completo)) {
+            setProductos(data.productos);
+            setLoading(false);
+            setCache(CLAVE_CACHE, data.productos);
+          }
+          if (data.completo) setLoading(false);
+          // Error del recorrido en el servidor (p. ej. cofiba.es no
+          // contestó): se enseña, pero se sigue preguntando — la siguiente
+          // consulta lo reintenta sola desde la página donde se quedó.
+          setError(data.error ? `Cofiba.es va lento, reintentando… (${data.error})` : null);
+          if (data.completo && !data.corriendo) return;
         } catch (e) {
-          if (vigente() && !huboCache) setError(e.message);
-          break;
+          if (!vigente()) return;
+          fallosSeguidos += 1;
+          if (fallosSeguidos >= 2) setError(e.message);
         }
-        if (!vigente()) return;
-
-        setPaginas((prev) => {
-          const copia = [...prev];
-          copia[i] = data.productos;
-          return copia;
-        });
-        setTotalPaginas(data.totalPaginas);
-        setPaginasCargadas((prev) => Math.max(prev, i + 1));
-        setLoading(false);
-
-        pageUrl = data.siguientePagina || null;
-        indice += 1;
-      } while (pageUrl && vigente());
-      if (vigente()) setCargandoTodo(false);
+        await new Promise((r) => setTimeout(r, 3000));
+      }
     })();
   }
 
   useEffect(() => {
-    recorrerTodo({ mostrarCache: true, forzar: false });
-    // Al salir de la pestaña (Histórico se desmonta: App.jsx solo lo renderiza
-    // con tab==='historico') se invalida el recorrido en curso — la
-    // pestaña en la que se esté ahora (Catálogo, Búsqueda...) tiene
-    // prioridad y no debe esperar detrás de páginas de /consumo.html que ya
-    // no le interesan a nadie en este momento. Al volver a Histórico, este
-    // mismo efecto se dispara de nuevo y retoma desde la caché.
+    getCache(CLAVE_CACHE).then((cacheado) => {
+      if (cacheado?.length) {
+        setProductos((actual) => (actual.length ? actual : cacheado));
+        setLoading(false);
+      }
+    });
+    consultar({ forzar: false });
+    // Al salir de la pestaña se deja de preguntar; el servidor pausa el
+    // recorrido solo al no recibir consultas, y lo retoma al volver.
     return () => {
-      recorridoIdRef.current += 1;
+      bucleIdRef.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Botón manual: repite el mismo recorrido completo sin esperar a salir y
-  // volver a entrar en la pestaña. No se limpia `paginas` antes de empezar
-  // para no hacer parpadear la lista — cada página se va sustituyendo en su
-  // sitio según llega la respuesta fresca, igual que el recorrido automático.
   function actualizar() {
-    recorrerTodo({ mostrarCache: false, forzar: true });
+    consultar({ forzar: true });
   }
 
   // No se espera a que cofiba.es confirme antes de reaccionar: el contador
@@ -341,11 +242,7 @@ export default function Historico({
           aria-label="Actualizar histórico"
           style={{ padding: '6px 10px', fontSize: 12 }}
         >
-          {/* Con número de página real (no solo "Actualizando…" fijo) — un
-              recorrido forzado de todo el histórico son varias páginas
-              lentas de cofiba.es, una por una; sin progreso visible parecía
-              colgado aunque estuviera avanzando de verdad. */}
-          {cargandoTodo ? `⟳ Actualizando… (${paginasCargadas}/${totalPaginas || '…'})` : '⟳ Actualizar'}
+          {cargandoTodo ? '⟳ Actualizando…' : '⟳ Actualizar'}
         </button>
         <button onClick={onCambiarVista} aria-label="Cambiar vista" style={{ padding: '6px 10px', fontSize: 12 }}>
           {vista === 'lista' ? '☰ Lista' : vista === 'lista-grande' ? '☰ Lista XL' : `▦ ${columnas}`}
@@ -375,8 +272,30 @@ export default function Historico({
       </select>
 
       {error && <div className="error-banner">{error}</div>}
+      {/* Barra de progreso real (páginas de cofiba.es ya leídas) — cada
+          página tarda 15-35s en su servidor; sin progreso visible parecía
+          colgado aunque estuviera avanzando. */}
+      {cargandoTodo && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="progreso-barra">
+            <div
+              style={{
+                width: progreso.totalPaginas
+                  ? `${Math.max(4, Math.round((progreso.paginasCargadas / progreso.totalPaginas) * 100))}%`
+                  : '4%',
+              }}
+            />
+          </div>
+          <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
+            {progreso.totalPaginas
+              ? `Leyendo tu histórico de Cofiba: página ${progreso.paginasCargadas} de ${progreso.totalPaginas}`
+              : 'Leyendo tu histórico de Cofiba…'}
+            {' · puedes ir usando lo que ya aparece'}
+          </p>
+        </div>
+      )}
       {loading && (
-        <p className="muted">Cargando histórico… (cofiba.es tarda bastante en generar esta página, puede llevar hasta medio minuto)</p>
+        <p className="muted">Cargando histórico… (Cofiba tarda bastante en generar esta página, puede llevar hasta medio minuto)</p>
       )}
 
       {!loading && productos.length === 0 && !error && (
@@ -393,9 +312,6 @@ export default function Historico({
       {!loading && productos.length > 0 && (
         <p className="muted" style={{ marginBottom: 8 }}>
           {productos.length} producto{productos.length === 1 ? '' : 's'}
-          {cargandoTodo
-            ? ` · se sigue completando en segundo plano (página ${paginasCargadas} de ${totalPaginas || '…'})`
-            : ''}
         </p>
       )}
 
@@ -475,16 +391,6 @@ export default function Historico({
                       <CarritoIcon size={grande ? 17 : 13} />
                     </span>
                   )}
-                  {(() => {
-                    const info = nivelStock(p.stock, p.undVenta);
-                    return (
-                      info && (
-                        <span style={{ marginLeft: 5, fontSize: grande ? 13 : 11, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
-                          {info.texto}
-                        </span>
-                      )
-                    );
-                  })()}
                 </p>
                 {p.categoria && (
                   <button
@@ -604,16 +510,6 @@ export default function Historico({
                     <CarritoIcon size={11} />
                   </span>
                 )}
-                {(() => {
-                  const info = nivelStock(p.stock, p.undVenta);
-                  return (
-                    info && (
-                      <span style={{ marginLeft: 4, fontSize: 10, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
-                        {info.texto}
-                      </span>
-                    )
-                  );
-                })()}
               </p>
               {p.categoria && (
                 <button
@@ -677,118 +573,15 @@ export default function Historico({
       )}
 
       {zoomProducto && (
-        <div
-          onClick={() => setZoomProducto(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.85)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50,
-            cursor: 'zoom-out',
-            padding: 16,
-            gap: 12,
-          }}
-        >
-          <img src={zoomProducto.imagen} alt="" style={{ maxWidth: '100%', maxHeight: '65%', objectFit: 'contain' }} />
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              cursor: 'default',
-              background: 'var(--surface-2)',
-              borderRadius: 'var(--radius)',
-              padding: '12px 14px',
-              width: '100%',
-              maxWidth: 420,
-            }}
-          >
-            <p style={{ fontSize: 13, fontWeight: 500, margin: '0 0 2px' }}>
-              {zoomProducto.nombre || zoomProducto.referencia || zoomProducto.articulo}
-            </p>
-            <p className="muted" style={{ margin: '0 0 8px' }}>
-              Ref. {zoomProducto.referencia || zoomProducto.articulo}
-              {zoomProducto.precioFinal ? ` · ${zoomProducto.precioFinal}€` : ''}
-              {zoomProducto.undVenta ? ` · caja de ${formatoCaja(zoomProducto.undVenta)} uds` : ''}
-              {(() => {
-                const info = nivelStock(zoomProducto.stock, zoomProducto.undVenta);
-                return (
-                  info && <span style={{ color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}> · {info.texto}</span>
-                );
-              })()}
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              {noDisponibles.has(zoomProducto.articulo) ? (
-                <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600 }}>Ya no está disponible</span>
-              ) : (
-                <div className="qty-stepper">
-                  <button onClick={() => añadir(zoomProducto, -1)}>-</button>
-                  <span style={{ minWidth: 20, textAlign: 'center' }}>{pending[zoomProducto.articulo] ?? 0}</span>
-                  <button onClick={() => añadir(zoomProducto, 1)}>+</button>
-                </div>
-              )}
-              <button className="danger" onClick={() => setZoomProducto(null)}>
-                Cerrar
-              </button>
-            </div>
-
-            {relacionados && relacionados.length > 0 && (
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                <p className="muted" style={{ margin: '0 0 6px' }}>También te puede interesar</p>
-                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-                  {relacionados.map((r) => (
-                    <div
-                      key={r.articulo}
-                      style={{ flexShrink: 0, width: 84, textAlign: 'center', cursor: 'pointer' }}
-                      onClick={() => setZoomProducto(r)}
-                    >
-                      <div className="product-thumb" style={{ width: 84, height: 84, margin: '0 auto' }}>
-                        {r.imagen ? <img src={r.imagen} alt="" /> : '—'}
-                      </div>
-                      <p
-                        style={{
-                          fontSize: 10,
-                          margin: '3px 0 0',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                        }}
-                      >
-                        {r.nombre}
-                      </p>
-                      <p style={{ fontSize: 11, fontWeight: 600, margin: '2px 0 0', color: 'var(--accent)' }}>
-                        {r.precioFinal ? `${r.precioFinal}€` : '—'}
-                        {(() => {
-                          const info = nivelStock(r.stock, r.undVenta);
-                          return (
-                            info && (
-                              <span style={{ display: 'block', fontSize: 9, fontWeight: 600, color: info.bajo ? 'var(--danger)' : 'var(--accent)' }}>
-                                {info.texto}
-                              </span>
-                            )
-                          );
-                        })()}
-                      </p>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          añadir(r, 1);
-                        }}
-                        style={{ fontSize: 10, padding: '2px 6px', marginTop: 2 }}
-                      >
-                        {pending[r.articulo] ? `✓ ${pending[r.articulo]}` : '+ Añadir'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <FichaProducto
+          lista={productosFiltrados.filter((p) => !quitados.has(claveGrupo(grupoDe(p))))}
+          inicial={zoomProducto}
+          onCerrar={() => setZoomProducto(null)}
+          pending={pending}
+          añadir={añadir}
+          noDisponibles={noDisponibles}
+          error={error}
+        />
       )}
     </div>
   );

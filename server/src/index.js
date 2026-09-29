@@ -9,7 +9,6 @@ import {
   login,
   getCategorias,
   getProductosAgrupados,
-  getComprasRecientes,
   getCarrito,
   getMiCuenta,
   getPedidosPendientes,
@@ -35,9 +34,9 @@ import {
   productosPorSubcategoria,
   marcarActividad,
 } from './indiceStore.js';
-import { asegurarComprados, comprasConocidas, registrarCompras, resumenGlobal } from './compradosStore.js';
+import { asegurarComprados, comprasConocidas, resumenGlobal } from './compradosStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
-import { encolarConsumo } from './consumoQueue.js';
+import { consultarHistorico, historicoEnMarcha } from './historicoStore.js';
 import { marcarNoDisponible, filtrarDisponibles } from './noDisponibleStore.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
@@ -77,8 +76,10 @@ function marcarComprados(usuario, productos) {
 
 // El rastreo del catálogo se frena solo cuando alguien está usando la app de
 // verdad (ver indiceStore.js) — esto es lo que le avisa de cuándo.
+// Las consultas periódicas de progreso del Histórico no cuentan: las hace
+// la app sola cada pocos segundos, no la persona.
 app.use((req, _res, next) => {
-  marcarActividad();
+  if (req.path !== '/api/historico') marcarActividad();
   next();
 });
 
@@ -456,63 +457,32 @@ app.post('/api/carrito/finalizar', requireSession, async (req, res) => {
   }
 });
 
-// Antes esto era nuestro propio historial (solo veía lo comprado a través de
-// la app). cofiba.es tiene su propia sección real "Comprados recientemente"
-// (/consumo.html) con el historial completo de la cuenta, se haya comprado
-// desde donde se haya comprado — se usa esa en su lugar, paginada igual que
-// cualquier categoría (?pageUrl= para pedir la siguiente tanda).
-//
-// OJO: /consumo.html tarda mucho en generarse en el propio servidor de
-// cofiba.es (~15-35s medido, frente a <1s de una página de categoría normal
-// con un tamaño de respuesta similar) — es lento de por sí en su lado, no
-// algo que nuestro scraping cause. Además, confirmado en pruebas: si se le
-// pide esa misma página dos veces en paralelo (p. ej. React en desarrollo
-// duplica el efecto de carga inicial), cofiba.es entra en una carrera
-// interna y una de las dos respuestas vuelve con menos productos de los que
-// hay de verdad (o ninguno). Por eso aquí no solo se cachea el resultado un
-// rato por usuario+página, sino que además una segunda petición idéntica que
-// llegue mientras la primera sigue en curso espera a esa misma promesa en
-// vez de disparar una segunda petición real a cofiba.es. La petición real de
-// verdad va además dentro de encolarConsumo (consumoQueue.js), que sirve
-// para lo mismo pero entre features distintas: compradosStore.js también
-// pide páginas de /consumo.html en segundo plano para marcar el catálogo, y
-// sin esa cola compartida sus peticiones podrían solaparse con las de aquí.
-const CACHE_HISTORICO_MS = 3 * 60 * 1000;
-const historicoCache = new Map(); // `${usuario}|${pageUrl||''}` -> { resultado, cuando }
-const historicoEnCurso = new Map(); // `${usuario}|${pageUrl||''}` -> Promise
-
-app.get('/api/historico', requireSession, async (req, res) => {
-  const pageUrl = req.query.pageUrl || '';
-  const forzar = req.query.forzar === '1';
-  const clave = `${req.usuario}|${pageUrl}`;
-  const cacheado = historicoCache.get(clave);
-  if (!forzar && cacheado && Date.now() - cacheado.cuando < CACHE_HISTORICO_MS) {
-    return res.json(cacheado.resultado);
+// Histórico real de la cuenta ('Comprados recientemente', /consumo.html de
+// cofiba.es). El recorrido de todas sus páginas lo hace el servidor
+// (historicoStore.js) y aquí solo se devuelve lo que lleva hasta ahora: el
+// cliente consulta cada pocos segundos mientras está en la pestaña. Con
+// `version` el cliente dice qué versión tiene ya; si no ha cambiado nada no
+// se reenvía la lista entera.
+app.get('/api/historico', requireSession, (req, res) => {
+  const st = consultarHistorico(req.usuario, req.cofiba, { forzar: req.query.forzar === '1' });
+  const meta = {
+    version: st.version,
+    paginasCargadas: st.indice > 0 && !st.completo ? st.indice : st.paginas.length,
+    totalPaginas: st.totalPaginas,
+    completo: st.completo,
+    corriendo: st.corriendo,
+    error: st.error,
+  };
+  if (req.query.version && Number(req.query.version) === st.version) {
+    return res.json({ ...meta, sinCambios: true });
   }
-  try {
-    let promesa = historicoEnCurso.get(clave);
-    if (!promesa) {
-      promesa = encolarConsumo(req.usuario, () => getComprasRecientes(req.cofiba, { pageUrl: req.query.pageUrl })).finally(
-        () => historicoEnCurso.delete(clave)
-      );
-      historicoEnCurso.set(clave, promesa);
-    }
-    const resultado = await promesa;
-    registrarImagenes(resultado.productos);
-    // Esta página ya está pedida — aprovecharla también para las marcas de
-    // "ya comprado" del catálogo, y de paso disparar el recorrido completo
-    // en segundo plano (entrar en Histórico es uno de los dos únicos sitios
-    // que lo arrancan; el otro es buscar).
-    registrarCompras(req.usuario, resultado.productos);
-    asegurarComprados(req.usuario, req.cofiba);
-    // /consumo.html (de donde sale el histórico) no trae categoría ni
-    // subcategoría de cada producto — solo nombre/precio/foto. Para el botón
-    // "Ver en catálogo" hace falta saber a qué subcategoría pertenece cada
-    // uno; el índice del catálogo completo ya lo sabe (lo recorrió por sus
-    // páginas normales de categoría), así que se rellena desde ahí cuando ya
-    // se conoce. Si el índice aún no ha llegado a ese artículo, queda `null`
-    // y el botón simplemente no se muestra para esa fila.
-    resultado.productos = resultado.productos.map((p) => {
+  const productos = st.paginas.flat();
+  registrarImagenes(productos);
+  // /consumo.html no trae categoría/subcategoría — se rellena desde el
+  // índice del catálogo para agrupar y para el botón 'Ver más'.
+  res.json({
+    ...meta,
+    productos: productos.map((p) => {
       const indexado = buscarPorArticulo(p.articulo);
       return {
         ...p,
@@ -521,16 +491,8 @@ app.get('/api/historico', requireSession, async (req, res) => {
         subcategoria: indexado?.subcategoria || null,
         subcategoriaNombre: indexado?.subcategoriaNombre || null,
       };
-    });
-    // No merece la pena cachear una respuesta vacía: es casi seguro la
-    // carrera descrita arriba, no que la cuenta no tenga compras — así la
-    // siguiente petición vuelve a intentarlo de verdad en vez de repetir el
-    // vacío durante los próximos minutos.
-    if (resultado.productos.length > 0) historicoCache.set(clave, { resultado, cuando: Date.now() });
-    res.json(resultado);
-  } catch (e) {
-    res.status(e.code === 'PAGEURL_INVALIDA' ? 400 : 502).json({ error: e.message });
-  }
+    }),
+  });
 });
 
 // "También te puede interesar": otros artículos AL AZAR de la MISMA
@@ -630,7 +592,7 @@ app.get('/api/buscar', requireSession, async (req, res) => {
   // Buscar es (junto con entrar en Histórico) el único sitio que arranca el
   // rastreo de compras en segundo plano — así las marcas de "ya comprado"
   // se van completando sin que navegar por el catálogo dispare nada pesado.
-  asegurarComprados(req.usuario, req.cofiba);
+  if (!historicoEnMarcha(req.usuario)) asegurarComprados(req.usuario, req.cofiba);
 
   const st = estadoActual();
   if (st.estado === 'error' && !indiceListo()) {

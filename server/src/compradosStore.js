@@ -110,6 +110,20 @@ export function comprasConocidas(usuario) {
   return d && d.conteo.size ? d.conteo : null;
 }
 
+// Histórico completo recién recorrido (historicoStore.js): sustituye el
+// conteo por el exacto de ese recorrido y lo da por completo — así el
+// rastreo propio de este módulo no tiene que volver a pedir las mismas
+// páginas lentas de /consumo.html.
+export function completarComprados(usuario, productos) {
+  const d = entrada(usuario);
+  const conteo = new Map();
+  productos.forEach((p) => conteo.set(p.articulo, (conteo.get(p.articulo) || 0) + 1));
+  d.conteo = conteo;
+  d.completo = true;
+  d.actualizado = Date.now();
+  guardarEnDisco(true);
+}
+
 // Para el panel de escritorio (/api/admin/estado): suma el conteo de TODAS
 // las cuentas que usan la app en uno solo (para "más vendidos" a nivel
 // global, no solo de una cuenta) y da un resumen por cuenta.
@@ -146,7 +160,16 @@ export function asegurarComprados(usuario, session) {
       // los ratos muertos, pero corre tan rápido como cofiba.es lo permita
       // en cuanto hay hueco.
       await esperarInactividad();
-      const res = await encolarConsumo(usuario, () => getProductos(session, { pageUrl: pageUrl || CONSUMO_URL }));
+      // Con tiempo máximo: una petición que cofiba.es dejara colgada
+      // bloquearía la cola de /consumo.html de esta cuenta (y con ella el
+      // Histórico) para siempre.
+      const res = await encolarConsumo(usuario, () =>
+        Promise.race([
+          getProductos(session, { pageUrl: pageUrl || CONSUMO_URL }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("tiempo agotado en /consumo.html")), 75000)),
+        ])
+      );
+      if (d.completo && d.actualizado && Date.now() - d.actualizado < TTL_MS) return; // el Histórico ya lo completó
       registrarCompras(usuario, res.productos);
       pageUrl = res.siguientePagina;
     } while (pageUrl);

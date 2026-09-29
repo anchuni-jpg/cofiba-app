@@ -53,6 +53,8 @@ export default function App() {
   // camino normal (tocando un tile en Categorías), para que no se cuele en
   // una navegación que no tiene nada que ver.
   const [subcategoriaInicial, setSubcategoriaInicial] = useState(null);
+  // Si la pantalla de Productos actual se abrió desde el Histórico ("Ver más").
+  const [vinoDeHistorico, setVinoDeHistorico] = useState(false);
   const [busqueda, setBusqueda] = useState(null);
   // Filtro global de isla (Mallorca/Ibiza/Formentera) — se activa desde
   // Categorías pero afecta a Productos/Búsqueda/Histórico por igual, así que
@@ -171,12 +173,16 @@ export default function App() {
 
   useEffect(() => {
     function onPopState(e) {
+      // Con la ficha de producto abierta, "atrás" solo la cierra (lo hace
+      // FichaProducto.jsx) — no se cambia de pantalla.
+      if (window.__cofibaFichaAbierta) return;
       restaurandoRef.current = true;
       const s = e.state || {};
       setTab(s.tab || 'categorias');
       setCategoria(s.categoria || null);
       setBusqueda(s.busqueda || null);
       setSubcategoriaInicial(s.subcategoriaInicial || null);
+      setVinoDeHistorico(!!s.vinoDeHistorico);
     }
     window.addEventListener('popstate', onPopState);
     // Dejar el estado inicial (Categorías) en la propia entrada de carga,
@@ -198,7 +204,7 @@ export default function App() {
       primeraVezRef.current = false;
       return;
     }
-    window.history.pushState({ tab, categoria, busqueda, subcategoriaInicial }, '');
+    window.history.pushState({ tab, categoria, busqueda, subcategoriaInicial, vinoDeHistorico }, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, categoria, busqueda]);
 
@@ -261,6 +267,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Botón de abajo que queda iluminado: el de la sección de la que cuelga la
+  // pantalla actual, no solo la pestaña exacta — entrar en una categoría o
+  // buscar sigue siendo 'Catálogo'; entrar en una categoría con 'Ver más'
+  // desde el Histórico sigue siendo 'Histórico'.
+  const seccion =
+    tab === 'productos' ? (vinoDeHistorico ? 'historico' : 'categorias') : tab === 'busqueda' ? 'categorias' : tab;
+
   if (!loggedIn) {
     return (
       <Login
@@ -284,10 +297,10 @@ export default function App() {
           tocando una categoría desde Catálogo (o "Ver más" en Histórico) —
           por eso no aparece aquí abajo, aunque su ruta siga existiendo. */}
       <div className="bottomnav">
-        <button className={tab === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>
+        <button className={seccion === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>
           Catálogo
         </button>
-        <button className={tab === 'historico' ? 'active' : ''} onClick={() => setTab('historico')}>
+        <button className={seccion === 'historico' ? 'active' : ''} onClick={() => setTab('historico')}>
           Histórico
         </button>
         <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
@@ -357,6 +370,7 @@ export default function App() {
             onOpenCategoria={(c) => {
               setCategoria(c);
               setSubcategoriaInicial(null);
+              setVinoDeHistorico(false);
               setTab('productos');
             }}
             onSearch={(q) => {
@@ -406,6 +420,7 @@ export default function App() {
             onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
               setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
               setSubcategoriaInicial(subcategoriaSlug || null);
+              setVinoDeHistorico(true);
               setTab('productos');
             }}
           />

@@ -111,27 +111,15 @@ export const api = {
   finalizarPedido(observaciones = '') {
     return request('/carrito/finalizar', { method: 'POST', body: { observaciones } });
   },
-  historico({ pageUrl, forzar } = {}) {
+  // El recorrido de todo el histórico lo hace el servidor; esto solo
+  // pregunta cómo va. `version`: la que ya se tiene — si no ha cambiado, el
+  // servidor contesta sinCambios sin reenviar la lista entera.
+  historico({ version, forzar } = {}) {
     const params = new URLSearchParams();
-    if (pageUrl) params.set('pageUrl', pageUrl);
+    if (version != null) params.set('version', String(version));
     if (forzar) params.set('forzar', '1');
     const qs = params.toString();
     return request(`/historico${qs ? `?${qs}` : ''}`);
-  },
-  // /consumo.html tarda 15-35s en el servidor de cofiba.es — mostrar la
-  // última tanda vista de esta misma página mientras se repite la petición
-  // de verdad evita ese rato en blanco en visitas repetidas.
-  //
-  // "v2" a propósito: los dispositivos que ya habían recorrido TODO el
-  // histórico antes de que el servidor empezara a enriquecer cada producto
-  // con categoría/subcategoría (el botón "Ver más") se quedaban con esa
-  // caché antigua para siempre — Historico.jsx nunca vuelve a pedir de
-  // verdad una página que ya tiene completa en caché. Cambiar la clave hace
-  // que esa caché vieja quede huérfana (se ignora) y fuerza un recorrido
-  // fresco, ya con el campo nuevo.
-  historicoCached({ pageUrl, forzar } = {}, onCacheHit) {
-    const clave = `historico:v2:${pageUrl || ''}`;
-    return conCache(clave, () => this.historico({ pageUrl, forzar }), onCacheHit);
   },
   pedidosPendientes() {
     return request('/pedidos-pendientes');
