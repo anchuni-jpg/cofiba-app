@@ -89,6 +89,9 @@ export default function Productos({
   // momento, sin esperar a la próxima carga, para que nadie más tropiece
   // con el mismo error en lo que queda de esta visita.
   const [noDisponibles, setNoDisponibles] = useState(new Set());
+  const contentRef = useRef(null);
+  const chipsRef = useRef(null);
+  const chipsRefAbajo = useRef(null);
 
   // Cada subcategoría visitada tiene su propia entrada aquí (paginas
   // acumuladas, subcategorías, grupo resuelto...), en vez de un único estado
