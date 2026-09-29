@@ -81,7 +81,7 @@ function entrada(usuario) {
     // `conteo` cuenta cuántas veces se ha visto cada artículo en
     // /consumo.html (una vez por línea de compra real) — no es solo un Set
     // de "comprado sí/no": la frecuencia es lo que permite luego calcular
-    // "los más vendidos" en /api/estadisticas. Sigue teniendo `.has()`
+    // "los más vendidos" del panel de escritorio. Sigue teniendo `.has()`
     // (Map la trae de serie), así que marcarComprados() en index.js no
     // necesita cambiar nada.
     d = { conteo: new Map(), completo: false, actualizado: null };
@@ -108,17 +108,6 @@ export function registrarCompras(usuario, productos) {
 export function comprasConocidas(usuario) {
   const d = datos.get(usuario);
   return d && d.conteo.size ? d.conteo : null;
-}
-
-// Datos crudos para /api/estadisticas: la frecuencia de cada artículo (para
-// "más vendidos") y si el recorrido ya es completo (para avisar si las
-// cifras todavía son parciales). El enriquecido con nombre/categoría/precio
-// se hace en index.js con el índice del catálogo, no aquí — este módulo solo
-// sabe de códigos de artículo, no de sus datos.
-export function estadisticasCompras(usuario) {
-  const d = datos.get(usuario);
-  if (!d || d.conteo.size === 0) return null;
-  return { conteo: d.conteo, completo: d.completo, actualizado: d.actualizado };
 }
 
 // Para el panel de escritorio (/api/admin/estado): suma el conteo de TODAS

@@ -46,8 +46,7 @@ export function registrarPedido({ usuario, total, numProductos }) {
 // `desde` (timestamp) filtra a pedidos posteriores a esa fecha; sin él,
 // devuelve todo lo registrado. `usuario` (opcional) acota a una sola cuenta
 // — el panel de escritorio llama a esto sin usuario (agregado de todas las
-// cuentas); /api/estadisticas sí lo pasa, para que cada cliente vea solo lo
-// suyo.
+// cuentas).
 export function resumenFacturacion({ desde, usuario } = {}) {
   let lista = pedidos;
   if (usuario) lista = lista.filter((p) => p.usuario === usuario);

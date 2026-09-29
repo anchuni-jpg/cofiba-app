@@ -35,12 +35,10 @@ import {
   productosPorSubcategoria,
   marcarActividad,
 } from './indiceStore.js';
-import { asegurarComprados, comprasConocidas, registrarCompras, estadisticasCompras, resumenGlobal } from './compradosStore.js';
+import { asegurarComprados, comprasConocidas, registrarCompras, resumenGlobal } from './compradosStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
 import { encolarConsumo } from './consumoQueue.js';
 import { marcarNoDisponible, filtrarDisponibles } from './noDisponibleStore.js';
-import { articulosNuevos } from './novedadesStore.js';
-import { cambiosRecientes } from './stockStore.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
 // try/catch (p. ej. en un rastreo de fondo) tumbaba TODO el servidor en vez
@@ -535,134 +533,6 @@ app.get('/api/historico', requireSession, async (req, res) => {
   }
 });
 
-// Estadísticas de la propia cuenta: no hay ningún endpoint de "informes" en
-// cofiba.es, así que esto se calcula a partir de lo mismo que ya usa
-// compradosStore.js para marcar "comprado" en el catálogo (el recorrido de
-// fondo de /consumo.html) — solo que ahí se contaba con un Set (sí/no) y
-// aquí con un Map (cuántas veces), lo que permite sacar "más comprados" y un
-// desglose por categoría sin ninguna petición extra a cofiba.es. Dispara el
-// mismo recorrido de fondo que Histórico/Buscar si aún no hay nada — puede
-// tardar en completarse la primera vez, así que `completo` indica si las
-// cifras son ya definitivas o siguen creciendo.
-app.get('/api/estadisticas', requireSession, async (req, res) => {
-  asegurarComprados(req.usuario, req.cofiba);
-  const stats = estadisticasCompras(req.usuario);
-  if (!stats) {
-    return res.json({ disponible: false, completo: false });
-  }
-  const { conteo, completo, actualizado } = stats;
-
-  // cofiba.es vende por CAJA, no por unidad suelta — "veces" cuenta cajas
-  // pedidas de ese artículo, así que el importe real es precio unitario ×
-  // unidades por caja (undVenta) × veces, no solo precio × veces (eso
-  // daría un importe muy por debajo de lo real). Sigue siendo una
-  // aproximación (el histórico no guarda el precio de cada compra en su
-  // momento, así que se usa el precio de catálogo de ahora), pero es la
-  // única forma de dar una cifra de dinero sin que cofiba.es exponga ese
-  // dato en ningún otro sitio.
-  const porCategoria = new Map(); // nombre -> { nombre, veces, importe, productos: [] }
-  const filas = [];
-  let totalLineas = 0;
-  let totalImporte = 0;
-  for (const [articulo, veces] of conteo.entries()) {
-    totalLineas += veces;
-    const info = buscarPorArticulo(articulo);
-    const categoriaNombre = info?.categoriaNombre || (info?.categoria ? info.categoria.toUpperCase() : 'Sin categoría');
-    const precioUnidad = parseFloat(String(info?.precioFinal || '').replace(',', '.'));
-    const unidadesPorCaja = parseFloat(String(info?.undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
-    const precioCaja = Number.isFinite(precioUnidad) ? Math.round(precioUnidad * unidadesPorCaja * 100) / 100 : null;
-    const importe = precioCaja != null ? Math.round(precioCaja * veces * 100) / 100 : null;
-    if (importe != null) totalImporte += importe;
-
-    const fila = {
-      articulo,
-      veces,
-      importe,
-      nombre: info?.nombre || null,
-      referencia: info?.referencia || null,
-      precioFinal: info?.precioFinal || null,
-      undVenta: info?.undVenta || null,
-      precioCaja,
-      stock: info?.stock ?? null,
-      imagen: info?.imagen || null,
-      categoriaNombre,
-      // Para poder añadir directo al carrito ("Repetir pedido") sin tener
-      // que ir a buscar el producto: categoria (slug) y origen son lo que
-      // pide anadirAlCarrito.
-      categoria: info?.categoria || null,
-      origen: info?.origen || null,
-    };
-    filas.push(fila);
-
-    let cat = porCategoria.get(categoriaNombre);
-    if (!cat) {
-      cat = { nombre: categoriaNombre, veces: 0, importe: 0, productos: [] };
-      porCategoria.set(categoriaNombre, cat);
-    }
-    cat.veces += veces;
-    if (importe != null) cat.importe += importe;
-    cat.productos.push(fila);
-  }
-  filas.sort((a, b) => b.veces - a.veces);
-
-  // Cada categoría trae ya sus propios productos ordenados de más a menos
-  // vendido — así, al tocar una categoría en el cliente, mostrar "sus
-  // productos de más a menos vendido" no necesita ninguna petición nueva.
-  const categorias = [...porCategoria.values()]
-    .map((c) => ({
-      ...c,
-      importe: Math.round(c.importe * 100) / 100,
-      productos: c.productos.slice().sort((a, b) => b.veces - a.veces),
-    }))
-    .sort((a, b) => b.importe - a.importe);
-
-  res.json({
-    disponible: true,
-    completo,
-    actualizado,
-    articulosDistintos: conteo.size,
-    totalLineas,
-    totalImporte: Math.round(totalImporte * 100) / 100,
-    masComprados: filas.slice(0, 15),
-    porCategoria: categorias,
-  });
-});
-
-// "Lo más comprado"/"Por categoría" (arriba) salen de /consumo.html, que no
-// trae fecha de compra en ningún sitio (comprobado en vivo) — no hay forma
-// honesta de acotarlos a "el último mes" o parecido, así que siempre son de
-// toda la cuenta. Lo único que SÍ tiene fecha real es el registro de
-// pedidos hechos desde esta misma app (pedidosStore.js) — esta ruta,
-// aparte de /api/estadisticas para no mezclar un cálculo pesado (recorrer
-// todo el índice del catálogo) con uno ligero que cambia cada vez que se
-// toca un botón de periodo, es la única que de verdad respeta el periodo
-// pedido.
-const DIA_MS = 24 * 60 * 60 * 1000;
-function desdePorPeriodo(periodo) {
-  const ahora = Date.now();
-  switch (periodo) {
-    case '1m':
-      return ahora - 30 * DIA_MS;
-    case '3m':
-      return ahora - 90 * DIA_MS;
-    case '6m':
-      return ahora - 180 * DIA_MS;
-    case '12m':
-      return ahora - 365 * DIA_MS;
-    case 'ano':
-      return new Date(new Date().getFullYear(), 0, 1).getTime();
-    default:
-      return null;
-  }
-}
-
-app.get('/api/facturacion', requireSession, (req, res) => {
-  const periodo = req.query.periodo || null;
-  const desde = desdePorPeriodo(periodo);
-  const { totalPedidos, totalImporte } = resumenFacturacion({ usuario: req.usuario, desde: desde ?? undefined });
-  res.json({ periodo, totalPedidos, totalImporte });
-});
-
 // "También te puede interesar": otros artículos AL AZAR de la MISMA
 // subcategoría que el que se está mirando (no hay forma de saber qué se
 // compró junto en un mismo pedido — cofiba.es no expone esa relación — así
@@ -793,39 +663,6 @@ app.get('/api/buscar', requireSession, async (req, res) => {
     totalIndice: st.total,
     actualizado: st.actualizado,
   });
-});
-
-// Novedades del catálogo (últimos 15 días) y cambios de stock notables
-// (agotado, repuesto, cruce del umbral de 10 cajas, o bajada de al menos el
-// 50% de golpe) — ver novedadesStore.js / stockStore.js. Se calculan en el
-// SERVIDOR cada vez que el índice completa un recorrido (indiceStore.js),
-// no comparando snapshots del propio dispositivo, así que cualquier cuenta
-// ve las mismas novedades reales desde el primer momento en vez de tener
-// que esperar a dos visitas suyas para tener algo con qué comparar. Si el
-// índice está desactualizado, se dispara un recorrido nuevo en segundo
-// plano (como en /api/buscar) para que la próxima consulta ya esté al día.
-app.get('/api/novedades', requireSession, (req, res) => {
-  if (necesitaConstruir()) iniciarConstruccion(req.cofiba);
-  const productos = articulosNuevos()
-    .map(({ articulo, desde }) => {
-      const info = buscarPorArticulo(articulo);
-      if (!info) return null;
-      return { ...info, desde };
-    })
-    .filter(Boolean);
-  res.json({ construyendo: estadoActual().estado === 'construyendo', productos });
-});
-
-app.get('/api/cambios-stock', requireSession, (req, res) => {
-  if (necesitaConstruir()) iniciarConstruccion(req.cofiba);
-  const productos = cambiosRecientes()
-    .map(({ articulo, stockAntes, stockDespues, fecha }) => {
-      const info = buscarPorArticulo(articulo);
-      if (!info) return null;
-      return { ...info, stockAntes, stockDespues, fecha };
-    })
-    .filter(Boolean);
-  res.json({ construyendo: estadoActual().estado === 'construyendo', productos });
 });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

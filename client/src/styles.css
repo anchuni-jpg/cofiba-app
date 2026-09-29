@@ -490,3 +490,55 @@ input {
   align-items: center;
   justify-content: center;
 }
+
+/* Aviso de envío del pedido (Carrito.jsx): a pantalla completa para que no
+   haya duda de si el pedido se está enviando o ya ha salido. */
+.envio-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+  padding: 24px;
+}
+.envio-caja {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 28px 22px;
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+}
+.envio-titulo {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+  color: var(--text-primary);
+}
+.envio-spinner {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border: 5px solid var(--accent-bg);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: envio-giro 0.9s linear infinite;
+}
+@keyframes envio-giro {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.envio-check {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 34px;
+  line-height: 60px;
+  font-weight: 700;
+}

@@ -11,9 +11,6 @@ const DIAPOSITIVAS = [
   { archivo: '/tutorial/slide-04-escaner.jpg', titulo: 'Escanea códigos de barras' },
   { archivo: '/tutorial/slide-05-carrito.jpg', titulo: 'Revisa y confirma el pedido' },
   { archivo: '/tutorial/slide-06-historico.jpg', titulo: 'Recompra en un toque' },
-  { archivo: '/tutorial/slide-07-estadisticas.jpg', titulo: 'Lo que más compras' },
-  { archivo: '/tutorial/slide-08-novedades.jpg', titulo: 'Novedades del catálogo' },
-  { archivo: '/tutorial/slide-09-cambios-stock.jpg', titulo: 'Avisos de stock' },
 ];
 
 export default function TutorialViewer({ onCerrar }) {

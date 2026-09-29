@@ -136,56 +136,6 @@ export const api = {
   pedidosPendientes() {
     return request('/pedidos-pendientes');
   },
-  estadisticas() {
-    return request('/estadisticas');
-  },
-  // A diferencia del resto de *Cached, aquí "más reciente" no siempre es
-  // "mejor": el servidor gratuito se reinicia a menudo (duerme por
-  // inactividad) y pierde el recorrido de compras acumulado, así que una
-  // respuesta fresca justo después de un reinicio puede traer MENOS datos
-  // que los que ya se habían visto — sin este cuidado, el cliente vería sus
-  // estadísticas "vaciarse" delante de sus ojos cada vez que entra después
-  // de un rato sin usar la app. Se guarda y se enseña siempre la mejor foto
-  // vista hasta ahora (más cajas contadas), nunca una peor aunque sea más
-  // nueva; en cuanto el recorrido de fondo del servidor alcanza (o supera)
-  // lo ya visto, esa sí la sustituye.
-  async estadisticasCached(onCacheHit) {
-    const CLAVE = 'estadisticas';
-    const cacheado = await getCache(CLAVE);
-    if (cacheado) onCacheHit?.(cacheado);
-    const frescos = await this.estadisticas();
-    const mejor = cacheado && (cacheado.totalLineas || 0) > (frescos.totalLineas || 0) ? cacheado : frescos;
-    await setCache(CLAVE, mejor);
-    return mejor;
-  },
-  // Ligera y siempre en vivo a propósito (sin caché): solo suma un array en
-  // memoria del servidor, no recorre nada de cofiba.es — no hace falta
-  // ahorrarse la petición como con el resto de Estadísticas.
-  facturacion(periodo) {
-    return request(`/facturacion${periodo ? `?periodo=${periodo}` : ''}`);
-  },
-  // Novedades (últimos 15 días) y cambios de stock notables (últimos 15
-  // días) — calculados EN EL SERVIDOR (novedadesStore.js/stockStore.js),
-  // comparando cada recorrido del catálogo contra el anterior, así que
-  // cualquier cuenta ve lo mismo desde el primer momento en vez de tener que
-  // esperar a que ESTE dispositivo concreto haya visitado dos veces para
-  // tener algo con qué comparar (ese era el problema del enfoque anterior).
-  // Se piden siempre frescos al servidor (esa es la fuente de verdad), pero
-  // se guarda lo encontrado en IndexedDB para que la pantalla tenga algo que
-  // enseñar al instante en la siguiente visita mientras se confirma que
-  // sigue igual — mismo patrón que categoriasCached/productosCached.
-  novedades() {
-    return request('/novedades');
-  },
-  novedadesCached(onCacheHit) {
-    return conCache('novedades', () => this.novedades(), onCacheHit);
-  },
-  cambiosStock() {
-    return request('/cambios-stock');
-  },
-  cambiosStockCached(onCacheHit) {
-    return conCache('cambios-stock', () => this.cambiosStock(), onCacheHit);
-  },
   // Bajo demanda, al abrir la ficha de un producto — no tiene sentido
   // cachear esto por más de la sesión actual, cambia con cada artículo.
   relacionados(articulo) {

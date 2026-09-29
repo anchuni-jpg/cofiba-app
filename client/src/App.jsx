@@ -6,7 +6,6 @@ import Productos from './screens/Productos.jsx';
 import Carrito from './screens/Carrito.jsx';
 import Historico from './screens/Historico.jsx';
 import Busqueda from './screens/Busqueda.jsx';
-import Estadisticas from './screens/Estadisticas.jsx';
 
 function useInstallPrompt() {
   const [deferred, setDeferred] = useState(null);
@@ -46,7 +45,7 @@ function cargarCompradosSesion() {
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!getToken());
-  const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico | estadisticas
+  const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico
   const [categoria, setCategoria] = useState(null);
   // Solo se rellena al venir del botón "Ver más" de Histórico — le dice a
   // Productos en qué subcategoría entrar directamente en vez de la primera
@@ -294,9 +293,6 @@ export default function App() {
         <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
           Carrito{cartCount > 0 ? <span className="badge">{cartCount}</span> : null}
         </button>
-        <button className={tab === 'estadisticas' ? 'active' : ''} onClick={() => setTab('estadisticas')}>
-          Estadísticas
-        </button>
       </div>
 
       <div className="app-main">
@@ -413,9 +409,6 @@ export default function App() {
               setTab('productos');
             }}
           />
-        )}
-        {tab === 'estadisticas' && (
-          <Estadisticas onCartChanged={refreshCartCount} codigosEnCarrito={codigosEnCarrito} codigosSesion={codigosSesion} />
         )}
       </div>
     </div>

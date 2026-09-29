@@ -1,23 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
-// Duplica nivelStock de Productos.jsx — 10 cajas o más: sin aviso; por
-// debajo, aviso de stock bajo para que no se quede a medias el pedido.
-function nivelStock(stock, undVenta) {
-  if (!Number.isFinite(stock)) return null;
-  const unidadesPorCaja = parseFloat(String(undVenta || '').replace(/\./g, '').replace(',', '.')) || 1;
-  const cajas = stock / unidadesPorCaja;
-  if (cajas >= 10) return { texto: 'STOCK', bajo: false };
-  return cajas <= 0 ? { texto: 'AGOTADO', bajo: true } : { texto: 'STOCK BAJO', bajo: true };
-}
-
 export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
   const [carrito, setCarrito] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyCodigo, setBusyCodigo] = useState(null);
   const [observaciones, setObservaciones] = useState('');
-  const [pedidoOk, setPedidoOk] = useState(null);
+  // Aviso a pantalla completa mientras se envía el pedido y al terminar:
+  // null | { estado: 'enviando' } | { estado: 'ok', total }. Un simple texto
+  // arriba del carrito pasaba desapercibido y la clienta no sabía si el
+  // pedido había salido o no.
+  const [envio, setEnvio] = useState(null);
   const [zoomSrc, setZoomSrc] = useState(null);
   const [pedidos, setPedidos] = useState([]);
   const [pedidosError, setPedidosError] = useState(null);
@@ -122,7 +116,8 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
       return;
     }
     setError(null);
-    setPedidoOk(null);
+    const total = carrito?.totales?.total || null;
+    setEnvio({ estado: 'enviando' });
     // El carrito se vacía en cofiba.es al finalizar, así que hay que guardar
     // qué artículos llevaba ANTES de que eso pase — si no, el icono de "en
     // el carrito o comprado en esta sesión" desaparecería de golpe justo
@@ -130,11 +125,14 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
     const codigos = carrito?.lineas.map((l) => l.codigo) || [];
     try {
       await api.finalizarPedido(observaciones);
-      setPedidoOk('Pedido generado correctamente.');
+      setEnvio({ estado: 'ok', total });
+      setObservaciones('');
       onPedidoFinalizado?.(codigos);
       cargar();
     } catch (e) {
-      setError(e.message);
+      setEnvio(null);
+      setError(`No se ha podido enviar el pedido: ${e.message}`);
+      window.scrollTo(0, 0);
     }
   }
 
@@ -145,15 +143,7 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
       </p>
 
       {error && <div className="error-banner">{error}</div>}
-      {pedidoOk && <div className="install-banner">{pedidoOk}</div>}
       {loading && <p className="muted">Cargando carrito…</p>}
-
-      {carrito && carrito.lineas.some((l) => nivelStock(l.stock, l.undVenta)?.bajo) && (
-        <div className="error-banner">
-          Algún producto del carrito tiene stock bajo — revisa las cantidades antes de finalizar, por si no queda
-          suficiente para completar el pedido.
-        </div>
-      )}
 
       {carrito && (
         <>
@@ -185,9 +175,6 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
                   <p className="muted" style={{ margin: '2px 0 0' }}>
                     Ref. {l.codigo}
                     {l.precio ? ` · ${l.precio}€/ud` : ''}
-                    {nivelStock(l.stock, l.undVenta)?.bajo && (
-                      <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · STOCK BAJO</span>
-                    )}
                   </p>
                   <div className="qty-stepper" style={{ marginTop: 4 }}>
                     <button
@@ -220,8 +207,13 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
               el propio botón de finalizar — y el resto (importe,
               observaciones, actualizar/borrar, pedido mínimo) va
               detrás en ese mismo orden, no repartido por toda la pantalla. */}
-          <button className="primary" style={{ width: '100%', marginTop: 4, marginBottom: 4 }} onClick={finalizar}>
-            Finalizar pedido
+          <button
+            className="primary"
+            style={{ width: '100%', marginTop: 4, marginBottom: 4 }}
+            disabled={envio?.estado === 'enviando' || carrito.lineas.length === 0}
+            onClick={finalizar}
+          >
+            {envio?.estado === 'enviando' ? 'Enviando pedido…' : 'Finalizar pedido'}
           </button>
           <p className="muted" style={{ marginBottom: 12, fontSize: 12 }}>
             Genera un pedido real en tu cuenta de cofiba.es con el contenido actual del carrito.
@@ -306,6 +298,32 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
           </div>
         ))}
       </div>
+
+      {envio && (
+        <div className="envio-overlay" role="alertdialog" aria-live="assertive">
+          <div className="envio-caja">
+            {envio.estado === 'enviando' ? (
+              <>
+                <div className="envio-spinner" />
+                <p className="envio-titulo">Enviando pedido…</p>
+                <p className="muted">No cierres la app hasta que termine.</p>
+              </>
+            ) : (
+              <>
+                <div className="envio-check">✓</div>
+                <p className="envio-titulo">¡Pedido enviado correctamente!</p>
+                <p className="muted">
+                  {envio.total ? `Total: ${envio.total}€. ` : ''}
+                  Ya está registrado en Cofiba. Lo verás en «Copias de pedido».
+                </p>
+                <button className="primary" style={{ width: '100%', marginTop: 12 }} onClick={() => setEnvio(null)}>
+                  Aceptar
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {zoomSrc && (
         <div
