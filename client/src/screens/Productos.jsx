@@ -365,8 +365,37 @@ export default function Productos({
     }
   }, [grupoEfectivo, subcategorias.length]);
 
-  function elegirSubcategoria(slug) {
+  function elegirSubcategoria(slug, entrada = null) {
+    setEntradaLista(entrada);
     setNav({ key: ctxKey, subcategoria: slug });
+  }
+
+  // Deslizar el dedo a los lados sobre la lista = pasar a la subcategoría
+  // vecina (en el mismo orden que la fila de botones). No cuenta si se
+  // empieza sobre las filas de botones (que se desplazan solas a los lados)
+  // ni sobre los +/-.
+  const [entradaLista, setEntradaLista] = useState(null);
+  const deslizarRef = useRef(null);
+  function onTouchStartLista(e) {
+    if (busquedaCatActiva || e.target.closest('[data-carrusel], .qty-stepper, input, select')) {
+      deslizarRef.current = null;
+      return;
+    }
+    const t = e.touches[0];
+    deslizarRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }
+  function onTouchEndLista(e) {
+    const ini = deslizarRef.current;
+    deslizarRef.current = null;
+    if (!ini) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - ini.x;
+    const dy = t.clientY - ini.y;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - ini.t > 900) return;
+    const idx = subcategorias.findIndex((s) => s.slug === grupoEfectivo);
+    const destino = subcategorias[idx + (dx < 0 ? 1 : -1)];
+    if (idx < 0 || !destino) return;
+    elegirSubcategoria(destino.slug, dx < 0 ? 'der' : 'izq');
   }
 
   function buscarEnCategoria() {
@@ -469,7 +498,13 @@ export default function Productos({
   const hayMasParaRevelar = visibles < productosPorComprado.length;
 
   return (
-    <div className="content" ref={contentRef} style={{ display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="content"
+      ref={contentRef}
+      style={{ display: 'flex', flexDirection: 'column' }}
+      onTouchStart={onTouchStartLista}
+      onTouchEnd={onTouchEndLista}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
@@ -548,7 +583,7 @@ export default function Productos({
       </div>
 
       {!busquedaCatActiva && subcategorias.length > 0 && (
-        <div ref={chipsRef} style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
+        <div ref={chipsRef} data-carrusel style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
           {subcategorias.map((s) => {
             const activa = grupoEfectivo === s.slug;
             return (
@@ -558,8 +593,8 @@ export default function Productos({
                 onClick={() => elegirSubcategoria(s.slug)}
                 style={{
                   flexShrink: 0,
-                  fontSize: 11,
-                  padding: '6px 10px',
+                  fontSize: 13,
+                  padding: '10px 16px',
                   whiteSpace: 'nowrap',
                   background: activa ? 'var(--accent)' : 'var(--surface-2)',
                   color: activa ? '#fff' : 'var(--text-primary)',
@@ -617,6 +652,7 @@ export default function Productos({
         </p>
       )}
 
+      <div key={'lista-' + grupoEfectivo} className={`lista-entra-${entradaLista || 'fade'}`}>
       {esFila ? (
         <div>
           {productosFiltrados.map((p) => (
@@ -736,6 +772,8 @@ export default function Productos({
         </div>
       )}
 
+      </div>
+
       {hayMasParaRevelar && (
         <div style={{ padding: '12px 0', textAlign: 'center' }}>
           <button onClick={() => setVisibles((v) => v + limite)} style={{ width: '100%' }}>
@@ -750,7 +788,7 @@ export default function Productos({
           Un poco más grueso que el de arriba (más fácil de acertar con el
           dedo después de haber bajado toda la pantalla). */}
       {!busquedaCatActiva && subcategorias.length > 0 && (
-        <div ref={chipsRefAbajo} style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 0' }}>
+        <div ref={chipsRefAbajo} data-carrusel style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 0' }}>
           {subcategorias.map((s) => {
             const activa = grupoEfectivo === s.slug;
             return (

@@ -156,18 +156,30 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
     }
   }
 
+  // "También te puede interesar": al cambiar de producto NO se vacía de
+  // golpe — se quedan los anteriores atenuados mientras llegan los nuevos,
+  // que entran con un fundido (antes el recuadro desaparecía y reaparecía
+  // de golpe, cambiando de tamaño, en cada producto).
   const [relacionados, setRelacionados] = useState(null);
+  const [relDe, setRelDe] = useState(null); // artículo al que pertenecen los mostrados
+  const cargandoRel = relDe !== producto.articulo;
   useEffect(() => {
     let cancelado = false;
-    setRelacionados(null);
+    const articulo = producto.articulo;
     api
-      .relacionados(producto.articulo)
-      .then((data) => !cancelado && setRelacionados(data.productos || []))
-      .catch(() => !cancelado && setRelacionados([]));
+      .relacionados(articulo)
+      .then((data) => data.productos || [])
+      .catch(() => [])
+      .then((lista) => {
+        if (cancelado) return;
+        setRelacionados(lista);
+        setRelDe(articulo);
+      });
     return () => {
       cancelado = true;
     };
   }, [producto.articulo]);
+  const mostrarRel = relacionados === null || relacionados.length > 0;
 
   return (
     <div className="ficha-overlay">
@@ -181,12 +193,12 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
         </div>
         {hayAnterior && (
           <button className="ficha-flecha ficha-flecha-izq" onClick={() => irA(-1)} aria-label="Producto anterior">
-            ‹
+            <span className="ficha-flecha-visual">‹</span>
           </button>
         )}
         {haySiguiente && (
           <button className="ficha-flecha ficha-flecha-der" onClick={() => irA(1)} aria-label="Producto siguiente">
-            ›
+            <span className="ficha-flecha-visual">›</span>
           </button>
         )}
         {indice >= 0 && lista.length > 1 && !extra && (
@@ -196,7 +208,8 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
         )}
       </div>
 
-      <div className="ficha-panel" key={'panel-' + producto.articulo}>
+      <div className="ficha-panel">
+        <div className="ficha-texto" key={'texto-' + producto.articulo}>
         <p style={{ fontSize: 14, fontWeight: 500, margin: '0 0 2px' }}>
           {producto.nombre || producto.referencia || producto.articulo}
         </p>
@@ -205,6 +218,7 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
           {producto.precioFinal ? ` · ${producto.precioFinal}€` : ''}
           {producto.undVenta ? ` · caja de ${formatoCaja(producto.undVenta)} uds` : ''}
         </p>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           {noDisponibles?.has(producto.articulo) ? (
             <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600 }}>Ya no está disponible</span>
@@ -221,11 +235,13 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
         </div>
         {error && <p style={{ color: 'var(--danger)', fontSize: 11, margin: '8px 0 0' }}>{error}</p>}
 
-        {relacionados && relacionados.length > 0 && (
+        <div className={`ficha-rel${mostrarRel ? ' ficha-rel-visible' : ''}${cargandoRel ? ' ficha-rel-cargando' : ''}`}>
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
             <p className="muted" style={{ margin: '0 0 6px' }}>También te puede interesar</p>
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-              {relacionados.map((r) => (
+            <div className="ficha-rel-fila" key={'rel-' + relDe} style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+              {relacionados === null &&
+                [0, 1, 2, 3].map((i) => <div key={i} className="ficha-rel-hueco" />)}
+              {(relacionados || []).map((r) => (
                 <div
                   key={r.articulo}
                   style={{ flexShrink: 0, width: 84, textAlign: 'center', cursor: 'pointer' }}
@@ -263,7 +279,7 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
               ))}
             </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

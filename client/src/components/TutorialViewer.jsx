@@ -19,7 +19,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-03-categoria.jpg',
     titulo: 'Dentro de una categoría',
-    texto: 'Elige la subcategoría en la fila de arriba. Con + y − añades o quitas cajas del carrito.',
+    texto: 'Elige la subcategoría en la fila de arriba, o desliza el dedo a los lados para pasar a la siguiente. Con + y − añades o quitas cajas.',
   },
   {
     archivo: '/tutorial/slide-04-ficha-producto.jpg',
