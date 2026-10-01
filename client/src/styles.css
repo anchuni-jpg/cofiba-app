@@ -644,3 +644,165 @@ input {
   font-size: 15px;
   padding: 10px 20px;
 }
+
+/* Línea "láser" del escáner (BarcodeScanner.jsx): marca el centro de la
+   retícula, donde hay que poner las barras del código. */
+.escaner-laser {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: #ff3b30;
+  box-shadow: 0 0 8px 2px rgba(255, 59, 48, 0.7);
+  animation: escaner-laser-pulso 1.2s ease-in-out infinite;
+}
+.escaner-laser::before,
+.escaner-laser::after {
+  content: '';
+  position: absolute;
+  top: -9px;
+  width: 2px;
+  height: 20px;
+  background: #ff3b30;
+}
+.escaner-laser::before {
+  left: 0;
+}
+.escaner-laser::after {
+  right: 0;
+}
+@keyframes escaner-laser-pulso {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Elegir producto cuando un EAN es de varios (BarcodeScanner.jsx). */
+.escaner-eleccion {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.escaner-eleccion-caja {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  padding: 14px;
+  width: 100%;
+  max-width: 420px;
+}
+.escaner-eleccion-opcion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 6px;
+  text-align: left;
+}
+
+/* Instalar en la pantalla de inicio (components/InstalarApp.jsx). */
+.instalar-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.3;
+}
+.instalar-banner button {
+  padding: 6px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.instalar-ahora-no {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px !important;
+  padding: 2px 4px !important;
+}
+.instalar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+}
+.instalar-caja {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-radius: 16px;
+  padding: 18px 16px 14px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+.instalar-titulo {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+.instalar-aviso {
+  background: var(--danger-bg);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+.instalar-pasos {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.instalar-pasos li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 16px;
+  line-height: 1.45;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.instalar-pasos li svg {
+  vertical-align: -5px;
+}
+.instalar-num {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+.instalar-tecla {
+  display: inline-block;
+  min-width: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  text-align: center;
+  font-weight: 700;
+}

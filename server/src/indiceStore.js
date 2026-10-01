@@ -70,11 +70,11 @@ const VENTANA_ACTIVIDAD_MS = 20000;
 // esos 15-35s (medido: una categoría normal pasaba de <1s a ~50s). Cediendo
 // el turno así, el rastreo solo pide páginas cuando el cliente no está
 // usando la app, y navegar vuelve a ir rápido.
-export function esperarInactividad(maxEsperaMs = 45000) {
+export function esperarInactividad(maxEsperaMs = 45000, ventanaMs = VENTANA_ACTIVIDAD_MS) {
   return new Promise((resolve) => {
     const inicio = Date.now();
     function comprobar() {
-      const inactivo = Date.now() - ultimaActividad >= VENTANA_ACTIVIDAD_MS;
+      const inactivo = Date.now() - ultimaActividad >= ventanaMs;
       const agotado = Date.now() - inicio >= maxEsperaMs;
       if (inactivo || agotado) resolve();
       else setTimeout(comprobar, 500);

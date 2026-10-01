@@ -34,9 +34,9 @@ import {
   productosPorSubcategoria,
   marcarActividad,
 } from './indiceStore.js';
-import { asegurarComprados, comprasConocidas, resumenGlobal } from './compradosStore.js';
+import { comprasConocidas, resumenGlobal } from './compradosStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
-import { consultarHistorico, historicoEnMarcha } from './historicoStore.js';
+import { consultarHistorico, asegurarHistorico, registrarVistoEnCatalogo, productosHistorico, paginasLeidas } from './historicoStore.js';
 import { marcarNoDisponible, filtrarDisponibles } from './noDisponibleStore.js';
 
 // Red de seguridad a nivel de proceso: un error asíncrono que se escape sin
@@ -71,7 +71,23 @@ app.use(express.json());
 function marcarComprados(usuario, productos) {
   const set = comprasConocidas(usuario);
   if (!set) return productos;
-  return productos.map((p) => ({ ...p, comprado: set.has(p.articulo) }));
+  const marcados = productos.map((p) => ({ ...p, comprado: set.has(p.articulo) }));
+  // Lo que se ve como comprado navegando entra ya en el Histórico.
+  registrarVistoEnCatalogo(usuario, marcados);
+  return marcados;
+}
+
+// El Histórico se recorre con una sesión de cofiba.es aparte (otro login de
+// la misma cuenta, con las credenciales ya guardadas al entrar) para que
+// sus peticiones lentas no hagan cola delante de la navegación normal.
+function fabricaSesionFondo(token) {
+  return async () => {
+    const creds = loadCredentials(token);
+    if (!creds) throw new Error('Sin credenciales para el histórico');
+    const session = createSession();
+    await login(session, creds.usuario, creds.password);
+    return session;
+  };
 }
 
 // El rastreo del catálogo se frena solo cuando alguien está usando la app de
@@ -114,6 +130,8 @@ async function requireSession(req, res, next) {
     entry.lastSeenAt = Date.now();
     req.cofiba = entry.session;
     req.usuario = entry.usuario;
+    req.token = token;
+    asegurarHistorico(entry.usuario, fabricaSesionFondo(token));
     return next();
   }
 
@@ -136,6 +154,8 @@ async function requireSession(req, res, next) {
     sessions.set(token, { session, usuario: creds.usuario, createdAt: Date.now() });
     req.cofiba = session;
     req.usuario = creds.usuario;
+    req.token = token;
+    asegurarHistorico(creds.usuario, fabricaSesionFondo(token));
     // Mismo motivo que en /api/login: esta rama es la re-autenticación
     // silenciosa tras un reinicio del servidor, así que también puede ser
     // el primer momento con una sesión válida desde que arrancó — adelanta
@@ -167,6 +187,7 @@ app.post('/api/login', async (req, res) => {
     const token = crypto.randomUUID();
     sessions.set(token, { session, usuario, createdAt: Date.now() });
     saveCredentials(token, usuario, password);
+    asegurarHistorico(usuario, fabricaSesionFondo(token));
     // El plan gratuito no tiene disco persistente: cada despliegue nuevo
     // (o reinicio) empieza con el índice del catálogo vacío del todo, y
     // antes no se rastreaba hasta que alguien buscaba algo — así que recién
@@ -259,14 +280,6 @@ app.get('/api/productos', requireSession, async (req, res) => {
       productosCache.set(clave, { resultado, cuando: Date.now() });
     }
 
-    // Antes esto no se llamaba aquí (solo en Buscar/Histórico) para no
-    // competir por la única CPU del plan gratuito mientras alguien solo
-    // navegaba el catálogo — pero eso dejaba las marcas de "Comprado" sin
-    // aparecer nunca si el cliente entraba directo a Productos sin pasar
-    // antes por Buscar o Histórico. asegurarComprados no hace nada si ya hay
-    // un rastreo en curso o uno reciente, así que llamarlo aquí también es
-    // barato y asegura que las marcas siempre acaban apareciendo.
-    asegurarComprados(req.usuario, req.cofiba);
     // Se filtra aquí (no al construir/cachear resultado.productos) para que
     // la marca de "no disponible" — que caduca sola a los 7 días — se
     // aplique siempre en fresco, sin depender de cuándo se rastreó esta
@@ -464,10 +477,10 @@ app.post('/api/carrito/finalizar', requireSession, async (req, res) => {
 // `version` el cliente dice qué versión tiene ya; si no ha cambiado nada no
 // se reenvía la lista entera.
 app.get('/api/historico', requireSession, (req, res) => {
-  const st = consultarHistorico(req.usuario, req.cofiba, { forzar: req.query.forzar === '1' });
+  const st = consultarHistorico(req.usuario, fabricaSesionFondo(req.token), { forzar: req.query.forzar === '1' });
   const meta = {
     version: st.version,
-    paginasCargadas: st.indice > 0 && !st.completo ? st.indice : st.paginas.length,
+    paginasCargadas: st.completo ? st.totalPaginas : paginasLeidas(st),
     totalPaginas: st.totalPaginas,
     completo: st.completo,
     corriendo: st.corriendo,
@@ -476,7 +489,7 @@ app.get('/api/historico', requireSession, (req, res) => {
   if (req.query.version && Number(req.query.version) === st.version) {
     return res.json({ ...meta, sinCambios: true });
   }
-  const productos = st.paginas.flat();
+  const productos = productosHistorico(st);
   registrarImagenes(productos);
   // /consumo.html no trae categoría/subcategoría — se rellena desde el
   // índice del catálogo para agrupar y para el botón 'Ver más'.
@@ -589,11 +602,6 @@ app.get('/api/buscar', requireSession, async (req, res) => {
   if (!termino) return res.json({ construyendo: false, resultados: [] });
 
   if (necesitaConstruir()) iniciarConstruccion(req.cofiba);
-  // Buscar es (junto con entrar en Histórico) el único sitio que arranca el
-  // rastreo de compras en segundo plano — así las marcas de "ya comprado"
-  // se van completando sin que navegar por el catálogo dispare nada pesado.
-  if (!historicoEnMarcha(req.usuario)) asegurarComprados(req.usuario, req.cofiba);
-
   const st = estadoActual();
   if (st.estado === 'error' && !indiceListo()) {
     return res.json({ construyendo: false, error: st.error, resultados: [] });

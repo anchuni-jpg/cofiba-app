@@ -25,6 +25,8 @@ const FORMATOS = [
 // sesión de escaneo (ver capturadosCodigosRef más abajo) — así, mantener el
 // mismo producto delante de la cámara un rato no lo suma más de una vez.
 const COOLDOWN_MS = 2500;
+// Lecturas iguales y seguidas que hacen falta para aceptar un código.
+const LECTURAS_IGUALES = 2;
 const MENSAJE_MS = 2200;
 
 // La retícula ocupa siempre este recuadro del visor (inset: '26% 10%' más
@@ -107,6 +109,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
   const [mensaje, setMensaje] = useState(null);
   const [error, setError] = useState(null);
   const [confirmando, setConfirmando] = useState(false);
+  const [eleccion, setEleccion] = useState(null); // { codigo, opciones } si un EAN es de varios productos
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
   const ultimoRef = useRef({ codigo: null, cuando: 0 });
@@ -126,84 +129,190 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
     mensajeTimeoutRef.current = setTimeout(() => setMensaje(null), MENSAJE_MS);
   }
 
+  function añadirCaptura(match, codigo) {
+    capturadosCodigosRef.current.add(codigo);
+    if (capturadosArticulosRef.current.has(match.articulo)) {
+      // Ya estaba en la lista — no suma cantidad, pero el último código
+      // leído (aunque sea de algo repetido) siempre se enseña el primero,
+      // a la izquierda, sin scroll.
+      setCapturados((prev) => {
+        const fila = prev.find((c) => c.articulo === match.articulo);
+        const resto = prev.filter((c) => c.articulo !== match.articulo);
+        return [{ ...fila, codigosVistos: [...fila.codigosVistos, codigo] }, ...resto];
+      });
+      sonidoCaptura();
+      avisar(`Ya estaba en la lista: ${match.nombre || match.articulo}`);
+      return;
+    }
+    capturadosArticulosRef.current.add(match.articulo);
+    // Al principio (no al final): el último capturado tiene que quedar
+    // siempre a la izquierda de la tira, visible sin desplazar nada.
+    setCapturados((prev) => [
+      {
+        articulo: match.articulo,
+        nombre: match.nombre || match.referencia || match.articulo,
+        referencia: match.referencia,
+        imagen: match.imagen,
+        precioFinal: match.precioFinal,
+        undVenta: match.undVenta,
+        cantidad: 1,
+        codigosVistos: [codigo],
+      },
+      ...prev,
+    ]);
+    sonidoCaptura();
+    avisar(`✓ ${match.nombre || match.articulo}`);
+  }
+
   function procesarCodigo(codigo) {
     procesandoRef.current = true;
     api
       .buscar(codigo)
       .then((data) => {
-        const match = (data.resultados || []).find(
+        // Coincidencia EXACTA por EAN, referencia o código (la búsqueda por
+        // texto también devuelve parecidos, que no valen aquí).
+        const coincidencias = (data.resultados || []).filter(
           (p) => p.ean === codigo || p.referencia === codigo || p.articulo === codigo
         );
-        if (!match) {
+        if (!coincidencias.length) {
           // No se marca como capturado — un código que no se encontró SÍ se
           // puede volver a intentar (puede que fuera una lectura a medias).
           sonidoError();
           avisar(`✗ No encontrado: "${codigo}"`);
           return;
         }
-        capturadosCodigosRef.current.add(codigo);
-        if (capturadosArticulosRef.current.has(match.articulo)) {
-          // Ya estaba en la lista — no suma cantidad, pero el último código
-          // leído (aunque sea de algo repetido) siempre se enseña el
-          // primero, a la izquierda, sin scroll.
-          setCapturados((prev) => {
-            const fila = prev.find((c) => c.articulo === match.articulo);
-            const resto = prev.filter((c) => c.articulo !== match.articulo);
-            return [{ ...fila, codigosVistos: [...fila.codigosVistos, codigo] }, ...resto];
-          });
+        if (coincidencias.length > 1) {
+          // Varios productos comparten este EAN (variantes: p. ej. pegatinas
+          // de distintos dibujos): se pregunta cuál en vez de coger el
+          // primero a ciegas. Mientras se elige no se lee nada más.
           sonidoCaptura();
-          avisar(`Ya estaba en la lista: ${match.nombre || match.articulo}`);
-          return;
+          setEleccion({ codigo, opciones: coincidencias });
+          return true;
         }
-        capturadosArticulosRef.current.add(match.articulo);
-        // Al principio (no al final): el último capturado tiene que quedar
-        // siempre a la izquierda de la tira, visible sin desplazar nada.
-        setCapturados((prev) => [
-          {
-            articulo: match.articulo,
-            nombre: match.nombre || match.referencia || match.articulo,
-            referencia: match.referencia,
-            imagen: match.imagen,
-            precioFinal: match.precioFinal,
-            stock: match.stock,
-            undVenta: match.undVenta,
-            cantidad: 1,
-            codigosVistos: [codigo],
-          },
-          ...prev,
-        ]);
-        sonidoCaptura();
-        avisar(`✓ ${match.nombre || match.articulo}`);
+        añadirCaptura(coincidencias[0], codigo);
       })
       .catch(() => {
         sonidoError();
         avisar('✗ Fallo al buscar ese código');
       })
-      .finally(() => {
-        procesandoRef.current = false;
+      .then((esperandoEleccion) => {
+        if (!esperandoEleccion) procesandoRef.current = false;
       });
+  }
+
+  function elegir(match) {
+    if (match) añadirCaptura(match, eleccion.codigo);
+    else capturadosCodigosRef.current.add(eleccion.codigo); // "ninguno": no volver a preguntar por este código
+    setEleccion(null);
+    procesandoRef.current = false;
   }
 
   useEffect(() => {
     if (fase !== 'camara') return undefined;
     let activo = true;
-    const hints = new Map([[DecodeHintType.POSSIBLE_FORMATS, FORMATOS]]);
-    const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 100 });
+    let stream = null;
+    let temporizador = null;
+    const hints = new Map([
+      [DecodeHintType.POSSIBLE_FORMATS, FORMATOS],
+      [DecodeHintType.TRY_HARDER, true],
+    ]);
+    const reader = new BrowserMultiFormatReader(hints);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    // Confirmación: el mismo código tiene que leerse LECTURAS_IGUALES veces
+    // seguidas antes de aceptarlo — descarta lecturas a medias de un código
+    // mal enfocado o movido, que son las que daban productos equivocados.
+    let candidato = { codigo: null, veces: 0, cuando: 0 };
 
-    reader
-      .decodeFromConstraints({ video: { facingMode: 'environment' } }, videoRef.current, (resultado) => {
-        if (!resultado || !activo) return;
-        const codigo = resultado.getText();
-        if (capturadosCodigosRef.current.has(codigo)) return;
-        const ahora = Date.now();
-        if (codigo === ultimoRef.current.codigo && ahora - ultimoRef.current.cuando < COOLDOWN_MS) return;
-        if (procesandoRef.current) return;
-        ultimoRef.current = { codigo, cuando: ahora };
-        procesarCodigo(codigo);
+    function aceptar(codigo) {
+      if (capturadosCodigosRef.current.has(codigo)) return;
+      const ahora = Date.now();
+      if (codigo === ultimoRef.current.codigo && ahora - ultimoRef.current.cuando < COOLDOWN_MS) return;
+      if (procesandoRef.current) return;
+      ultimoRef.current = { codigo, cuando: ahora };
+      procesarCodigo(codigo);
+    }
+
+    // Solo se descodifica lo que hay DENTRO de la retícula (no el fotograma
+    // entero): en una estantería, leer la imagen completa cogía a veces el
+    // código del producto de al lado.
+    function leerFotograma() {
+      const video = videoRef.current;
+      if (!activo || !video || video.readyState < 2 || !video.videoWidth) return;
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const cw = video.clientWidth;
+      const ch = video.clientHeight;
+      // El vídeo se pinta con object-fit: cover — se deshace ese escalado
+      // para saber qué trozo del fotograma real cae bajo la retícula.
+      const escala = Math.max(cw / vw, ch / vh);
+      const offX = (vw * escala - cw) / 2;
+      const offY = (vh * escala - ch) / 2;
+      const top = parseFloat(RETICULA_TOP) / 100;
+      const bottom = parseFloat(RETICULA_BOTTOM) / 100;
+      // Un poco más ancho que la retícula visible (margen del 4%) para no
+      // cortar las barras de los extremos si el código está justo al borde.
+      const x1 = cw * 0.06, x2 = cw * 0.94;
+      const y1 = ch * (top - 0.04), y2 = ch * (1 - bottom + 0.04);
+      const sx = (x1 + offX) / escala;
+      const sy = (y1 + offY) / escala;
+      const sw = (x2 - x1) / escala;
+      const sh = (y2 - y1) / escala;
+      canvas.width = Math.round(sw);
+      canvas.height = Math.round(sh);
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      let codigo = null;
+      try {
+        codigo = reader.decodeFromCanvas(canvas).getText();
+      } catch {
+        // Nada legible en este fotograma.
+      }
+      if (!codigo) return;
+      const ahora = Date.now();
+      if (codigo === candidato.codigo && ahora - candidato.cuando < 1500) {
+        candidato = { codigo, veces: candidato.veces + 1, cuando: ahora };
+      } else {
+        candidato = { codigo, veces: 1, cuando: ahora };
+      }
+      if (candidato.veces >= LECTURAS_IGUALES) {
+        candidato = { codigo: null, veces: 0, cuando: 0 };
+        aceptar(codigo);
+      }
+    }
+
+    navigator.mediaDevices
+      .getUserMedia({
+        video: {
+          facingMode: 'environment',
+          // Más resolución = barras más nítidas dentro de la retícula.
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
       })
-      .then((controls) => {
-        controlsRef.current = controls;
-        if (!activo) controls.stop();
+      // Plan B: algún móvil rechaza esas preferencias — se pide la cámara
+      // trasera sin más, antes que quedarse sin escáner.
+      .catch((e) =>
+        e?.name === 'NotAllowedError' ? Promise.reject(e) : navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      )
+      .then(async (s) => {
+        stream = s;
+        if (!activo) return s.getTracks().forEach((t) => t.stop());
+        // Enfoque continuo donde el móvil lo permita (Android/Chrome).
+        const pista = s.getVideoTracks()[0];
+        try {
+          if (pista.getCapabilities?.().focusMode?.includes('continuous')) {
+            await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+          }
+        } catch {
+          // No soportado: se queda con el enfoque por defecto.
+        }
+        const video = videoRef.current;
+        video.srcObject = s;
+        // Sin esperar a play(): el bucle ya comprueba él solo si el vídeo
+        // tiene imagen (readyState), y en algún navegador play() tarda o
+        // no resuelve nunca.
+        video.play().catch(() => {});
+        temporizador = setInterval(leerFotograma, 90);
       })
       .catch((e) => {
         setError(
@@ -212,6 +321,13 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
             : 'No se pudo abrir la cámara: ' + e.message
         );
       });
+
+    controlsRef.current = {
+      stop() {
+        clearInterval(temporizador);
+        stream?.getTracks().forEach((t) => t.stop());
+      },
+    };
 
     return () => {
       activo = false;
@@ -394,7 +510,10 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
               borderRadius: 8,
               boxShadow: '0 0 0 2000px rgba(0,0,0,0.4)',
             }}
-          />
+          >
+            {/* Línea roja tipo láser en el centro: dónde poner las barras. */}
+            <div className="escaner-laser" />
+          </div>
           {capturados.length > 0 && (
             // Justo ENCIMA de la retícula, fijo mientras haya algo capturado
             // (no un aviso que se apaga solo como `mensaje` de abajo) — el
@@ -444,6 +563,36 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
               {mensaje}
             </div>
           )}
+        </div>
+      )}
+
+      {eleccion && (
+        <div className="escaner-eleccion">
+          <div className="escaner-eleccion-caja">
+            <p style={{ fontWeight: 600, margin: '0 0 2px' }}>Este código es de varios productos</p>
+            <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
+              Toca el que tienes en la mano ({eleccion.codigo})
+            </p>
+            <div style={{ overflowY: 'auto', maxHeight: '55vh' }}>
+              {eleccion.opciones.map((p) => (
+                <button key={p.articulo} className="escaner-eleccion-opcion" onClick={() => elegir(p)}>
+                  <div className="product-thumb" style={{ width: 56, height: 56, flexShrink: 0 }}>
+                    {p.imagen ? <img src={p.imagen} alt="" /> : '—'}
+                  </div>
+                  <span style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 14 }}>{p.nombre || p.articulo}</span>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      Ref. {p.referencia || p.articulo}
+                      {p.precioFinal ? ` · ${p.precioFinal}€` : ''}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button className="danger" style={{ width: '100%', marginTop: 10 }} onClick={() => elegir(null)}>
+              Ninguno
+            </button>
+          </div>
         </div>
       )}
 

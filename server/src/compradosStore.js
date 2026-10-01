@@ -110,6 +110,20 @@ export function comprasConocidas(usuario) {
   return d && d.conteo.size ? d.conteo : null;
 }
 
+// Apunta como comprados los que aún no se conozcan, sin tocar el conteo de
+// los ya conocidos (usado al arrancar, con el histórico guardado en disco).
+export function asegurarConocidos(usuario, productos) {
+  const d = entrada(usuario);
+  let nuevos = 0;
+  productos.forEach((p) => {
+    if (!d.conteo.has(p.articulo)) {
+      d.conteo.set(p.articulo, 1);
+      nuevos += 1;
+    }
+  });
+  if (nuevos) guardarEnDisco();
+}
+
 // Histórico completo recién recorrido (historicoStore.js): sustituye el
 // conteo por el exacto de ese recorrido y lo da por completo — así el
 // rastreo propio de este módulo no tiene que volver a pedir las mismas

@@ -6,24 +6,7 @@ import Productos from './screens/Productos.jsx';
 import Carrito from './screens/Carrito.jsx';
 import Historico from './screens/Historico.jsx';
 import Busqueda from './screens/Busqueda.jsx';
-
-function useInstallPrompt() {
-  const [deferred, setDeferred] = useState(null);
-  const isStandalone =
-    window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-  const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
-
-  useEffect(() => {
-    function onPrompt(e) {
-      e.preventDefault();
-      setDeferred(e);
-    }
-    window.addEventListener('beforeinstallprompt', onPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', onPrompt);
-  }, []);
-
-  return { deferred, isStandalone, isIos };
-}
+import InstalarApp from './components/InstalarApp.jsx';
 
 // Qué está "comprado" (Histórico) y qué está "en el carrito ahora mismo o
 // pedido en esta sesión" son dos cosas distintas: lo primero viene de las
@@ -82,8 +65,6 @@ export default function App() {
   const [codigosEnCarrito, setCodigosEnCarrito] = useState(new Set());
   const [codigosSesion, setCodigosSesion] = useState(cargarCompradosSesion);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const { deferred, isStandalone, isIos } = useInstallPrompt();
-  const [dismissedInstall, setDismissedInstall] = useState(false);
   const [cuenta, setCuenta] = useState(null);
   // El tema ya se decide (y se aplica al <html>) ANTES de que React arranque
   // — ver el script bloqueante en index.html, para no parpadear claro→oscuro
@@ -276,13 +257,16 @@ export default function App() {
 
   if (!loggedIn) {
     return (
-      <Login
+      <>
+        <InstalarApp />
+        <Login
         expiredNotice={sessionExpired}
         onLoggedIn={() => {
           setSessionExpired(false);
           setLoggedIn(true);
         }}
       />
+      </>
     );
   }
 
@@ -341,29 +325,7 @@ export default function App() {
           </button>
         </div>
 
-        {!isStandalone && !dismissedInstall && (
-          <div className="install-banner">
-            <span>
-              {deferred
-                ? 'Instala esta app en tu móvil para acceso rápido.'
-                : isIos
-                ? 'En Safari: pulsa Compartir → "Añadir a pantalla de inicio".'
-                : 'Instálala desde el menú del navegador.'}
-            </span>
-            {deferred ? (
-              <button
-                onClick={async () => {
-                  deferred.prompt();
-                  setDismissedInstall(true);
-                }}
-              >
-                Instalar
-              </button>
-            ) : (
-              <button onClick={() => setDismissedInstall(true)}>Vale</button>
-            )}
-          </div>
-        )}
+        <InstalarApp />
 
         {tab === 'categorias' && (
           <Categorias

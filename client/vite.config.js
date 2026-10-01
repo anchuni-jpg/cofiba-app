@@ -13,7 +13,7 @@ export default defineConfig({
       // además inyecta su propio script de registro por su cuenta y
       // acaban registrándose dos veces.
       injectRegister: null,
-      includeAssets: ['icons/apple-touch-icon.png'],
+      includeAssets: ['icons/apple-touch-icon.png', 'icons/icon-maskable-192.png', 'icons/icon-maskable-512.png'],
       workbox: {
         runtimeCaching: [
           {
@@ -46,12 +46,20 @@ export default defineConfig({
         theme_color: '#20944b',
         background_color: '#ffffff',
         display: 'standalone',
+        // id/scope fijos: el navegador reconoce siempre la misma app aunque
+        // cambie la dirección exacta desde la que se instaló.
+        id: '/',
         start_url: '/',
+        scope: '/',
+        lang: 'es',
+        orientation: 'portrait',
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          // Iconos "adaptables" de Android: el logo con margen, porque el
+          // sistema los recorta en círculo/gota y se comía las puntas.
+          { src: '/icons/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
     }),

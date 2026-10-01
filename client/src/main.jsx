@@ -29,6 +29,20 @@ navigator.serviceWorker?.addEventListener('controllerchange', () => {
   window.location.reload();
 });
 
+// Android/Chrome avisa de que la app se puede instalar con este evento, y a
+// veces lo lanza ANTES de que React haya montado nada — antes se escuchaba
+// desde App.jsx y en esos casos se perdía (el botón "Instalar" no salía).
+// Se guarda aquí desde el primer momento (ver components/InstalarApp.jsx).
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window.__cofibaInstalar = e;
+  window.dispatchEvent(new Event('cofiba:instalable'));
+});
+window.addEventListener('appinstalled', () => {
+  window.__cofibaInstalar = null;
+  window.dispatchEvent(new Event('cofiba:instalable'));
+});
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />

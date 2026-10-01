@@ -1,4 +1,11 @@
 import { getCache, setCache } from './localCache.js';
+import { marcarComprados, registrarComprados, cuentaActiva } from './compradosLocal.js';
+
+// Aplica las marcas de "Comprado" recordadas en el dispositivo a una
+// respuesta (ver compradosLocal.js).
+function conMarcas(data, campo = 'productos') {
+  return data && Array.isArray(data[campo]) ? { ...data, [campo]: marcarComprados(data[campo]) } : data;
+}
 
 const TOKEN_KEY = 'cofiba_token';
 
@@ -60,6 +67,7 @@ export const api = {
   async login(usuario, password) {
     const data = await request('/login', { method: 'POST', body: { usuario, password }, auth: false });
     setToken(data.token);
+    cuentaActiva(usuario);
     return data;
   },
   logout() {
@@ -80,11 +88,11 @@ export const api = {
       ...(subcategoria ? { subcategoria } : {}),
       ...(pageUrl ? { pageUrl } : {}),
     });
-    return request(`/productos?${params.toString()}`);
+    return request(`/productos?${params.toString()}`).then((d) => conMarcas(d));
   },
   productosCached({ categoria, subcategoria, page = 1, pageUrl }, onCacheHit) {
     const clave = `productos:${categoria}|${subcategoria || ''}|${pageUrl || ''}`;
-    return conCache(clave, () => this.productos({ categoria, subcategoria, page, pageUrl }), onCacheHit);
+    return conCache(clave, () => this.productos({ categoria, subcategoria, page, pageUrl }), (c) => onCacheHit?.(conMarcas(c)));
   },
   carrito() {
     return request('/carrito');
@@ -119,7 +127,11 @@ export const api = {
     if (version != null) params.set('version', String(version));
     if (forzar) params.set('forzar', '1');
     const qs = params.toString();
-    return request(`/historico${qs ? `?${qs}` : ''}`);
+    return request(`/historico${qs ? `?${qs}` : ''}`).then((d) => {
+      // Todo lo del Histórico está comprado, por definición.
+      if (Array.isArray(d.productos)) registrarComprados(d.productos);
+      return d;
+    });
   },
   pedidosPendientes() {
     return request('/pedidos-pendientes');
@@ -127,7 +139,7 @@ export const api = {
   // Bajo demanda, al abrir la ficha de un producto — no tiene sentido
   // cachear esto por más de la sesión actual, cambia con cada artículo.
   relacionados(articulo) {
-    return request(`/relacionados?articulo=${encodeURIComponent(articulo)}`);
+    return request(`/relacionados?articulo=${encodeURIComponent(articulo)}`).then((d) => conMarcas(d));
   },
   // El PDF no puede enlazarse directo (necesita nuestra sesión, no la del
   // navegador) — se trae como blob autenticado y quien llama decide qué
@@ -144,7 +156,7 @@ export const api = {
     return res.blob();
   },
   buscar(q) {
-    return request(`/buscar?q=${encodeURIComponent(q)}`);
+    return request(`/buscar?q=${encodeURIComponent(q)}`).then((d) => conMarcas(d, 'resultados'));
   },
   // Solo tiene sentido cachear por término exacto — cambiar una letra ya es
   // una búsqueda distinta. Rellena el hueco antes de la primera respuesta
@@ -152,6 +164,6 @@ export const api = {
   // sigue construyéndose), la caché no vuelve a intervenir en esa búsqueda.
   buscarCached(q, onCacheHit) {
     const clave = `buscar:${q.trim().toLowerCase()}`;
-    return conCache(clave, () => this.buscar(q), onCacheHit);
+    return conCache(clave, () => this.buscar(q), (c) => onCacheHit?.(conMarcas(c, 'resultados')));
   },
 };

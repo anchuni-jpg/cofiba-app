@@ -400,6 +400,8 @@ export async function getProductos({ http }, { categoria, subcategoria, page = 1
     totalPaginas: totalPaginasTexto ? Number(totalPaginasTexto) : null,
     pagina: paginaActual,
     siguientePagina,
+    // Base para construir la URL de cualquier página: base + número + "/".
+    paginacionBase: dataPaginacion ? absolute(dataPaginacion) : null,
     debug:
       productos.length === 0 || !dataPaginacion
         ? { normalizedSample: normalized.slice(0, 2000) }

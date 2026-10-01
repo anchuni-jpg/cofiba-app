@@ -4,6 +4,7 @@ import { getCache, setCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import FichaProducto from '../components/FichaProducto.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
+import { productosRecordados } from '../compradosLocal.js';
 
 // Duplica formatoCaja de Productos.jsx/Busqueda.jsx — una línea, no vale la
 // pena compartir el módulo por eso.
@@ -55,7 +56,7 @@ export default function Historico({
   // recuerda por dónde iba; aquí solo se pregunta cada pocos segundos cómo
   // va mientras la pestaña está abierta. Lo último visto se guarda en el
   // dispositivo para pintarlo al instante la próxima vez.
-  const [productos, setProductos] = useState([]);
+  const [productosServidor, setProductos] = useState([]);
   const [progreso, setProgreso] = useState({ paginasCargadas: 0, totalPaginas: null, completo: false, corriendo: true });
   const cargandoTodo = !progreso.completo;
   const [visibles, setVisibles] = useState(limite);
@@ -83,6 +84,7 @@ export default function Historico({
   // "Actualizar" el anterior se da por superado y deja de preguntar.
   const bucleIdRef = useRef(0);
   const CLAVE_CACHE = 'historico:v3';
+  const guardadoRef = useRef(0); // cuántos productos hay guardados en el móvil
 
   function consultar({ forzar }) {
     const miId = ++bucleIdRef.current;
@@ -114,9 +116,15 @@ export default function Historico({
             // una peor. Al completarse, manda siempre la del servidor.
             setProductos((actual) => {
               if (!data.completo && data.productos.length < actual.length) return actual;
-              if (data.completo || data.productos.length > 0) setCache(CLAVE_CACHE, data.productos);
               return data.productos;
             });
+            // Lo guardado en el móvil solo se sustituye por algo igual o
+            // mejor (o por el histórico ya completo): antes, una respuesta
+            // corta del servidor recién reiniciado lo machacaba.
+            if (data.completo || data.productos.length >= guardadoRef.current) {
+              guardadoRef.current = data.productos.length;
+              setCache(CLAVE_CACHE, data.productos);
+            }
             if (data.productos.length > 0) setLoading(false);
           }
           if (data.completo) setLoading(false);
@@ -136,16 +144,22 @@ export default function Historico({
   }
 
   useEffect(() => {
+    // Primero lo guardado en el móvil, LUEGO se empieza a preguntar al
+    // servidor (si no, su primera respuesta podía llegar antes y ganar).
+    let vivo = true;
     getCache(CLAVE_CACHE).then((cacheado) => {
+      if (!vivo) return;
       if (cacheado?.length) {
-        setProductos((actual) => (actual.length ? actual : cacheado));
+        guardadoRef.current = cacheado.length;
+        setProductos(cacheado);
         setLoading(false);
       }
+      consultar({ forzar: false });
     });
-    consultar({ forzar: false });
     // Al salir de la pestaña se deja de preguntar; el servidor pausa el
     // recorrido solo al no recibir consultas, y lo retoma al volver.
     return () => {
+      vivo = false;
       bucleIdRef.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -193,6 +207,16 @@ export default function Historico({
     // también hace que el icono aparezca al momento, no solo el número.
     return !!(codigosEnCarrito?.has(articulo) || codigosSesion?.has(articulo) || (pending[articulo] ?? 0) > 0);
   }
+
+  // Mientras el servidor no ha leído todo el histórico, se completa con lo
+  // que este móvil ya ha visto como comprado (navegando el catálogo o en
+  // visitas anteriores) — ver compradosLocal.js.
+  const listaHistorico = (() => {
+    if (progreso.completo) return productosServidor;
+    const yaEstan = new Set(productosServidor.map((p) => p.articulo));
+    return productosServidor.concat(productosRecordados().filter((p) => !yaEstan.has(p.articulo)));
+  })();
+  const productos = listaHistorico;
 
   const productosPorTexto = filtro.trim()
     ? productos.filter((p) => {

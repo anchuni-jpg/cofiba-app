@@ -1,6 +1,7 @@
 import { useEffect, useState, Suspense, lazy } from 'react';
 import { api } from '../api.js';
 import { ISLAS } from '../filtroIsla.js';
+import { abrirGuiaInstalacion, detectarDispositivo } from '../components/InstalarApp.jsx';
 // La librería de lectura de códigos de barras pesa varios cientos de KB —
 // cargarla solo al pulsar el botón de la cámara (en vez de en el bundle
 // principal) evita que TODA visita a la app pague ese peso de más solo por
@@ -174,6 +175,13 @@ export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCa
           Página oficial ↗
         </button>
       </a>
+
+      {/* Siempre a mano (aunque se haya cerrado el aviso de arriba). */}
+      {!detectarDispositivo().instalada && (
+        <button style={{ width: '100%', marginTop: 8 }} onClick={abrirGuiaInstalacion}>
+          📲 Instalar en el móvil
+        </button>
+      )}
 
       <div className="card" style={{ marginTop: 12, marginBottom: 12 }}>
         <p style={{ fontWeight: 500, margin: '0 0 4px' }}>Cofiba Distribuciones</p>
