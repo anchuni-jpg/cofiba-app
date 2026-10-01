@@ -278,6 +278,7 @@ export default function Busqueda({
                     enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
                   }`}
                   key={p.articulo}
+                  data-articulo={p.articulo}
                   onClick={() => setZoomProducto(p)}
                   style={{ cursor: 'zoom-in' }}
                 >
@@ -337,6 +338,7 @@ export default function Busqueda({
                     enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
                   }`}
                   key={p.articulo}
+                  data-articulo={p.articulo}
                   onClick={() => setZoomProducto(p)}
                   style={{ cursor: 'zoom-in' }}
                 >
@@ -399,6 +401,12 @@ export default function Busqueda({
           lista={resultadosFiltrados || []}
           inicial={zoomProducto}
           onCerrar={() => setZoomProducto(null)}
+          onVer={(p) => {
+            // La lista de fondo acompaña a la ficha: si el artículo aún no
+            // estaba dibujado (más allá de "Ver más"), se amplía hasta él.
+            const i = (resultadosFiltrados || []).indexOf(p);
+            if (i >= 0) setVisibles((v) => Math.max(v, i + 1));
+          }}
           pending={pending}
           añadir={añadir}
           noDisponibles={noDisponibles}

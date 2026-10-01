@@ -29,12 +29,12 @@ const COOLDOWN_MS = 2500;
 const LECTURAS_IGUALES = 2;
 const MENSAJE_MS = 2200;
 
-// La retícula ocupa siempre este recuadro del visor (inset: '26% 10%' más
+// La retícula ocupa siempre este recuadro del visor (inset: RETICULA_TOP 10% RETICULA_BOTTOM más
 // abajo) — ambos avisos de texto se anclan a sus bordes en vez de ir
 // centrados en toda la pantalla, así queda claro que hablan de lo que se
 // acaba de leer justo ahí, no de la cámara en general.
-const RETICULA_TOP = '26%';
-const RETICULA_BOTTOM = '26%'; // "bottom" del inset === distancia al borde inferior, o sea top real = 100% - 26% = 74%
+const RETICULA_TOP = '9%'; // arriba del todo (petición del usuario), dejando sitio para el nombre de lo capturado
+const RETICULA_BOTTOM = '56%'; // distancia al borde inferior: el recuadro ocupa del 9% al 44% del visor
 
 // El precio llega ya formateado del servidor como texto con coma decimal
 // (p. ej. "5,28"), igual que en Productos.jsx/Busqueda.jsx — Number(n) lo

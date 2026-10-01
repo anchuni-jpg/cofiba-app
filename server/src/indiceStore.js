@@ -240,6 +240,66 @@ export function productosPorSubcategoria(categoriaSlug, subcategoriaSlug) {
   return fuente.filter((p) => p.categoria === categoriaSlug && p.subcategoria === subcategoriaSlug);
 }
 
+// Cada vez que alguien carga una subcategoría ENTERA desde cofiba.es (todas
+// sus páginas), esa es la lista real de ahora mismo: se quitan del índice
+// los artículos de esa subcategoría que ya no están y se añaden los nuevos,
+// sin esperar al rastreo completo (cada 6h). Así la búsqueda, el Histórico y
+// "También te puede interesar" no enseñan artículos que Cofiba ya no tiene.
+// Por prudencia, si la lista real llega vacía o con menos de la mitad de lo
+// conocido (cofiba.es a veces devuelve páginas a medias) no se borra nada.
+let ultimoGuardadoSync = 0;
+export function sincronizarSubcategoria(categoria, subcategoria, reales) {
+  if (!categoria || !subcategoria) return { quitados: 0, nuevos: 0 };
+  let quitados = 0;
+  let nuevos = 0;
+  for (const lista of [indice, indiceParcial]) {
+    if (!lista.length) continue;
+    const previos = lista.filter((p) => p.categoria === categoria && p.subcategoria === subcategoria);
+    const plantilla = previos[0] || {};
+    const realesPorArticulo = new Map(reales.map((p) => [p.articulo, p]));
+    const fiable = reales.length > 0 && reales.length >= previos.length / 2;
+    for (let i = lista.length - 1; i >= 0; i--) {
+      const p = lista[i];
+      if (p.categoria !== categoria || p.subcategoria !== subcategoria) continue;
+      const real = realesPorArticulo.get(p.articulo);
+      if (real) {
+        lista[i] = { ...p, ...real, categoria, subcategoria };
+        realesPorArticulo.delete(p.articulo);
+      } else if (fiable) {
+        lista.splice(i, 1);
+        if (lista === indice) quitados += 1;
+      }
+    }
+    const yaEnIndice = new Set(lista.map((p) => p.articulo));
+    for (const real of realesPorArticulo.values()) {
+      if (yaEnIndice.has(real.articulo)) continue;
+      lista.push({
+        ...real,
+        categoria,
+        subcategoria,
+        categoriaNombre: plantilla.categoriaNombre || null,
+        subcategoriaNombre: plantilla.subcategoriaNombre || null,
+      });
+      if (lista === indice) nuevos += 1;
+    }
+  }
+  if ((quitados || nuevos) && Date.now() - ultimoGuardadoSync > 10000 && estado === 'listo') {
+    ultimoGuardadoSync = Date.now();
+    try {
+      guardarEnDisco();
+    } catch {
+      // nada
+    }
+  }
+  return { quitados, nuevos };
+}
+
+// El índice está completo (último rastreo terminado): solo entonces se puede
+// fiar de que un artículo que NO está en él ya no lo vende Cofiba.
+export function indiceCompleto() {
+  return estado === 'listo' && indice.length > 0 && !!actualizado;
+}
+
 export function buscarEnIndice(termino) {
   const t = normalizar(termino);
   if (!t) return [];

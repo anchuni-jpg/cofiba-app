@@ -130,6 +130,7 @@ export default function Productos({
     if (montadoRef.current) actualizarSubcat(clv, (prev) => ({ ...(prev || entradaVacia()), cargandoMas: true }));
     try {
       let pageUrl = null;
+      let fallo = false;
       let subcatEfectiva = subcatSolicitada;
       let indice = 0;
       do {
@@ -148,6 +149,7 @@ export default function Productos({
               errorDebugHtml: e.debugHtml || null,
             }));
           }
+          fallo = true;
           break;
         }
         const i = indice;
@@ -183,6 +185,15 @@ export default function Productos({
         pageUrl = data.siguientePagina || null;
         indice += 1;
       } while (pageUrl);
+      // Recorrido completo y sin errores: lo real de Cofiba ahora mismo son
+      // exactamente estas `indice` tandas — si lo guardado en el móvil
+      // tenía más (artículos que ya no existen), se descartan.
+      if (!fallo && montadoRef.current) {
+        const total = indice;
+        actualizarSubcat(clv, (prev) =>
+          prev && prev.paginas.length > total ? { ...prev, paginas: prev.paginas.slice(0, total) } : prev
+        );
+      }
     } finally {
       enCursoRef.current.delete(clv);
       if (montadoRef.current) actualizarSubcat(clv, (prev) => ({ ...(prev || entradaVacia()), cargandoMas: false }));
@@ -617,6 +628,7 @@ export default function Productos({
               // Todo el casillero es el botón que abre la ficha — solo el
               // paso +/- (más abajo, con su propio stopPropagation) queda
               // fuera, para no disparar la ficha al tocar - o +.
+              data-articulo={p.articulo}
               onClick={() => setZoomProducto(p)}
               style={{ cursor: 'zoom-in' }}
             >
@@ -676,6 +688,7 @@ export default function Productos({
                 enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
               }`}
               key={p.articulo}
+              data-articulo={p.articulo}
               onClick={() => setZoomProducto(p)}
               style={{ cursor: 'zoom-in' }}
             >
@@ -791,6 +804,12 @@ export default function Productos({
           lista={productosPorComprado}
           inicial={zoomProducto}
           onCerrar={() => setZoomProducto(null)}
+          onVer={(p) => {
+            // La lista de fondo acompaña a la ficha: si el artículo aún no
+            // estaba dibujado (más allá de "Ver más"), se amplía hasta él.
+            const i = productosPorComprado.indexOf(p);
+            if (i >= 0) setVisibles((v) => Math.max(v, i + 1));
+          }}
           pending={pending}
           añadir={añadir}
           noDisponibles={noDisponibles}

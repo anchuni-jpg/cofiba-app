@@ -586,10 +586,45 @@ input {
   touch-action: pan-y;
   user-select: none;
 }
-.ficha-foto img {
+/* Marco que se desliza con el dedo y entra/sale al cambiar de producto. */
+.ficha-foto-marco {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform, opacity;
+}
+.ficha-foto-marco img {
   max-width: calc(100% - 24px);
   max-height: 100%;
   object-fit: contain;
+}
+.ficha-entra-der {
+  animation: ficha-entra-der 0.26s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.ficha-entra-izq {
+  animation: ficha-entra-izq 0.26s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+@keyframes ficha-entra-der {
+  from {
+    transform: translateX(45%);
+    opacity: 0;
+  }
+}
+@keyframes ficha-entra-izq {
+  from {
+    transform: translateX(-45%);
+    opacity: 0;
+  }
+}
+.ficha-panel {
+  animation: ficha-panel-entra 0.3s ease;
+}
+@keyframes ficha-panel-entra {
+  from {
+    opacity: 0.2;
+  }
 }
 /* Flechas pegadas a los bordes de la pantalla, altas y anchas: fáciles de
    acertar con el pulgar sin mirar. */
@@ -754,7 +789,7 @@ input {
   overflow-y: auto;
 }
 .instalar-titulo {
-  font-size: 19px;
+  font-size: 23px;
   font-weight: 700;
   margin: 0 0 10px;
 }
@@ -775,9 +810,9 @@ input {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  font-size: 16px;
+  font-size: 20px;
   line-height: 1.45;
-  padding: 10px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
 .instalar-pasos li svg {
@@ -805,4 +840,65 @@ input {
   background: var(--surface-1);
   text-align: center;
   font-weight: 700;
+}
+
+/* Instrucciones (components/TutorialViewer.jsx): texto grande aparte de la
+   foto, para que se lea bien en el móvil. */
+.tutorial {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+}
+.tutorial-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.tutorial-foto {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: var(--surface-1);
+}
+.tutorial-foto img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  animation: ficha-panel-entra 0.3s ease;
+}
+.tutorial-texto {
+  padding: 14px 16px 6px;
+  animation: ficha-panel-entra 0.3s ease;
+}
+.tutorial-titulo {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+  margin: 0 0 6px;
+  line-height: 1.2;
+}
+.tutorial-explicacion {
+  font-size: 22px;
+  line-height: 1.35;
+  margin: 0;
+}
+.tutorial-botones {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px 16px;
+}
+.tutorial-botones button {
+  flex: 1;
+  font-size: 18px;
+  padding: 14px 8px;
 }

@@ -29,6 +29,11 @@ navigator.serviceWorker?.addEventListener('controllerchange', () => {
   window.location.reload();
 });
 
+// El scroll lo lleva la propia app: si el navegador lo "restaura" solo al
+// pulsar atrás, al cerrar una ficha la lista saltaba a donde estaba al
+// abrirla en vez de quedarse en el artículo por el que se iba.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
 // Android/Chrome avisa de que la app se puede instalar con este evento, y a
 // veces lo lanza ANTES de que React haya montado nada — antes se escuchaba
 // desde App.jsx y en esos casos se perdía (el botón "Instalar" no salía).

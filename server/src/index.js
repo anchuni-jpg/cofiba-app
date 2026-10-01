@@ -33,6 +33,8 @@ import {
   subcategoriasConProductos,
   productosPorSubcategoria,
   marcarActividad,
+  sincronizarSubcategoria,
+  indiceCompleto,
 } from './indiceStore.js';
 import { comprasConocidas, resumenGlobal } from './compradosStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
@@ -255,6 +257,27 @@ const CACHE_PRODUCTOS_MS = 24 * 60 * 60 * 1000;
 const productosCache = new Map(); // `${categoria}|${subcategoria||''}|${pageUrl||''}` -> { resultado, cuando }
 const productosEnCurso = new Map(); // misma clave -> Promise, para no pedir la misma página dos veces en paralelo
 
+// Las respuestas de una misma subcategoría llegan en tandas (getProductos-
+// Agrupados junta ~48 por respuesta). Se van juntando desde la que empieza
+// en la página 1 y, al llegar a la última, esa es la lista REAL de la
+// subcategoría: se sincroniza el índice con ella (quita lo que ya no está,
+// añade lo nuevo — ver indiceStore.sincronizarSubcategoria).
+const acumuladoSubcat = new Map(); // "categoria|subcategoria" -> Map articulo -> producto
+function sincronizarConCofiba(categoria, resultado) {
+  const sub = resultado.grupo?.slug;
+  if (!sub || !categoria || categoria === 'todas') return;
+  const clave = `${categoria}|${sub}`;
+  if (resultado.paginaInicio === 1) acumuladoSubcat.set(clave, new Map());
+  const acc = acumuladoSubcat.get(clave);
+  if (!acc) return; // no se vio el principio de la subcategoría
+  resultado.productos.forEach((p) => acc.set(p.articulo, p));
+  if (!resultado.siguientePagina) {
+    acumuladoSubcat.delete(clave);
+    const { quitados, nuevos } = sincronizarSubcategoria(categoria, sub, [...acc.values()]);
+    if (quitados || nuevos) console.log(`[indice] ${clave}: ${quitados} quitados, ${nuevos} nuevos (según cofiba.es ahora)`);
+  }
+}
+
 app.get('/api/productos', requireSession, async (req, res) => {
   const { categoria, subcategoria, page, pageUrl } = req.query;
   if (!categoria) return res.status(400).json({ error: 'Falta el parámetro categoria.' });
@@ -280,6 +303,7 @@ app.get('/api/productos', requireSession, async (req, res) => {
       productosCache.set(clave, { resultado, cuando: Date.now() });
     }
 
+    sincronizarConCofiba(categoria, resultado);
     // Se filtra aquí (no al construir/cachear resultado.productos) para que
     // la marca de "no disponible" — que caduca sola a los 7 días — se
     // aplique siempre en fresco, sin depender de cuándo se rastreó esta
@@ -489,7 +513,12 @@ app.get('/api/historico', requireSession, (req, res) => {
   if (req.query.version && Number(req.query.version) === st.version) {
     return res.json({ ...meta, sinCambios: true });
   }
-  const productos = productosHistorico(st);
+  // Con el índice del catálogo completo, lo que no está en él ya no lo
+  // vende Cofiba: se quita también del Histórico (además de lo rechazado
+  // al intentar añadirlo, ver noDisponibleStore).
+  const productos = filtrarDisponibles(
+    indiceCompleto() ? productosHistorico(st).filter((p) => buscarPorArticulo(p.articulo)) : productosHistorico(st)
+  );
   registrarImagenes(productos);
   // /consumo.html no trae categoría/subcategoría — se rellena desde el
   // índice del catálogo para agrupar y para el botón 'Ver más'.

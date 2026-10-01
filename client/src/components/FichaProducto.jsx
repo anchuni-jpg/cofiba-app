@@ -17,7 +17,7 @@ function formatoCaja(undVenta) {
 //   con el botón/gesto "atrás" del móvil, que hace exactamente lo mismo:
 //   al abrir se añade una entrada al historial del navegador y "atrás" la
 //   consume cerrando la ficha en vez de salir de la pantalla.
-export default function FichaProducto({ lista, inicial, onCerrar, pending, añadir, noDisponibles, error }) {
+export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending, añadir, noDisponibles, error }) {
   const [indice, setIndice] = useState(() => {
     const i = lista.indexOf(inicial);
     return i >= 0 ? i : lista.findIndex((p) => p.articulo === inicial.articulo);
@@ -29,12 +29,57 @@ export default function FichaProducto({ lista, inicial, onCerrar, pending, añad
   const hayAnterior = indice > 0;
   const haySiguiente = indice >= 0 && indice < lista.length - 1;
 
+  // Transición: la foto actual sale hacia un lado y la nueva entra por el
+  // otro (clase .ficha-entra-*, ver styles.css). `entrada` recuerda por qué
+  // lado debe entrar la siguiente.
+  const fotoRef = useRef(null);
+  const [entrada, setEntrada] = useState(null);
+  const animandoRef = useRef(false);
+  const SALIDA_MS = 170;
+
   function irA(delta) {
     const nuevo = indice + delta;
-    if (nuevo < 0 || nuevo >= lista.length) return;
-    setExtra(null);
-    setIndice(nuevo);
+    if (nuevo < 0 || nuevo >= lista.length || animandoRef.current) {
+      // En un extremo de la lista: la foto vuelve a su sitio.
+      if (fotoRef.current) {
+        fotoRef.current.style.transition = 'transform 0.2s ease';
+        fotoRef.current.style.transform = '';
+      }
+      return;
+    }
+    animandoRef.current = true;
+    const el = fotoRef.current;
+    if (el) {
+      el.style.transition = `transform ${SALIDA_MS}ms ease-in, opacity ${SALIDA_MS}ms ease-in`;
+      el.style.transform = `translateX(${delta > 0 ? -45 : 45}%)`;
+      el.style.opacity = '0';
+    }
+    setTimeout(() => {
+      setEntrada(delta > 0 ? 'der' : 'izq');
+      setExtra(null);
+      setIndice(nuevo);
+      animandoRef.current = false;
+    }, SALIDA_MS);
   }
+
+  // Al cambiar de producto: precarga las fotos vecinas (para que la
+  // siguiente aparezca sin esperar) y avisa a la pantalla de fondo para que
+  // su lista se coloque en este mismo artículo — al cerrar, se sigue por
+  // donde se iba.
+  useEffect(() => {
+    [lista[indice - 1], lista[indice + 1], lista[indice + 2]].forEach((p) => {
+      if (p?.imagen) new Image().src = p.imagen;
+    });
+    const actual = lista[indice];
+    if (!actual) return;
+    onVer?.(actual);
+    const t = setTimeout(() => {
+      const fila = document.querySelector(`[data-articulo="${CSS.escape(actual.articulo)}"]`);
+      fila?.scrollIntoView({ block: 'center' });
+    }, 80);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indice]);
 
   // Botón "atrás" del sistema = botón rojo.
   const onCerrarRef = useRef(onCerrar);
@@ -73,19 +118,42 @@ export default function FichaProducto({ lista, inicial, onCerrar, pending, añad
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Deslizar: horizontal claro (más que vertical) y de al menos 50px.
+  // Deslizar: la foto sigue al dedo mientras se arrastra; al soltar, si se
+  // ha movido lo bastante (horizontal claro), pasa al siguiente/anterior y
+  // si no, vuelve a su sitio.
   const toque = useRef(null);
   function onTouchStart(e) {
     const t = e.touches[0];
-    toque.current = { x: t.clientX, y: t.clientY };
+    toque.current = { x: t.clientX, y: t.clientY, horizontal: null };
+    if (fotoRef.current) fotoRef.current.style.transition = 'none';
+  }
+  function onTouchMove(e) {
+    if (!toque.current || animandoRef.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - toque.current.x;
+    const dy = t.clientY - toque.current.y;
+    if (toque.current.horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      toque.current.horizontal = Math.abs(dx) > Math.abs(dy);
+    }
+    if (!toque.current.horizontal || !fotoRef.current) return;
+    // En los extremos de la lista se mueve con "resistencia".
+    const enExtremo = (dx > 0 && !hayAnterior) || (dx < 0 && !haySiguiente);
+    fotoRef.current.style.transform = `translateX(${enExtremo ? dx / 4 : dx}px)`;
+    fotoRef.current.style.opacity = String(1 - Math.min(Math.abs(dx) / 600, 0.4));
   }
   function onTouchEnd(e) {
     if (!toque.current) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - toque.current.x;
-    const dy = t.clientY - toque.current.y;
+    const horizontal = toque.current.horizontal;
     toque.current = null;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) irA(dx < 0 ? 1 : -1);
+    if (horizontal && Math.abs(dx) > 60) {
+      irA(dx < 0 ? 1 : -1);
+    } else if (fotoRef.current) {
+      fotoRef.current.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+      fotoRef.current.style.transform = '';
+      fotoRef.current.style.opacity = '';
+    }
   }
 
   const [relacionados, setRelacionados] = useState(null);
@@ -103,8 +171,14 @@ export default function FichaProducto({ lista, inicial, onCerrar, pending, añad
 
   return (
     <div className="ficha-overlay">
-      <div className="ficha-foto" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        {producto.imagen ? <img src={producto.imagen} alt="" draggable={false} /> : <span className="muted">Sin foto</span>}
+      <div className="ficha-foto" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+        <div
+          key={producto.articulo + '|' + indice}
+          ref={fotoRef}
+          className={`ficha-foto-marco${entrada ? ` ficha-entra-${entrada}` : ''}`}
+        >
+          {producto.imagen ? <img src={producto.imagen} alt="" draggable={false} /> : <span className="muted">Sin foto</span>}
+        </div>
         {hayAnterior && (
           <button className="ficha-flecha ficha-flecha-izq" onClick={() => irA(-1)} aria-label="Producto anterior">
             ‹
@@ -122,7 +196,7 @@ export default function FichaProducto({ lista, inicial, onCerrar, pending, añad
         )}
       </div>
 
-      <div className="ficha-panel">
+      <div className="ficha-panel" key={'panel-' + producto.articulo}>
         <p style={{ fontSize: 14, fontWeight: 500, margin: '0 0 2px' }}>
           {producto.nombre || producto.referencia || producto.articulo}
         </p>
