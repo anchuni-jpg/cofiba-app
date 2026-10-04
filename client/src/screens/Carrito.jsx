@@ -220,22 +220,30 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
           </p>
 
           <div className="card" style={{ marginBottom: 12 }}>
+            {/* Las mismas líneas que el carrito de la web de cofiba.es: con
+                productos de distinto IVA hay una base y un IVA (con su
+                recargo) por cada tipo. */}
             <table className="totals-table">
               <tbody>
-                <tr>
-                  <td className="muted">Importe</td>
-                  <td>{carrito.totales.importe ? `${carrito.totales.importe}€` : '—'}</td>
-                </tr>
-                <tr>
-                  <td className="muted">IVA{carrito.totales.iva?.rate ? ` (${carrito.totales.iva.rate}%)` : ''}</td>
-                  <td>{carrito.totales.iva?.valor ? `${carrito.totales.iva.valor}€` : '—'}</td>
-                </tr>
-                <tr>
-                  <td style={{ fontWeight: 500, borderTop: '1px solid var(--border)', paddingTop: 6 }}>TOTAL</td>
-                  <td style={{ fontWeight: 500, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-                    {carrito.totales.total ? `${carrito.totales.total}€` : '—'}
-                  </td>
-                </tr>
+                {carrito.totales.lineas?.length ? (
+                  carrito.totales.lineas.map((l, i) => {
+                    const esTotal = /^TOTAL$/i.test(l.etiqueta);
+                    const estilo = esTotal ? { fontWeight: 600, borderTop: '1px solid var(--border)', paddingTop: 6, fontSize: 16 } : undefined;
+                    return (
+                      <tr key={i}>
+                        <td className={esTotal ? undefined : 'muted'} style={estilo}>
+                          {esTotal ? 'TOTAL' : (l.etiqueta.charAt(0) + l.etiqueta.slice(1).toLowerCase()).replace(/iva/g, 'IVA').replace(/^Rec /, 'REC ')}
+                        </td>
+                        <td style={estilo}>{l.valor}€</td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td style={{ fontWeight: 500 }}>TOTAL</td>
+                    <td style={{ fontWeight: 500 }}>{carrito.totales.total ? `${carrito.totales.total}€` : '—'}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

@@ -671,22 +671,32 @@ export async function getCarrito({ http }) {
   const $ = cheerio.load(res.data);
   const normalized = $('body').text().replace(/\s+/g, ' ').trim();
 
-  // "Dto. pronto pago"/"Envío" no correspondían a nada real de esta página
-  // (confirmado mirando el HTML crudo con un carrito con productos reales:
-  // esas etiquetas no existen aquí) — lo que sí hay es el IVA, con el
-  // recargo de equivalencia delante cuando aplica ("REC 5,2% IVA 21%"), pero
-  // OJO: cofiba.es solo da UN importe combinado para los dos conceptos, no
-  // un desglose real. Probado en vivo con varios importes: ese único número
-  // coincide siempre exactamente con base×IVA% (nunca con base×(IVA%+REC%)),
-  // así que el recargo no se está cobrando aparte de verdad para esta
-  // cuenta, aunque la etiqueta lo mencione — se muestra tal cual como IVA del
-  // 21%, sin inventar una línea de recargo que en la práctica no se cobra.
-  const ivaRecMatch = normalized.match(/(?:REC\s*[\d.,]+%\s*)?IVA\s*([\d.,]+)%\s*([\d.,]+)\s*€/i);
-  const iva = ivaRecMatch ? { rate: parseEsNumber(ivaRecMatch[1]), valor: ivaRecMatch[2] } : null;
+  // Bloque de totales TAL CUAL lo enseña la web de cofiba.es, línea a
+  // línea: Importe, Gastos de envío, Cánon y, POR CADA TIPO DE IVA del
+  // carrito, "Base imponible X%" y "REC Y% IVA X%", y el Total. Antes solo
+  // se cogía la primera línea de IVA: con productos de distinto IVA (p. ej.
+  // guías al 4% y juguetes al 21%) la app enseñaba un IVA que no cuadraba
+  // con el de la web.
+  const inicioTotales = normalized.search(/IMPORTE\s*[\d.,]+\s*€\s*GASTOS/i);
+  const finTotales = inicioTotales >= 0 ? normalized.slice(inicioTotales).search(/TOTAL\s*[\d.,]+\s*€/i) : -1;
+  const bloqueTotales =
+    inicioTotales >= 0 && finTotales >= 0 ? normalized.slice(inicioTotales, inicioTotales + finTotales + 40) : '';
+  const lineasTotales = [];
+  const RE_TOTALES =
+    /(IMPORTE|GASTOS DE ENV[IÍ]O|C[AÁ]NON de los productos seleccionados|Base imponible\s*[\d.,]+\s*%|(?:REC\s*[\d.,]+\s*%\s*)?IVA\s*[\d.,]+\s*%|TOTAL)\s*(\d[\d.]*,\d{2})\s*€/gi;
+  let mt;
+  while ((mt = RE_TOTALES.exec(bloqueTotales))) {
+    lineasTotales.push({ etiqueta: mt[1].replace(/\s+/g, ' ').trim(), valor: mt[2] });
+    if (/^TOTAL$/i.test(mt[1])) break;
+  }
+  const valorDe = (re) => lineasTotales.find((l) => re.test(l.etiqueta))?.valor || null;
+  const ivas = lineasTotales.filter((l) => /IVA/i.test(l.etiqueta));
   const totales = {
-    importe: normalized.match(/\bIMPORTE\s*([\d.,]+)\s*€/)?.[1] || null,
-    iva,
-    total: normalized.match(/\bTOTAL\s*([\d.,]+)\s*€/)?.[1] || null,
+    importe: valorDe(/^IMPORTE$/i) || normalized.match(/\bIMPORTE\s*([\d.,]+)\s*€/)?.[1] || null,
+    total: valorDe(/^TOTAL$/i) || normalized.match(/\bTOTAL\s*([\d.,]+)\s*€/)?.[1] || null,
+    // Compatibilidad: primer IVA (el cliente nuevo usa `lineas`).
+    iva: ivas[0] ? { rate: parseEsNumber(ivas[0].etiqueta.match(/IVA\s*([\d.,]+)/i)?.[1]), valor: ivas[0].valor } : null,
+    lineas: lineasTotales,
   };
 
   const porCodigo = new Map();

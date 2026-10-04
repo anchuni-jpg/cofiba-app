@@ -110,6 +110,29 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
   const [error, setError] = useState(null);
   const [confirmando, setConfirmando] = useState(false);
   const [pistaLinterna, setPistaLinterna] = useState(null);
+  // Zoom para códigos pequeños: real de la cámara si lo permite (Android),
+  // si no digital (ampliando el centro de la imagen, p. ej. en iPhone).
+  const pistaRef = useRef(null);
+  const zoomDigitalRef = useRef(1);
+  const [zoom, setZoom] = useState(1);
+  async function cambiarZoom() {
+    const nuevo = zoom >= 3 ? 1 : zoom + 1;
+    const pista = pistaRef.current;
+    const cap = pista?.getCapabilities?.().zoom;
+    if (cap && cap.max >= 2) {
+      try {
+        const valor = Math.min(cap.max, Math.max(cap.min || 1, nuevo));
+        await pista.applyConstraints({ advanced: [{ zoom: valor }] });
+        zoomDigitalRef.current = 1;
+        setZoom(nuevo);
+        return;
+      } catch {
+        // sigue con el digital
+      }
+    }
+    zoomDigitalRef.current = nuevo;
+    setZoom(nuevo);
+  }
   const [linterna, setLinterna] = useState(false);
   const [eleccion, setEleccion] = useState(null); // { codigo, opciones } si un EAN es de varios productos
   const videoRef = useRef(null);
@@ -286,6 +309,9 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       { ancho: 640, margen: 0.1, contraste: 3 },
       { ancho: null, margen: 0, contraste: 0 },
       { ancho: 360, margen: 0.1, contraste: 2 },
+      // diminutos: la retícula ampliada x2 con suavizado (zxing no lee con
+      // menos de ~1,5 px por barra; ampliando, sí hasta algo menos)
+      { ancho: null, margen: 0, contraste: 0, ampliar: 2 },
     ];
     let turno = 0;
 
@@ -301,14 +327,15 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       ctx.putImageData(img, 0, 0);
     }
 
-    function copiarFranja(video, { ancho, margen }) {
+    function copiarFranja(video, { ancho, margen, ampliar = 1 }) {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
       const cw = video.clientWidth;
       const ch = video.clientHeight;
-      // El vídeo se pinta con object-fit: cover — se deshace ese escalado
-      // para saber qué trozo del fotograma real cae bajo la retícula.
-      const escala = Math.max(cw / vw, ch / vh);
+      // El vídeo se pinta con object-fit: cover (y, con zoom digital,
+      // ampliado con CSS desde el centro) — se deshace ese escalado para
+      // saber qué trozo del fotograma real cae bajo la retícula.
+      const escala = Math.max(cw / vw, ch / vh) * zoomDigitalRef.current;
       const offX = (vw * escala - cw) / 2;
       const offY = (vh * escala - ch) / 2;
       const top = parseFloat(RETICULA_TOP) / 100;
@@ -319,7 +346,9 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       const sy = (y1 + offY) / escala;
       const sw = (x2 - x1) / escala;
       const sh = (y2 - y1) / escala;
-      const reduce = ancho ? Math.min(1, ancho / sw) : 1;
+      const reduce = ancho ? Math.min(1, ancho / sw) : ampliar;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       canvas.width = Math.round(sw * reduce);
       canvas.height = Math.round(sh * reduce);
       ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
@@ -333,7 +362,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       // Lector nativo (si hay): en todos los fotogramas menos uno de cada
       // tres, que se deja a zxing por si acaso el nativo no lo pilla.
       if (detector && turno % 3 !== 0) {
-        copiarFranja(video, PASADAS[0]);
+        copiarFranja(video, { ancho: null, margen: 0.1 }); // el nativo es rápido: a resolución completa
         try {
           const encontrados = await detector.detect(canvas);
           if (encontrados.length) {
@@ -378,8 +407,8 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         video: {
           facingMode: 'environment',
           // Más resolución = barras más nítidas dentro de la retícula.
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { ideal: 2560 },
+          height: { ideal: 1440 },
         },
       })
       // Plan B: algún móvil rechaza esas preferencias — se pide la cámara
@@ -399,6 +428,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         } catch {
           // No soportado: se queda con el enfoque por defecto.
         }
+        pistaRef.current = pista;
         const video = videoRef.current;
         video.srcObject = s;
         // Sin esperar a play(): el bucle ya comprueba él solo si el vídeo
@@ -584,10 +614,17 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12 }}>
-        <p style={{ color: '#fff', margin: 0, fontSize: 14 }}>
+        <p style={{ color: '#fff', margin: 0, fontSize: 13, flex: 1, minWidth: 0, paddingRight: 8 }}>
           Apunta a un código de barras{capturados.length > 0 ? ` · ${totalUnidades} capturado${totalUnidades === 1 ? '' : 's'}` : ''}
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={cambiarZoom}
+            aria-label="Acercar"
+            style={{ background: zoom > 1 ? '#20944b' : 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', fontWeight: 700, whiteSpace: 'nowrap', padding: '8px 10px' }}
+          >
+            🔍 {zoom}x
+          </button>
           {pistaLinterna && (
             <button
               onClick={() => {
@@ -612,7 +649,18 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         </div>
       ) : (
         <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-          <video ref={videoRef} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transform: zoomDigitalRef.current > 1 ? `scale(${zoomDigitalRef.current})` : undefined,
+              transition: 'transform 0.2s ease',
+            }}
+          />
           {/* Solo un marco visual para apuntar — el área real que escanea
               zxing es el fotograma entero, no solo dentro de este recuadro. */}
           <div

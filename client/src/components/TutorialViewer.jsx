@@ -29,7 +29,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-05-escaner.jpg',
     titulo: 'Escanea códigos de barras',
-    texto: 'Pon el código dentro del recuadro del centro, sobre la línea roja. Puedes escanear varios seguidos. Con poca luz, toca 🔦. Al terminar, toca Salir.',
+    texto: 'Pon el código en el recuadro del centro, sobre la línea roja. Si es pequeño, toca 🔍 para acercar; con poca luz, 🔦. Al terminar, toca Salir.',
   },
   {
     archivo: '/tutorial/slide-06-escaner-revision.jpg',
