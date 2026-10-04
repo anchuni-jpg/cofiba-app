@@ -56,6 +56,7 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
       .carrito()
       .then((data) => {
         setCarrito(data);
+        setSaliendoCodigo(null);
         // El badge de la botonera de abajo vive en App.jsx: sin esto se
         // quedaba con el número de antes de borrar/vaciar aunque aquí
         // dentro sí se actualizara. Los códigos también, para el icono de
@@ -82,12 +83,16 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
     }
   }
 
+  const [saliendoCodigo, setSaliendoCodigo] = useState(null);
   async function eliminar(codigo) {
     if (!window.confirm('¿Eliminar este producto del carrito?')) return;
     setBusyCodigo(codigo);
     setError(null);
     try {
       await api.eliminarDelCarrito(codigo);
+      // La línea sale deslizándose y plegándose antes de recargar.
+      setSaliendoCodigo(codigo);
+      await new Promise((r) => setTimeout(r, 380));
       cargar();
     } catch (e) {
       setError(e.message);
@@ -151,6 +156,7 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
             {carrito.lineas.map((l) => (
               <div
                 key={l.codigo}
+                className={`carrito-linea${saliendoCodigo === l.codigo ? ' quitando' : ''}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -183,7 +189,7 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
                     >
                       -
                     </button>
-                    <span style={{ minWidth: 20, textAlign: 'center' }}>{l.cantidad || 1}</span>
+                    <span className="cuenta-pop" key={'c' + l.cantidad} style={{ minWidth: 20, textAlign: 'center' }}>{l.cantidad || 1}</span>
                     <button
                       disabled={busyCodigo === l.codigo}
                       onClick={() => cambiarCantidad(l.codigo, (Number(l.cantidad) || 1) + 1)}

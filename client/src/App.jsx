@@ -29,6 +29,17 @@ function cargarCompradosSesion() {
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!getToken());
   const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico
+  // Dirección de la animación al cambiar de pantalla: hacia dentro (de
+  // derecha), hacia atrás (de izquierda) o entre pestañas (sube suave).
+  const tabPrevRef = useRef(tab);
+  const animPantallaRef = useRef('sube');
+  if (tabPrevRef.current !== tab) {
+    const NIVEL = { categorias: 0, historico: 0, carrito: 0, busqueda: 1, productos: 2 };
+    const a = NIVEL[tabPrevRef.current] ?? 0;
+    const b = NIVEL[tab] ?? 0;
+    animPantallaRef.current = b > a ? 'der' : b < a ? 'izq' : 'sube';
+    tabPrevRef.current = tab;
+  }
   const [categoria, setCategoria] = useState(null);
   // Solo se rellena al venir del botón "Ver más" de Histórico — le dice a
   // Productos en qué subcategoría entrar directamente en vez de la primera
@@ -304,11 +315,11 @@ export default function App() {
           Histórico
         </button>
         <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
-          Carrito{cartCount > 0 ? <span className="badge">{cartCount}</span> : null}
+          Carrito{cartCount > 0 ? <span className="badge badge-pop" key={cartCount}>{cartCount}</span> : null}
         </button>
       </div>
 
-      <div className="app-main">
+      <div className="app-main" data-anim={animPantallaRef.current}>
         <div className="topbar">
           <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 24, flexShrink: 0 }} />
           <button

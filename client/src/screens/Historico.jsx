@@ -87,8 +87,20 @@ export default function Historico({
   // (el componente se desmonta/monta con cada cambio de pestaña) este set
   // se reinicia solo y todo vuelve a aparecer, listo para la próxima vez.
   const [quitados, setQuitados] = useState(() => new Set(memoria?.quitados || []));
+  // Al quitar, el grupo primero se desliza y se pliega (clase "quitando")
+  // y solo al acabar la animación desaparece de verdad de la lista.
+  const [saliendo, setSaliendo] = useState(() => new Set());
   function quitarGrupo(clave) {
-    setQuitados((prev) => new Set(prev).add(clave));
+    if (saliendo.has(clave)) return;
+    setSaliendo((prev) => new Set(prev).add(clave));
+    setTimeout(() => {
+      setQuitados((prev) => new Set(prev).add(clave));
+      setSaliendo((prev) => {
+        const n = new Set(prev);
+        n.delete(clave);
+        return n;
+      });
+    }, 460);
   }
   const [zoomProducto, setZoomProducto] = useState(null);
 
@@ -406,6 +418,7 @@ export default function Historico({
             const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
             const clave = claveGrupo(grupo);
             const quitado = quitados.has(clave);
+            const quitando = saliendo.has(clave) ? ' quitando' : '';
             return (
               // La clave incluye la posición: el mismo artículo puede aparecer
               // más de una vez en el histórico real (comprado en fechas
@@ -415,7 +428,7 @@ export default function Historico({
                 {nuevaSubcategoria && !quitado && (
                   <div
                     onClick={() => p.categoria && onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
-                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}`}
+                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}${quitando}`}
                     style={{ marginTop: idx === 0 ? 0 : 20 }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -440,7 +453,7 @@ export default function Historico({
                 )}
                 {!quitado && (
                 <div
-                  className={`product-row${grande ? ' product-row-lg' : ''}${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
+                  className={`product-row${grande ? ' product-row-lg' : ''}${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}${quitando}`}
                   data-articulo={p.articulo}
                   onClick={() => setZoomProducto(p)}
                   style={{ cursor: 'zoom-in' }}
@@ -487,7 +500,7 @@ export default function Historico({
                 ) : (
                   <div className={grande ? 'qty-stepper qty-stepper-lg' : 'qty-stepper'}>
                     <button onClick={() => añadir(p, -1)}>-</button>
-                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: grande ? 16 : 13 }}>{pending[p.articulo] ?? 0}</span>
+                    <span className={(pending[p.articulo] ?? 0) > 0 ? 'cuenta-pop' : undefined} key={'c' + (pending[p.articulo] ?? 0)} style={{ minWidth: 14, textAlign: 'center', fontSize: grande ? 16 : 13 }}>{pending[p.articulo] ?? 0}</span>
                     <button onClick={() => añadir(p, 1)}>+</button>
                   </div>
                 )}
@@ -512,12 +525,13 @@ export default function Historico({
             const nuevaSubcategoria = nuevaCategoria || grupo.subcategoria !== grupoAnterior.subcategoria;
             const clave = claveGrupo(grupo);
             const quitado = quitados.has(clave);
+            const quitando = saliendo.has(clave) ? ' quitando' : '';
             return (
               <Fragment key={`${p.articulo}-${idx}`}>
                 {nuevaSubcategoria && !quitado && (
                   <div
                     onClick={() => p.categoria && onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
-                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}`}
+                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}${quitando}`}
                     style={{ gridColumn: '1 / -1', marginTop: idx === 0 ? 0 : 14 }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -542,7 +556,7 @@ export default function Historico({
                 )}
                 {!quitado && (
                 <div
-                  className={`producto-card${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}`}
+                  className={`producto-card${enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''}${quitando}`}
                   data-articulo={p.articulo}
                   onClick={() => setZoomProducto(p)}
                   style={{ cursor: 'zoom-in' }}
@@ -599,7 +613,7 @@ export default function Historico({
                 ) : (
                   <div className="qty-stepper" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => añadir(p, -1)}>-</button>
-                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                    <span className={(pending[p.articulo] ?? 0) > 0 ? 'cuenta-pop' : undefined} key={'c' + (pending[p.articulo] ?? 0)} style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                     <button onClick={() => añadir(p, 1)}>+</button>
                   </div>
                 )}

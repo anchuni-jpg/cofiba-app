@@ -376,7 +376,7 @@ export default function Busqueda({
                   >
                     <div className={grande ? 'qty-stepper qty-stepper-lg' : 'qty-stepper'}>
                       <button onClick={() => añadir(p, -1)}>-</button>
-                      <span style={{ minWidth: 14, textAlign: 'center', fontSize: grande ? 16 : 13 }}>
+                      <span className={(pending[p.articulo] ?? 0) > 0 ? 'cuenta-pop' : undefined} key={'c' + (pending[p.articulo] ?? 0)} style={{ minWidth: 14, textAlign: 'center', fontSize: grande ? 16 : 13 }}>
                         {pending[p.articulo] ?? 0}
                       </span>
                       <button onClick={() => añadir(p, 1)}>+</button>
@@ -446,7 +446,7 @@ export default function Busqueda({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button onClick={() => añadir(p, -1)}>-</button>
-                    <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
+                    <span className={(pending[p.articulo] ?? 0) > 0 ? 'cuenta-pop' : undefined} key={'c' + (pending[p.articulo] ?? 0)} style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{pending[p.articulo] ?? 0}</span>
                     <button onClick={() => añadir(p, 1)}>+</button>
                   </div>
                   {p.undVenta && (

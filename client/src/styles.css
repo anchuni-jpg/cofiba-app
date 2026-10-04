@@ -1189,3 +1189,202 @@ input {
   filter: blur(2px);
   transition: opacity 0.25s ease, filter 0.25s ease;
 }
+
+/* ───────── Animaciones generales ───────── */
+
+/* Cambio de pantalla: hacia dentro entra por la derecha, hacia atrás por la
+   izquierda y entre pestañas de abajo sube suave. */
+.app-main[data-anim='der'] > .content {
+  animation: pantalla-der 0.32s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.app-main[data-anim='izq'] > .content {
+  animation: pantalla-izq 0.32s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.app-main[data-anim='sube'] > .content {
+  animation: pantalla-sube 0.3s ease;
+}
+@keyframes pantalla-der {
+  from { opacity: 0; transform: translateX(36px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pantalla-izq {
+  from { opacity: 0; transform: translateX(-36px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pantalla-sube {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Quitar un grupo del Histórico (o una línea del carrito): se va hacia la
+   derecha desvaneciéndose y luego el hueco se cierra suave. */
+.quitando {
+  animation: quitar-sale 0.46s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  overflow: hidden;
+  pointer-events: none;
+}
+@keyframes quitar-sale {
+  0% { opacity: 1; transform: none; max-height: 400px; }
+  50% { opacity: 0; transform: translateX(70%) scale(0.96); max-height: 400px; }
+  100% {
+    opacity: 0;
+    transform: translateX(70%) scale(0.96);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    border-width: 0;
+  }
+}
+
+/* Artículos y categorías aparecen con un ligero fundido hacia arriba. */
+.product-row,
+.producto-card,
+.carrito-linea {
+  animation: item-entra 0.35s ease both;
+}
+.product-row.quitando,
+.producto-card.quitando,
+.carrito-linea.quitando {
+  animation: quitar-sale 0.46s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes item-entra {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.historico-cabecera {
+  animation: cabecera-entra 0.35s ease both;
+  transition: filter 0.2s ease, transform 0.15s ease;
+}
+.historico-cabecera:active:not(:has(.historico-cabecera-quitar:active)) {
+  transform: scale(0.985);
+}
+.historico-cabecera.quitando {
+  animation: quitar-sale 0.46s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes cabecera-entra {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+.cat-tile {
+  animation: item-entra 0.4s ease both;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+.cat-grid > :nth-child(2) { animation-delay: 0.03s; }
+.cat-grid > :nth-child(3) { animation-delay: 0.06s; }
+.cat-grid > :nth-child(4) { animation-delay: 0.09s; }
+.cat-grid > :nth-child(5) { animation-delay: 0.12s; }
+.cat-grid > :nth-child(6) { animation-delay: 0.15s; }
+.cat-grid > :nth-child(7) { animation-delay: 0.18s; }
+.cat-grid > :nth-child(8) { animation-delay: 0.21s; }
+.cat-grid > :nth-child(n + 9) { animation-delay: 0.24s; }
+
+/* Botones: el cambio de color/fondo y el "hundirse" al pulsar, suaves. */
+button {
+  transition: transform 0.12s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease,
+    opacity 0.2s ease;
+}
+button:active {
+  transform: scale(0.95);
+}
+button:disabled:active,
+.ficha-flecha:active {
+  transform: none;
+}
+
+/* Botonera de abajo: la pestaña activa se ilumina con transición. */
+.bottomnav button {
+  transition: color 0.25s ease, border-color 0.25s ease, background-color 0.25s ease;
+}
+.bottomnav button.active {
+  animation: pestana-activa 0.35s ease;
+}
+@keyframes pestana-activa {
+  0% { transform: translateY(2px); }
+  60% { transform: translateY(-2px); }
+  100% { transform: none; }
+}
+
+/* El número del carrito (abajo) y los contadores +/- dan un saltito al cambiar. */
+.badge-pop,
+.cuenta-pop {
+  display: inline-block;
+  animation: cuenta-pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes cuenta-pop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+/* Ventanas y avisos: aparecen con fundido y un pequeño zoom. */
+.ficha-overlay {
+  animation: fundido-entra 0.22s ease;
+}
+.envio-overlay,
+.instalar-overlay,
+.escaner-eleccion {
+  animation: fundido-entra 0.25s ease;
+}
+.envio-caja,
+.escaner-eleccion-caja {
+  animation: caja-entra 0.32s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.instalar-caja {
+  animation: hoja-sube 0.35s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.tutorial {
+  animation: pantalla-sube 0.3s ease;
+}
+.envio-check {
+  animation: check-entra 0.5s cubic-bezier(0.3, 1.8, 0.5, 1);
+}
+.error-banner {
+  animation: aviso-tiembla 0.4s ease;
+}
+@keyframes fundido-entra {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes caja-entra {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes hoja-sube {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes check-entra {
+  0% { transform: scale(0) rotate(-40deg); }
+  100% { transform: none; }
+}
+@keyframes aviso-tiembla {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* Barra de progreso del Histórico: brillo que la recorre mientras avanza. */
+.progreso-barra > div {
+  background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: progreso-brillo 1.6s linear infinite;
+}
+@keyframes progreso-brillo {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* Quien tenga activado "reducir movimiento" en el móvil no ve animaciones. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
