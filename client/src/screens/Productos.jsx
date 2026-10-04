@@ -519,14 +519,42 @@ export default function Productos({
   }, [cambioFicha, grupoEfectivo, productosPorComprado, cargandoMas]);
   const hayMasParaRevelar = visibles < productosPorComprado.length;
 
+  // Cabecera que se esconde al bajar y aparece al subir.
+  const [cabeceraOculta, setCabeceraOculta] = useState(false);
+  const [altoTopbar, setAltoTopbar] = useState(0);
+  useEffect(() => {
+    const medir = () => setAltoTopbar(document.querySelector('.topbar')?.offsetHeight || 0);
+    medir();
+    window.addEventListener('resize', medir);
+    let ultimoY = window.scrollY;
+    function alDesplazar() {
+      if (document.querySelector('.ficha-overlay')) return; // la ficha mueve el fondo sola
+      const y = window.scrollY;
+      const d = y - ultimoY;
+      if (y < 80) setCabeceraOculta(false);
+      else if (d > 10) setCabeceraOculta(true);
+      else if (d < -10) setCabeceraOculta(false);
+      if (Math.abs(d) > 10 || y < 80) ultimoY = y;
+    }
+    window.addEventListener('scroll', alDesplazar, { passive: true });
+    return () => {
+      window.removeEventListener('resize', medir);
+      window.removeEventListener('scroll', alDesplazar);
+    };
+  }, []);
+
   return (
     <div
       className="content"
       ref={contentRef}
-      style={{ display: 'flex', flexDirection: 'column' }}
+      style={{ display: 'flex', flexDirection: 'column', overflow: 'visible' }}
       onTouchStart={onTouchStartLista}
       onTouchEnd={onTouchEndLista}
     >
+      {/* Cabecera (volver, buscador, controles y subcategorías) aparte del
+          listado: se queda pegada arriba, se esconde al bajar y vuelve a
+          aparecer en cuanto se sube un poco, sin tener que ir al principio. */}
+      <div className={`cabecera-lista${cabeceraOculta ? ' oculta' : ''}`} style={{ top: altoTopbar }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
@@ -630,6 +658,7 @@ export default function Productos({
           })}
         </div>
       )}
+      </div>
 
       {loading && <p className="muted">{busquedaCatActiva ? 'Buscando…' : 'Cargando productos…'}</p>}
       {!loading && busquedaCatActiva && productos.length === 0 && !error && (

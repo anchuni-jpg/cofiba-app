@@ -1528,3 +1528,22 @@ mark.resaltado {
 .carrito-cajas strong {
   color: var(--text-primary);
 }
+
+/* Listado de artículos: la cabecera (volver, buscador, controles y
+   subcategorías) va aparte, pegada bajo la barra de arriba; se esconde al
+   bajar y reaparece al subir. */
+.cabecera-lista {
+  position: sticky;
+  z-index: 30;
+  margin: -14px -16px 6px;
+  padding: 10px 16px 0;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  transition: transform 0.28s ease;
+  will-change: transform;
+}
+.cabecera-lista.oculta {
+  transform: translateY(calc(-100% - 2px));
+  box-shadow: none;
+}
