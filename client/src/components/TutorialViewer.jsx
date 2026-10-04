@@ -37,19 +37,39 @@ const DIAPOSITIVAS = [
     texto: 'Toca uno para verlo en grande. Cambia cantidades o quita lo que sobre. Nada entra en el carrito hasta que tocas Confirmar.',
   },
   {
+    archivo: '/tutorial/slide-07-historico.jpg',
+    titulo: 'Tu histórico de compras',
+    texto: 'Botón «Histórico» de abajo: todo lo que has comprado, ordenado por categorías y subcategorías. La primera vez se va leyendo de Cofiba (barra verde); puedes usarlo mientras, y lo que compres se añade solo.',
+  },
+  {
+    archivo: '/tutorial/slide-09-historico.jpg',
+    titulo: 'Busca y ordena tu histórico',
+    texto: 'Escribe arriba para buscar solo entre lo que ya compraste. Elige cuántos artículos ver de golpe (25, 50, 100…) y cambia entre Lista y Rejilla. «Actualizar» vuelve a leerlo de Cofiba.',
+  },
+  {
+    archivo: '/tutorial/slide-09-historico.jpg',
+    titulo: 'Las franjas de categoría',
+    texto: 'Cada franja verde separa una subcategoría. Tócala para ir a esa subcategoría del catálogo. El botón rojo «✕ Quitar» la despeja de la lista mientras preparas el pedido; al salir del Histórico vuelve a aparecer.',
+  },
+  {
+    archivo: '/tutorial/slide-09-historico.jpg',
+    titulo: 'Repite tus compras',
+    texto: 'Con + y − añades o quitas cajas al carrito. «Ver más» abre la categoría del artículo; al volver atrás sigues justo por donde ibas.',
+  },
+  {
+    archivo: '/tutorial/slide-04-ficha-producto.jpg',
+    titulo: 'Repasa en grande',
+    texto: 'Toca un artículo para verlo en grande y desliza para pasar al siguiente. Bajo el contador ves la subcategoría; al cambiar de subcategoría sale un aviso con su nombre: desliza otra vez para seguir. Al cerrar, el listado queda a la altura del último que viste.',
+  },
+  {
     archivo: '/tutorial/slide-07-carrito.jpg',
-    titulo: 'Envía el pedido',
-    texto: 'Revisa el carrito y toca «Finalizar pedido». Te pedirá confirmación antes de enviarlo.',
+    titulo: 'El carrito y el envío',
+    texto: 'Botón «Carrito» de abajo: revisa cantidades, elimina lo que sobre y toca «Finalizar pedido». Te pedirá confirmación antes de enviarlo.',
   },
   {
     archivo: '/tutorial/slide-08-envio.jpg',
     titulo: 'Pedido enviado',
     texto: 'Cuando sale este aviso verde, el pedido ya está en Cofiba.',
-  },
-  {
-    archivo: '/tutorial/slide-09-historico.jpg',
-    titulo: 'Tu histórico de compras',
-    texto: 'Todo lo que has comprado, por categorías. Repite con +. Toca la franja verde para ir a esa categoría, o ✕ Quitar para despejarla.',
   },
 ];
 
