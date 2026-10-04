@@ -300,6 +300,16 @@ export function indiceCompleto() {
   return estado === 'listo' && indice.length > 0 && !!actualizado;
 }
 
+// Coincidencia EXACTA por EAN, referencia o código de artículo (para el
+// escáner): instantáneo, sin pasar por la búsqueda por texto ni por
+// cofiba.es.
+export function buscarPorCodigo(codigo) {
+  const c = String(codigo || '').trim();
+  if (!c) return [];
+  const fuente = indiceParcial.length > indice.length ? indiceParcial : indice;
+  return fuente.filter((p) => p.ean === c || p.referencia === c || p.articulo === c);
+}
+
 export function buscarEnIndice(termino) {
   const t = normalizar(termino);
   if (!t) return [];

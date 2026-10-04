@@ -35,6 +35,7 @@ import {
   marcarActividad,
   sincronizarSubcategoria,
   indiceCompleto,
+  buscarPorCodigo,
 } from './indiceStore.js';
 import { comprasConocidas, resumenGlobal } from './compradosStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
@@ -626,6 +627,14 @@ app.get('/api/admin/estado', requireAdmin, (req, res) => {
 // bien) — ver indiceStore.js. La primera búsqueda (o la primera después de
 // que el índice caduque) dispara la reconstrucción en segundo plano y
 // devuelve `construyendo: true` mientras tanto.
+// Escáner: busca un código exacto en el índice del catálogo (al momento).
+// Si no está, el cliente prueba después la búsqueda normal (que también
+// pregunta a cofiba.es en directo, más lenta).
+app.get('/api/codigo', requireSession, (req, res) => {
+  const resultados = filtrarDisponibles(marcarComprados(req.usuario, buscarPorCodigo(req.query.c)));
+  res.json({ resultados });
+});
+
 app.get('/api/buscar', requireSession, async (req, res) => {
   const termino = (req.query.q || '').toString().trim();
   if (!termino) return res.json({ construyendo: false, resultados: [] });

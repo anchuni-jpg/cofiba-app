@@ -33,8 +33,8 @@ const MENSAJE_MS = 2200;
 // abajo) — ambos avisos de texto se anclan a sus bordes en vez de ir
 // centrados en toda la pantalla, así queda claro que hablan de lo que se
 // acaba de leer justo ahí, no de la cámara en general.
-const RETICULA_TOP = '9%'; // arriba del todo (petición del usuario), dejando sitio para el nombre de lo capturado
-const RETICULA_BOTTOM = '56%'; // distancia al borde inferior: el recuadro ocupa del 9% al 44% del visor
+const RETICULA_TOP = '35%'; // centrado en el visor y apaisado (forma de código de barras)
+const RETICULA_BOTTOM = '35%'; // distancia al borde inferior: el recuadro ocupa del 35% al 65%
 
 // El precio llega ya formateado del servidor como texto con coma decimal
 // (p. ej. "5,28"), igual que en Productos.jsx/Busqueda.jsx — Number(n) lo
@@ -109,6 +109,8 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
   const [mensaje, setMensaje] = useState(null);
   const [error, setError] = useState(null);
   const [confirmando, setConfirmando] = useState(false);
+  const [pistaLinterna, setPistaLinterna] = useState(null);
+  const [linterna, setLinterna] = useState(false);
   const [eleccion, setEleccion] = useState(null); // { codigo, opciones } si un EAN es de varios productos
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
@@ -166,8 +168,11 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
 
   function procesarCodigo(codigo) {
     procesandoRef.current = true;
+    // Primero el catálogo guardado (instantáneo); si no está ahí, la
+    // búsqueda normal, que también pregunta a cofiba.es en directo.
     api
-      .buscar(codigo)
+      .porCodigo(codigo)
+      .then((data) => (data.resultados?.length ? data : api.buscar(codigo)))
       .then((data) => {
         // Coincidencia EXACTA por EAN, referencia o código (la búsqueda por
         // texto también devuelve parecidos, que no valen aquí).
@@ -211,7 +216,6 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
     if (fase !== 'camara') return undefined;
     let activo = true;
     let stream = null;
-    let temporizador = null;
     const hints = new Map([
       [DecodeHintType.POSSIBLE_FORMATS, FORMATOS],
       [DecodeHintType.TRY_HARDER, true],
@@ -233,12 +237,71 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       procesarCodigo(codigo);
     }
 
-    // Solo se descodifica lo que hay DENTRO de la retícula (no el fotograma
-    // entero): en una estantería, leer la imagen completa cogía a veces el
-    // código del producto de al lado.
-    function leerFotograma() {
-      const video = videoRef.current;
-      if (!activo || !video || video.readyState < 2 || !video.videoWidth) return;
+    // Lector NATIVO del móvil (Android/Chrome: BarcodeDetector) si existe —
+    // mucho más rápido y certero que zxing; si no (iPhone), zxing.
+    let detector = null;
+    if ('BarcodeDetector' in window) {
+      window.BarcodeDetector.getSupportedFormats?.()
+        .then((formatos) => {
+          const queremos = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'].filter((f) => formatos.includes(f));
+          if (queremos.includes('ean_13')) detector = new window.BarcodeDetector({ formats: queremos });
+        })
+        .catch(() => {});
+    }
+    // EAN/UPC traen dígito de control (el lector ya lo comprueba): basta UNA
+    // lectura. Code128/39 de etiquetas internas no siempre: esas sí piden
+    // dos lecturas iguales seguidas antes de aceptarlas.
+    const CON_CONTROL_ZXING = new Set([BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E]);
+    const CON_CONTROL_NATIVO = new Set(['ean_13', 'ean_8', 'upc_a', 'upc_e']);
+
+    function resultado(codigo, fiable) {
+      if (!codigo) return;
+      if (fiable) {
+        candidato = { codigo: null, veces: 0, cuando: 0 };
+        aceptar(codigo);
+        return;
+      }
+      const ahora = Date.now();
+      candidato =
+        codigo === candidato.codigo && ahora - candidato.cuando < 1500
+          ? { codigo, veces: candidato.veces + 1, cuando: ahora }
+          : { codigo, veces: 1, cuando: ahora };
+      if (candidato.veces >= LECTURAS_IGUALES) {
+        candidato = { codigo: null, veces: 0, cuando: 0 };
+        aceptar(codigo);
+      }
+    }
+
+    // Cada fotograma se analiza de UNA de estas maneras, por turnos (medido
+    // con códigos de prueba: ninguna sola lee todos los casos, juntas sí):
+    //  - franja de la retícula con margen, reducida a 960 px: lo normal;
+    //  - a 640 px con contraste realzado: poca luz/ruido, pequeño y algo
+    //    desenfocado;
+    //  - solo la retícula a resolución completa: códigos diminutos (lejos);
+    //  - muy reducida (360 px) con contraste: muy desenfocado.
+    // Se lee la franja de la retícula y poco más (no la imagen entera: en
+    // una estantería eso cogía el código del producto de al lado).
+    const PASADAS = [
+      { ancho: 960, margen: 0.1, contraste: 0 },
+      { ancho: 640, margen: 0.1, contraste: 3 },
+      { ancho: null, margen: 0, contraste: 0 },
+      { ancho: 360, margen: 0.1, contraste: 2 },
+    ];
+    let turno = 0;
+
+    // Gris + contraste a mano (ctx.filter no existe en todos los Safari).
+    function realzar(k) {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        const v = (g - 128) * k + 128;
+        d[i] = d[i + 1] = d[i + 2] = v < 0 ? 0 : v > 255 ? 255 : v;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function copiarFranja(video, { ancho, margen }) {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
       const cw = video.clientWidth;
@@ -250,33 +313,63 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
       const offY = (vh * escala - ch) / 2;
       const top = parseFloat(RETICULA_TOP) / 100;
       const bottom = parseFloat(RETICULA_BOTTOM) / 100;
-      // Un poco más ancho que la retícula visible (margen del 4%) para no
-      // cortar las barras de los extremos si el código está justo al borde.
-      const x1 = cw * 0.06, x2 = cw * 0.94;
-      const y1 = ch * (top - 0.04), y2 = ch * (1 - bottom + 0.04);
+      const x1 = cw * (margen ? 0.02 : 0.06), x2 = cw * (margen ? 0.98 : 0.94);
+      const y1 = ch * Math.max(0, top - margen), y2 = ch * Math.min(1, 1 - bottom + margen);
       const sx = (x1 + offX) / escala;
       const sy = (y1 + offY) / escala;
       const sw = (x2 - x1) / escala;
       const sh = (y2 - y1) / escala;
-      canvas.width = Math.round(sw);
-      canvas.height = Math.round(sh);
+      const reduce = ancho ? Math.min(1, ancho / sw) : 1;
+      canvas.width = Math.round(sw * reduce);
+      canvas.height = Math.round(sh * reduce);
       ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-      let codigo = null;
+    }
+
+    async function leerFotograma() {
+      const video = videoRef.current;
+      if (!activo || !video || video.readyState < 2 || !video.videoWidth) return;
+      turno += 1;
+
+      // Lector nativo (si hay): en todos los fotogramas menos uno de cada
+      // tres, que se deja a zxing por si acaso el nativo no lo pilla.
+      if (detector && turno % 3 !== 0) {
+        copiarFranja(video, PASADAS[0]);
+        try {
+          const encontrados = await detector.detect(canvas);
+          if (encontrados.length) {
+            // Si hay varios, el más cercano al centro (a la línea roja).
+            const cx = canvas.width / 2, cy = canvas.height / 2;
+            const dist = (d) => {
+              const bb = d.boundingBox;
+              return Math.hypot(bb.x + bb.width / 2 - cx, bb.y + bb.height / 2 - cy);
+            };
+            const mejor = encontrados.sort((p, q) => dist(p) - dist(q))[0];
+            resultado(mejor.rawValue, CON_CONTROL_NATIVO.has(mejor.format));
+          }
+        } catch {
+          detector = null; // falla el nativo: se sigue solo con zxing
+        }
+        return;
+      }
+
+      const pasada = PASADAS[turno % PASADAS.length];
+      copiarFranja(video, pasada);
+      if (pasada.contraste) realzar(pasada.contraste);
       try {
-        codigo = reader.decodeFromCanvas(canvas).getText();
+        const r = reader.decodeFromCanvas(canvas);
+        resultado(r.getText(), CON_CONTROL_ZXING.has(r.getBarcodeFormat()));
       } catch {
         // Nada legible en este fotograma.
       }
-      if (!codigo) return;
-      const ahora = Date.now();
-      if (codigo === candidato.codigo && ahora - candidato.cuando < 1500) {
-        candidato = { codigo, veces: candidato.veces + 1, cuando: ahora };
-      } else {
-        candidato = { codigo, veces: 1, cuando: ahora };
-      }
-      if (candidato.veces >= LECTURAS_IGUALES) {
-        candidato = { codigo: null, veces: 0, cuando: 0 };
-        aceptar(codigo);
+    }
+
+    // Bucle sin solaparse: el siguiente fotograma se analiza cuando acaba
+    // el anterior (con setInterval, si un análisis tardaba más que el
+    // intervalo, se amontonaban y el escáner iba a trompicones).
+    async function bucle() {
+      while (activo) {
+        await leerFotograma();
+        await new Promise((r) => setTimeout(r, 50));
       }
     }
 
@@ -312,7 +405,13 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         // tiene imagen (readyState), y en algún navegador play() tarda o
         // no resuelve nunca.
         video.play().catch(() => {});
-        temporizador = setInterval(leerFotograma, 90);
+        bucle();
+        // Linterna, si la cámara la tiene (para pasillos con poca luz).
+        try {
+          if (pista.getCapabilities?.().torch) setPistaLinterna(pista);
+        } catch {
+          // nada
+        }
       })
       .catch((e) => {
         setError(
@@ -324,7 +423,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
 
     controlsRef.current = {
       stop() {
-        clearInterval(temporizador);
+        activo = false;
         stream?.getTracks().forEach((t) => t.stop());
       },
     };
@@ -488,9 +587,23 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         <p style={{ color: '#fff', margin: 0, fontSize: 14 }}>
           Apunta a un código de barras{capturados.length > 0 ? ` · ${totalUnidades} capturado${totalUnidades === 1 ? '' : 's'}` : ''}
         </p>
-        <button className="danger" onClick={salirDeCamara}>
-          Salir
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {pistaLinterna && (
+            <button
+              onClick={() => {
+                const nueva = !linterna;
+                pistaLinterna.applyConstraints({ advanced: [{ torch: nueva }] }).then(() => setLinterna(nueva)).catch(() => {});
+              }}
+              aria-label={linterna ? 'Apagar linterna' : 'Encender linterna'}
+              style={{ background: linterna ? '#ffd60a' : 'rgba(255,255,255,0.15)', color: linterna ? '#000' : '#fff', border: 'none' }}
+            >
+              🔦
+            </button>
+          )}
+          <button className="danger" onClick={salirDeCamara}>
+            Salir
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -505,7 +618,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
           <div
             style={{
               position: 'absolute',
-              inset: `${RETICULA_TOP} 10% ${RETICULA_BOTTOM}`,
+              inset: `${RETICULA_TOP} 6% ${RETICULA_BOTTOM}`,
               border: '2px solid var(--accent)',
               borderRadius: 8,
               boxShadow: '0 0 0 2000px rgba(0,0,0,0.4)',

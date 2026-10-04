@@ -155,6 +155,10 @@ export const api = {
     }
     return res.blob();
   },
+  // Escáner: coincidencia exacta por EAN/referencia en el catálogo guardado.
+  porCodigo(c) {
+    return request(`/codigo?c=${encodeURIComponent(c)}`).then((d) => conMarcas(d, 'resultados'));
+  },
   buscar(q) {
     return request(`/buscar?q=${encodeURIComponent(q)}`).then((d) => conMarcas(d, 'resultados'));
   },
