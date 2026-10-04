@@ -93,6 +93,12 @@ function pitido(frecuencia, duracion) {
 function sonidoCaptura() {
   pitido(1046.5, 0.11);
 }
+// Dos pitidos cortos y agudos: "esto ya lo tienes" (distinto de capturar
+// y de error).
+function sonidoRepetido() {
+  pitido(880, 0.07);
+  setTimeout(() => pitido(880, 0.07), 110);
+}
 function sonidoError() {
   pitido(220, 0.13);
   setTimeout(() => pitido(180, 0.15), 140);
@@ -156,6 +162,25 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
     mensajeTimeoutRef.current = setTimeout(() => setMensaje(null), MENSAJE_MS);
   }
 
+  // Código que ya está en la lista: antes se ignoraba en silencio y parecía
+  // que el escáner no respondía. Ahora se avisa (como mucho una vez cada 3 s
+  // por código, para no repetirlo mientras se sigue apuntando al mismo).
+  const capturadosRef = useRef([]);
+  capturadosRef.current = capturados;
+  const avisoRepetidoRef = useRef({ codigo: null, cuando: 0 });
+  function yaEscaneado(codigo) {
+    const ahora = Date.now();
+    if (avisoRepetidoRef.current.codigo === codigo && ahora - avisoRepetidoRef.current.cuando < 3000) return;
+    avisoRepetidoRef.current = { codigo, cuando: ahora };
+    const fila = capturadosRef.current.find((c) => c.codigosVistos?.includes(codigo));
+    sonidoRepetido();
+    avisar(
+      fila
+        ? `Ya escaneado: ${fila.nombre} (${fila.cantidad} caja${fila.cantidad === 1 ? '' : 's'}) — usa + en la lista si quieres más`
+        : 'Ya escaneado'
+    );
+  }
+
   function añadirCaptura(match, codigo) {
     capturadosCodigosRef.current.add(codigo);
     if (capturadosArticulosRef.current.has(match.articulo)) {
@@ -167,8 +192,11 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
         const resto = prev.filter((c) => c.articulo !== match.articulo);
         return [{ ...fila, codigosVistos: [...fila.codigosVistos, codigo] }, ...resto];
       });
-      sonidoCaptura();
-      avisar(`Ya estaba en la lista: ${match.nombre || match.articulo}`);
+      const fila = capturadosRef.current.find((c) => c.articulo === match.articulo);
+      sonidoRepetido();
+      avisar(
+        `Ya escaneado: ${match.nombre || match.articulo}${fila ? ` (${fila.cantidad} caja${fila.cantidad === 1 ? '' : 's'})` : ''} — usa + en la lista si quieres más`
+      );
       return;
     }
     capturadosArticulosRef.current.add(match.articulo);
@@ -254,7 +282,10 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
     let candidato = { codigo: null, veces: 0, cuando: 0 };
 
     function aceptar(codigo) {
-      if (capturadosCodigosRef.current.has(codigo)) return;
+      if (capturadosCodigosRef.current.has(codigo)) {
+        yaEscaneado(codigo);
+        return;
+      }
       const ahora = Date.now();
       if (codigo === ultimoRef.current.codigo && ahora - ultimoRef.current.cuando < COOLDOWN_MS) return;
       if (procesandoRef.current) return;
@@ -742,7 +773,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
                 transform: 'translateY(10px)',
                 textAlign: 'center',
                 background: 'rgba(0,0,0,0.8)',
-                color: mensaje.startsWith('✗') ? '#ff8a80' : 'var(--accent)',
+                color: mensaje.startsWith('✗') ? '#ff8a80' : mensaje.startsWith('Ya escaneado') ? '#ffd60a' : 'var(--accent)',
                 padding: '14px 16px',
                 borderRadius: 'var(--radius)',
                 fontSize: 19,

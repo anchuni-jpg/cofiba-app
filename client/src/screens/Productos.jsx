@@ -876,6 +876,7 @@ export default function Productos({
             elegirSubcategoria(destino.slug, dir > 0 ? 'der' : 'izq');
           }}
           avisoGrupo={cambioFicha}
+          etiquetaGrupo={busquedaCatActiva ? null : grupoActual?.nombre}
           onVer={(p) => {
             // La lista de fondo acompaña a la ficha: si el artículo aún no
             // estaba dibujado (más allá de "Ver más"), se amplía hasta él.

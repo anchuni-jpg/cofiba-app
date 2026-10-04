@@ -35,6 +35,8 @@ export default function FichaProducto({
   // Histórico: grupo (categoría/subcategoría) de cada artículo. Al pasar a
   // un artículo de otro grupo se avisa primero (ver `pausa`).
   grupoDe = null,
+  // Nombre de la subcategoría cuando los artículos no lo traen (catálogo).
+  etiquetaGrupo = null,
 }) {
   const [indice, setIndice] = useState(() => {
     const i = lista.indexOf(inicial);
@@ -44,6 +46,11 @@ export default function FichaProducto({
   // posición en la lista: las flechas siguen desde donde se estaba.
   const [extra, setExtra] = useState(indice < 0 ? inicial : null);
   const producto = extra || lista[indice] || inicial;
+  const subcategoriaActual =
+    (grupoDe && !extra ? grupoDe(producto)?.subcategoria : null) ||
+    producto.subcategoriaNombre ||
+    (extra ? null : etiquetaGrupo) ||
+    null;
   const hayAnterior = indice > 0 || (indice === 0 && !!grupoAnterior);
   const haySiguiente = (indice >= 0 && indice < lista.length - 1) || (indice === lista.length - 1 && !!grupoSiguiente);
 
@@ -321,10 +328,20 @@ export default function FichaProducto({
             <span className="ficha-flecha-visual">›</span>
           </button>
         )}
-        {indice >= 0 && lista.length > 1 && !extra && (
-          <span className="ficha-contador">
-            {indice + 1} / {lista.length}
-          </span>
+        {/* Contador y, debajo, la subcategoría en la que se está. */}
+        {((indice >= 0 && lista.length > 1 && !extra) || subcategoriaActual) && (
+          <div className="ficha-cabeza">
+            {indice >= 0 && lista.length > 1 && !extra && (
+              <span className="ficha-contador">
+                {indice + 1} / {lista.length}
+              </span>
+            )}
+            {subcategoriaActual && (
+              <span className="ficha-subcategoria" key={subcategoriaActual}>
+                {subcategoriaActual}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
