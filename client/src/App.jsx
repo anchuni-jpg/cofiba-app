@@ -38,6 +38,8 @@ export default function App() {
   const [subcategoriaInicial, setSubcategoriaInicial] = useState(null);
   // Si la pantalla de Productos actual se abrió desde el Histórico ("Ver más").
   const [vinoDeHistorico, setVinoDeHistorico] = useState(false);
+  // Si la pantalla de Productos actual se abrió con "Ver más" desde la Búsqueda.
+  const [vinoDeBusqueda, setVinoDeBusqueda] = useState(false);
   const [busqueda, setBusqueda] = useState(null);
   // Filtro global de isla (Mallorca/Ibiza/Formentera) — se activa desde
   // Categorías pero afecta a Productos/Búsqueda/Histórico por igual, así que
@@ -140,6 +142,19 @@ export default function App() {
     if (loggedIn) refreshCartCount();
   }, [loggedIn]);
 
+  // El teclado solo mientras se escribe: tocar (o empezar a desplazar)
+  // fuera de un campo de texto lo esconde.
+  useEffect(() => {
+    function fueraDeCampo(e) {
+      const activo = document.activeElement;
+      if (!activo || !/^(INPUT|TEXTAREA)$/.test(activo.tagName)) return;
+      if (e.target.closest?.('input, textarea, select')) return;
+      activo.blur();
+    }
+    document.addEventListener('touchstart', fueraDeCampo, { capture: true, passive: true });
+    return () => document.removeEventListener('touchstart', fueraDeCampo, { capture: true });
+  }, []);
+
   // El botón/gesto "atrás" del móvil (o del navegador) antes cerraba la app
   // entera de golpe en cuanto no había página anterior de verdad en el
   // historial — una PWA de una sola página nunca añade ninguna por sí sola.
@@ -164,6 +179,7 @@ export default function App() {
       setBusqueda(s.busqueda || null);
       setSubcategoriaInicial(s.subcategoriaInicial || null);
       setVinoDeHistorico(!!s.vinoDeHistorico);
+      setVinoDeBusqueda(!!s.vinoDeBusqueda);
     }
     window.addEventListener('popstate', onPopState);
     // Dejar el estado inicial (Categorías) en la propia entrada de carga,
@@ -185,7 +201,7 @@ export default function App() {
       primeraVezRef.current = false;
       return;
     }
-    window.history.pushState({ tab, categoria, busqueda, subcategoriaInicial, vinoDeHistorico }, '');
+    window.history.pushState({ tab, categoria, busqueda, subcategoriaInicial, vinoDeHistorico, vinoDeBusqueda }, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, categoria, busqueda]);
 
@@ -333,6 +349,7 @@ export default function App() {
               setCategoria(c);
               setSubcategoriaInicial(null);
               setVinoDeHistorico(false);
+              setVinoDeBusqueda(false);
               setTab('productos');
             }}
             onSearch={(q) => {
@@ -348,7 +365,7 @@ export default function App() {
           <Productos
             categoria={categoria}
             subcategoriaInicial={subcategoriaInicial}
-            onBack={() => setTab(vinoDeHistorico ? 'historico' : 'categorias')}
+            onBack={() => setTab(vinoDeHistorico ? 'historico' : vinoDeBusqueda ? 'busqueda' : 'categorias')}
             onCartChanged={refreshCartCount}
             cartCount={cartCount}
             codigosEnCarrito={codigosEnCarrito}
@@ -368,6 +385,14 @@ export default function App() {
             islaFiltro={islaFiltro}
             vista={vista}
             onCambiarVista={cambiarVista}
+            onBuscar={(q) => setBusqueda(q)}
+            onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
+              setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
+              setSubcategoriaInicial(subcategoriaSlug || null);
+              setVinoDeHistorico(false);
+              setVinoDeBusqueda(true);
+              setTab('productos');
+            }}
           />
         )}
         {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
@@ -383,6 +408,7 @@ export default function App() {
               setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
               setSubcategoriaInicial(subcategoriaSlug || null);
               setVinoDeHistorico(true);
+              setVinoDeBusqueda(false);
               setTab('productos');
             }}
           />

@@ -14,7 +14,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-02-busqueda.jpg',
     titulo: 'Busca cualquier producto',
-    texto: 'Escribe el nombre o la referencia. El botón «Comprados» deja solo lo que ya has comprado.',
+    texto: 'Escribe el nombre o la referencia: busca en la app y también en la web de Cofiba. «Ver más» te lleva a su categoría. El botón «Comprados» deja solo lo que ya has comprado.',
   },
   {
     archivo: '/tutorial/slide-03-categoria.jpg',

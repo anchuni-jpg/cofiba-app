@@ -32,6 +32,11 @@ function combinarResultados(anteriores, frescos) {
   return [...actualizados, ...nuevos];
 }
 
+// La búsqueda en curso (término, cuántos a la vista y posición) se recuerda
+// mientras la app esté abierta: al ir a "Ver más" y volver, se sigue por
+// donde se iba.
+let memoriaBusqueda = null;
+
 export default function Busqueda({
   termino,
   onBack,
@@ -41,6 +46,8 @@ export default function Busqueda({
   islaFiltro,
   vista,
   onCambiarVista,
+  onIrACategoria,
+  onBuscar,
 }) {
   // Mismo criterio que Productos.jsx: 'lista'/'lista-grande' son de fila,
   // 'grid2'/'grid3' de rejilla; `grande` solo agranda la fila.
@@ -68,7 +75,9 @@ export default function Busqueda({
   // cuanto los haya, con un botón para ir revelando el resto de 20 en 20 —
   // así el cliente nunca se queda mirando una pantalla en blanco.
   const TANDA = 20;
-  const [visibles, setVisibles] = useState(TANDA);
+  const memoria = useRef(memoriaBusqueda && memoriaBusqueda.termino === termino && Date.now() - memoriaBusqueda.cuando < 30 * 60 * 1000 ? memoriaBusqueda : null).current;
+  const [visibles, setVisibles] = useState(memoria?.visibles || TANDA);
+  const [buscandoEnWeb, setBuscandoEnWeb] = useState(false);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState({});
   // Artículos que cofiba.es acaba de rechazar al intentar añadirlos (ver
@@ -86,6 +95,8 @@ export default function Busqueda({
   function buscarDeNuevo() {
     const q = campo.trim();
     if (!q) return;
+    document.activeElement?.blur?.(); // fuera el teclado: ya se van a ver los resultados
+    onBuscar?.(q);
     setTerminoActivo(q);
     setNonce((n) => n + 1);
   }
@@ -98,7 +109,8 @@ export default function Busqueda({
     setConstruyendo(false);
     setProgreso(null);
     setTotalIndice(null);
-    setVisibles(TANDA);
+    if (!(memoria && terminoActivo === memoria.termino && nonce === 0)) setVisibles(TANDA);
+    setBuscandoEnWeb(false);
 
     function consultar(primera) {
       // Solo la primera consulta de esta búsqueda mira la caché local (rellena
@@ -128,7 +140,11 @@ export default function Busqueda({
           setConstruyendo(!!data.construyendo);
           setProgreso(data.progreso ?? null);
           setTotalIndice(data.totalIndice ?? null);
-          if (data.construyendo) pollRef.current = setTimeout(() => consultar(false), 3000);
+          setBuscandoEnWeb(!!data.buscandoEnWeb);
+          // Lo de la web de cofiba.es llega un poco después: se vuelve a
+          // preguntar enseguida para añadirlo.
+          if (data.buscandoEnWeb) pollRef.current = setTimeout(() => consultar(false), 1500);
+          else if (data.construyendo) pollRef.current = setTimeout(() => consultar(false), 3000);
         })
         // Con la caché ya mostrando resultados válidos, un fallo de red de
         // fondo no debe taparlos con un banner de error confuso.
@@ -142,6 +158,33 @@ export default function Busqueda({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminoActivo, nonce]);
+
+  const raizRef = useRef(null);
+  const scrollRef = useRef(memoria?.scrollY || 0);
+  const estadoRef = useRef({});
+  estadoRef.current = { termino: terminoActivo, visibles };
+  useEffect(() => {
+    const apuntar = () => {
+      if (raizRef.current?.isConnected && !document.querySelector('.ficha-overlay')) scrollRef.current = window.scrollY;
+    };
+    window.addEventListener('scroll', apuntar, { passive: true });
+    document.addEventListener('pointerdown', apuntar, true);
+    return () => {
+      window.removeEventListener('scroll', apuntar);
+      document.removeEventListener('pointerdown', apuntar, true);
+      memoriaBusqueda = { ...estadoRef.current, scrollY: scrollRef.current, cuando: Date.now() };
+    };
+  }, []);
+  const restauradoRef = useRef(!memoria?.scrollY);
+  useEffect(() => {
+    if (restauradoRef.current || !resultados?.length) return;
+    restauradoRef.current = true;
+    setTimeout(() => window.scrollTo(0, memoria.scrollY), 30);
+    setTimeout(() => {
+      if (Math.abs(window.scrollY - memoria.scrollY) > 40) window.scrollTo(0, memoria.scrollY);
+    }, 400);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultados?.length]);
 
   // Icono de carrito: distinto de "comprado" (histórico, ver Historico.jsx) —
   // este solo mira si el artículo está AHORA en el carrito real o se pidió
@@ -188,7 +231,7 @@ export default function Busqueda({
     resultadosPorIsla && soloComprados ? resultadosPorIsla.filter((p) => p.comprado) : resultadosPorIsla;
 
   return (
-    <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="content" ref={raizRef} style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
@@ -245,6 +288,11 @@ export default function Busqueda({
       {error && <div className="error-banner">{error}</div>}
 
       {resultados === null && !error && <p className="muted">Buscando…</p>}
+      {buscandoEnWeb && resultados !== null && (
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 6px' }}>
+          Buscando también en la web de Cofiba…
+        </p>
+      )}
 
       {/* Antes, mientras el índice se construía y todavía no había NINGÚN
           resultado, esto no pintaba nada (ni "Buscando…", ni el listado, ni
@@ -309,6 +357,18 @@ export default function Busqueda({
                         </span>
                       )}
                     </p>
+                    {p.categoria && (
+                      <button
+                        className="primary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
+                        }}
+                        style={{ fontSize: grande ? 13 : 11, padding: grande ? '5px 10px' : '3px 8px', marginTop: 3 }}
+                      >
+                        Ver más
+                      </button>
+                    )}
                   </div>
                   <div
                     onClick={(e) => e.stopPropagation()}
@@ -365,6 +425,18 @@ export default function Busqueda({
                       </span>
                     )}
                   </p>
+                  {p.categoria && (
+                    <button
+                      className="primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
+                      }}
+                      style={{ fontSize: 10, padding: '3px 8px', marginTop: 3 }}
+                    >
+                      Ver más
+                    </button>
+                  )}
                   {/* marginTop:'auto' empuja este bloque al fondo de la
                       tarjeta, igual en toda la fila aunque el nombre ocupe
                       1 o 2 líneas — ver el comentario largo en Productos.jsx. */}

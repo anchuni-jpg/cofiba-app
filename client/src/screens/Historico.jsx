@@ -331,6 +331,8 @@ export default function Historico({
 
       <input
         placeholder="Buscar en tu histórico..."
+        enterKeyHint="search"
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         value={filtro}
         onChange={(e) => {
           setFiltro(e.target.value);

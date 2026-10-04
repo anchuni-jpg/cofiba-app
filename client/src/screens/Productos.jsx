@@ -540,6 +540,7 @@ export default function Productos({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          document.activeElement?.blur?.(); // fuera el teclado al buscar
           buscarEnCategoria();
         }}
         style={{ display: 'flex', gap: 8, marginBottom: 10 }}

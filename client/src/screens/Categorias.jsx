@@ -76,6 +76,7 @@ export default function Categorias({ onOpenCategoria, onSearch, islaFiltro, onCa
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          document.activeElement?.blur?.(); // fuera el teclado al buscar
           onSearch(q);
         }}
         style={{ display: 'flex', gap: 8, marginBottom: 10 }}
