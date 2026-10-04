@@ -24,10 +24,15 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-04-ficha-producto.jpg',
     titulo: 'Ficha ampliada',
-    texto: 'Toca un producto para verlo en grande; arriba ves el contador, la subcategoría y ✓ Comprado si ya lo compraste. Desliza o toca ‹ › para pasar al siguiente. Toca la foto para verla sola y ampliarla con dos dedos. Para salir: Cerrar o «atrás».',
+    texto: 'Toca un producto para verlo en grande; arriba ves el contador, la subcategoría y ✓ Comprado si ya lo compraste. Desliza o toca ‹ › para pasar al siguiente. Para salir: Cerrar o «atrás».',
   },
   {
-    archivo: '/tutorial/slide-04-ficha-producto.jpg',
+    archivo: '/tutorial/slide-04b-modo-foto.jpg',
+    titulo: 'Solo la foto',
+    texto: 'En la ficha, toca la foto para verla sola a pantalla completa. Amplía o reduce con dos dedos, arrastra para moverte y toca dos veces para acercar o volver. Sal con la ✕ roja o con «atrás».',
+  },
+  {
+    archivo: '/tutorial/slide-05-te-puede-interesar.jpg',
     titulo: 'También te puede interesar',
     texto: 'Debajo de la ficha salen artículos parecidos. Toca uno para recorrerlos igual, con su contador y subcategoría; «‹ Volver a la lista» (o «atrás») te devuelve a donde estabas.',
   },
@@ -47,22 +52,22 @@ const DIAPOSITIVAS = [
     texto: 'Botón «Histórico» de abajo: todo lo que has comprado, ordenado por categorías y subcategorías. La primera vez se va leyendo de Cofiba (barra verde); puedes usarlo mientras, y lo que compres se añade solo.',
   },
   {
-    archivo: '/tutorial/slide-09-historico.jpg',
+    archivo: '/tutorial/slide-08-historico-buscar.jpg',
     titulo: 'Busca y ordena tu histórico',
     texto: 'Escribe arriba para buscar solo entre lo que ya compraste. Elige cuántos artículos ver de golpe (25, 50, 100…) y cambia entre Lista y Rejilla. «Actualizar» vuelve a leerlo de Cofiba.',
   },
   {
-    archivo: '/tutorial/slide-09-historico.jpg',
+    archivo: '/tutorial/slide-09-historico-franjas.jpg',
     titulo: 'Las franjas de categoría',
     texto: 'Cada franja verde separa una subcategoría. Tócala para ir a esa subcategoría del catálogo. El botón rojo «✕ Quitar» la despeja de la lista mientras preparas el pedido; al salir del Histórico vuelve a aparecer.',
   },
   {
-    archivo: '/tutorial/slide-09-historico.jpg',
+    archivo: '/tutorial/slide-10-historico-repetir.jpg',
     titulo: 'Repite tus compras',
     texto: 'Con + y − añades o quitas cajas al carrito. «Ver más» abre la categoría del artículo; al volver atrás sigues justo por donde ibas.',
   },
   {
-    archivo: '/tutorial/slide-04-ficha-producto.jpg',
+    archivo: '/tutorial/slide-11-historico-ficha.jpg',
     titulo: 'Repasa en grande',
     texto: 'Toca un artículo para verlo en grande y desliza para pasar al siguiente. Bajo el contador ves la subcategoría; al cambiar de subcategoría sale un aviso con su nombre: desliza otra vez para seguir. Al cerrar, el listado queda a la altura del último que viste. Pulsar el botón de abajo te lleva otra vez arriba, actualizado.',
   },
