@@ -574,11 +574,17 @@ input {
   z-index: 50;
   padding: 12px 0 16px;
   gap: 12px;
+  /* Deslizar a los lados se gestiona a mano en toda la ficha; el
+     desplazamiento vertical (bajar por los datos) sigue siendo del sistema. */
+  touch-action: pan-y;
 }
+/* Alto FIJO de la zona de la foto: antes ocupaba "lo que sobrara" y
+   cambiaba de tamaño (y con ella las flechas) cada vez que cargaban las
+   sugerencias de abajo. */
 .ficha-foto {
   position: relative;
-  flex: 1;
-  min-height: 0;
+  flex: none;
+  height: 54vh;
   width: 100%;
   display: flex;
   align-items: center;
@@ -633,7 +639,7 @@ input {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 64px;
+  width: 52px;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -656,11 +662,11 @@ input {
   justify-content: flex-end;
 }
 .ficha-flecha-visual {
-  width: 58px;
-  height: 140px;
+  width: 38px;
+  height: calc(100% - 16px);
   background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  font-size: 56px;
+  font-size: 44px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -694,7 +700,8 @@ input {
   padding: 12px 14px;
   width: calc(100% - 32px);
   max-width: 420px;
-  max-height: 45vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 .ficha-cerrar {

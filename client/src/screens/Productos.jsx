@@ -377,7 +377,10 @@ export default function Productos({
   const [entradaLista, setEntradaLista] = useState(null);
   const deslizarRef = useRef(null);
   function onTouchStartLista(e) {
-    if (busquedaCatActiva || e.target.closest('[data-carrusel], .qty-stepper, input, select')) {
+    // Nada de esto si el dedo está en una ficha ampliada abierta encima:
+    // ahí deslizar es pasar de artículo, no de subcategoría (antes hacía
+    // las dos cosas a la vez y la lista de la ficha cambiaba entera).
+    if (busquedaCatActiva || e.target.closest('[data-carrusel], .qty-stepper, input, select, .ficha-overlay, .escaner-eleccion')) {
       deslizarRef.current = null;
       return;
     }

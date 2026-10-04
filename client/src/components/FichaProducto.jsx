@@ -118,11 +118,23 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Deslizar: la foto sigue al dedo mientras se arrastra; al soltar, si se
-  // ha movido lo bastante (horizontal claro), pasa al siguiente/anterior y
-  // si no, vuelve a su sitio.
+  // Deslizar: se puede hacer en toda la ficha (foto y datos) MENOS en "También
+  // te puede interesar", que se desliza por su cuenta. La foto sigue al dedo;
+  // al soltar, si se ha movido lo bastante (horizontal claro) pasa UNO al
+  // siguiente/anterior y si no, vuelve a su sitio.
   const toque = useRef(null);
+  // Tras un deslizamiento, el navegador a veces "toca" además la flecha que
+  // queda bajo el dedo: eso sumaba un segundo paso (se saltaba artículos).
+  const ultimoDeslizarRef = useRef(0);
+  const pulsarFlecha = (delta) => {
+    if (Date.now() - ultimoDeslizarRef.current < 500) return;
+    irA(delta);
+  };
   function onTouchStart(e) {
+    if (e.touches.length > 1 || e.target.closest('.ficha-rel')) {
+      toque.current = null;
+      return;
+    }
     const t = e.touches[0];
     toque.current = { x: t.clientX, y: t.clientY, horizontal: null };
     if (fotoRef.current) fotoRef.current.style.transition = 'none';
@@ -147,6 +159,10 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
     const dx = t.clientX - toque.current.x;
     const horizontal = toque.current.horizontal;
     toque.current = null;
+    if (horizontal) {
+      ultimoDeslizarRef.current = Date.now();
+      if (e.cancelable) e.preventDefault(); // sin "toque" extra al soltar
+    }
     if (horizontal && Math.abs(dx) > 60) {
       irA(dx < 0 ? 1 : -1);
     } else if (fotoRef.current) {
@@ -182,8 +198,22 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
   const mostrarRel = relacionados === null || relacionados.length > 0;
 
   return (
-    <div className="ficha-overlay">
-      <div className="ficha-foto" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+    <div
+      className="ficha-overlay"
+      onTouchStart={(e) => {
+        e.stopPropagation(); // los gestos de la ficha no llegan a la pantalla de debajo
+        onTouchStart(e);
+      }}
+      onTouchMove={(e) => {
+        e.stopPropagation();
+        onTouchMove(e);
+      }}
+      onTouchEnd={(e) => {
+        e.stopPropagation();
+        onTouchEnd(e);
+      }}
+    >
+      <div className="ficha-foto">
         <div
           key={producto.articulo + '|' + indice}
           ref={fotoRef}
@@ -192,12 +222,12 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
           {producto.imagen ? <img src={producto.imagen} alt="" draggable={false} /> : <span className="muted">Sin foto</span>}
         </div>
         {hayAnterior && (
-          <button className="ficha-flecha ficha-flecha-izq" onClick={() => irA(-1)} aria-label="Producto anterior">
+          <button className="ficha-flecha ficha-flecha-izq" onClick={() => pulsarFlecha(-1)} aria-label="Producto anterior">
             <span className="ficha-flecha-visual">‹</span>
           </button>
         )}
         {haySiguiente && (
-          <button className="ficha-flecha ficha-flecha-der" onClick={() => irA(1)} aria-label="Producto siguiente">
+          <button className="ficha-flecha ficha-flecha-der" onClick={() => pulsarFlecha(1)} aria-label="Producto siguiente">
             <span className="ficha-flecha-visual">›</span>
           </button>
         )}
