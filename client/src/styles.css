@@ -571,7 +571,7 @@ input {
   display: flex;
   flex-direction: column;
   align-items: center;
-  z-index: 50;
+  z-index: 65; /* por encima del escáner (60), que también la usa */
   padding: 12px 0 16px;
   gap: 12px;
   /* Deslizar a los lados se gestiona a mano en toda la ficha; el
@@ -1039,11 +1039,27 @@ input {
   letter-spacing: 0.4px;
   color: var(--accent);
 }
+/* Solo este botón (a la derecha) quita el grupo; el resto de la franja
+   lleva a esa categoría del catálogo. */
 .historico-cabecera-quitar {
-  font-size: 13px;
-  color: var(--accent);
   flex-shrink: 0;
+  align-self: stretch;
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 700;
+  padding: 0 14px;
+  margin: -6px -6px -6px 0;
+}
+.historico-cabecera-enlace > div:first-child::after {
+  content: 'Ver en el catálogo ›';
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 :root[data-theme='dark'] .historico-cabecera {
   background: #eef6f0;
@@ -1052,9 +1068,11 @@ input {
 :root[data-theme='dark'] .historico-cabecera-cat {
   color: #12301d;
 }
-:root[data-theme='dark'] .historico-cabecera-sub,
-:root[data-theme='dark'] .historico-cabecera-quitar {
+:root[data-theme='dark'] .historico-cabecera-sub {
   color: #1d7a42;
+}
+:root[data-theme='dark'] .historico-cabecera-enlace > div:first-child::after {
+  color: #3f5a48;
 }
 
 /* Aviso al pasar de subcategoría desde la ficha ampliada. */
@@ -1112,4 +1130,37 @@ input {
   border-top-color: #fff;
   border-radius: 50%;
   animation: envio-giro 0.9s linear infinite;
+}
+
+/* Aviso de cambio que se pasa a mano (FichaProducto.jsx, `pausa`): ocupa
+   el centro (las flechas de los lados siguen pulsables) y se puede tocar. */
+.ficha-aviso-manual {
+  inset: auto;
+  left: 56px;
+  right: 56px;
+  top: 12%;
+  bottom: 12%;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  border-radius: 18px;
+  padding: 12px;
+  font: inherit;
+}
+.ficha-aviso-sub {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+.ficha-aviso-pista {
+  color: #cfe9d8;
+  font-size: 14px;
+  margin-top: 6px;
+  animation: escaner-laser-pulso 1.6s ease-in-out infinite;
+}
+.ficha-foto-en-pausa {
+  opacity: 0.18;
+  filter: blur(2px);
+  transition: opacity 0.25s ease, filter 0.25s ease;
 }

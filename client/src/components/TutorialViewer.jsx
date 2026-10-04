@@ -24,7 +24,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-04-ficha-producto.jpg',
     titulo: 'Ficha ampliada',
-    texto: 'Toca un producto para verlo en grande. Desliza el dedo o toca ‹ › para pasar al siguiente. Para salir: botón rojo Cerrar o «atrás».',
+    texto: 'Toca un producto para verlo en grande. Desliza o toca ‹ › para pasar al siguiente. Al cambiar de categoría sale un aviso: desliza otra vez para seguir. Para salir: Cerrar o «atrás».',
   },
   {
     archivo: '/tutorial/slide-05-escaner.jpg',
@@ -34,7 +34,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-06-escaner-revision.jpg',
     titulo: 'Revisa lo escaneado',
-    texto: 'Cambia cantidades o quita lo que sobre. Nada entra en el carrito hasta que tocas Confirmar.',
+    texto: 'Toca uno para verlo en grande. Cambia cantidades o quita lo que sobre. Nada entra en el carrito hasta que tocas Confirmar.',
   },
   {
     archivo: '/tutorial/slide-07-carrito.jpg',
@@ -49,7 +49,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-09-historico.jpg',
     titulo: 'Tu histórico de compras',
-    texto: 'Todo lo que has comprado, por categorías. Repite con +, o toca «Ver más» para ver productos parecidos.',
+    texto: 'Todo lo que has comprado, por categorías. Repite con +. Toca la franja verde para ir a esa categoría, o ✕ Quitar para despejarla.',
   },
 ];
 

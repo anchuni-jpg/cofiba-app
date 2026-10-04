@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { api } from '../api.js';
+import FichaProducto from './FichaProducto.jsx';
 
 // Solo los formatos de barras "de estantería" (EAN/UPC, más Code128/39 por
 // si algún proveedor pega su propia etiqueta) — limitar los formatos que
@@ -134,7 +135,8 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
     setZoom(nuevo);
   }
   const [linterna, setLinterna] = useState(false);
-  const [eleccion, setEleccion] = useState(null); // { codigo, opciones } si un EAN es de varios productos
+  const [eleccion, setEleccion] = useState(null);
+  const [fichaCaptura, setFichaCaptura] = useState(null); // ficha ampliada abierta en la revisión // { codigo, opciones } si un EAN es de varios productos
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
   const ultimoRef = useRef({ codigo: null, cuando: 0 });
@@ -551,7 +553,13 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
             // navegar el catálogo, no una versión reducida.
             capturados.map((c) => {
               return (
-                <div key={c.articulo} className="product-row">
+                <div
+                  key={c.articulo}
+                  className="product-row"
+                  data-articulo={c.articulo}
+                  onClick={() => setFichaCaptura(c)}
+                  style={{ cursor: 'zoom-in' }}
+                >
                   <div className="product-thumb">{c.imagen ? <img src={c.imagen} alt="" /> : '—'}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -564,7 +572,10 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
                       {formatoEuro(c.precioFinal) || '—'}
                     </p>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                  >
                     <div className="qty-stepper">
                       <button onClick={() => cambiarCantidad(c.articulo, -1)}>-</button>
                       <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{c.cantidad}</span>
@@ -598,6 +609,24 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
             {confirmando ? 'Añadiendo…' : `Confirmar → carrito`}
           </button>
         </div>
+
+        {/* La misma ficha ampliada que en el catálogo: pasar de uno a otro
+            deslizando o con las flechas. Aquí + y − cambian lo capturado
+            (nada entra en el carrito hasta "Confirmar"). */}
+        {fichaCaptura && (
+          <FichaProducto
+            lista={capturados}
+            inicial={fichaCaptura}
+            onCerrar={() => setFichaCaptura(null)}
+            pending={Object.fromEntries(capturados.map((c) => [c.articulo, c.cantidad]))}
+            añadir={(p, delta) => {
+              if (capturadosArticulosRef.current.has(p.articulo)) cambiarCantidad(p.articulo, delta);
+              else if (delta > 0) añadirCaptura(p, p.ean || p.referencia || p.articulo);
+            }}
+            noDisponibles={new Set()}
+            error={null}
+          />
+        )}
       </div>
     );
   }

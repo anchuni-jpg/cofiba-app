@@ -412,8 +412,8 @@ export default function Historico({
               <div key={`${p.articulo}-${idx}`}>
                 {nuevaSubcategoria && !quitado && (
                   <div
-                    onClick={() => quitarGrupo(clave)}
-                    className="historico-cabecera"
+                    onClick={() => p.categoria && onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
+                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}`}
                     style={{ marginTop: idx === 0 ? 0 : 20 }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -424,9 +424,16 @@ export default function Historico({
                         {grupo.subcategoria}
                       </p>
                     </div>
-                    <span className="historico-cabecera-quitar">
+                    <button
+                      className="historico-cabecera-quitar"
+                      onClick={(e) => {
+                        e.stopPropagation(); // quitar no lleva a la categoría
+                        quitarGrupo(clave);
+                      }}
+                      aria-label="Quitar este grupo de la lista"
+                    >
                       ✕ Quitar
-                    </span>
+                    </button>
                   </div>
                 )}
                 {!quitado && (
@@ -507,8 +514,8 @@ export default function Historico({
               <Fragment key={`${p.articulo}-${idx}`}>
                 {nuevaSubcategoria && !quitado && (
                   <div
-                    onClick={() => quitarGrupo(clave)}
-                    className="historico-cabecera"
+                    onClick={() => p.categoria && onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
+                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}`}
                     style={{ gridColumn: '1 / -1', marginTop: idx === 0 ? 0 : 14 }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -519,9 +526,16 @@ export default function Historico({
                         {grupo.subcategoria}
                       </p>
                     </div>
-                    <span className="historico-cabecera-quitar">
+                    <button
+                      className="historico-cabecera-quitar"
+                      onClick={(e) => {
+                        e.stopPropagation(); // quitar no lleva a la categoría
+                        quitarGrupo(clave);
+                      }}
+                      aria-label="Quitar este grupo de la lista"
+                    >
                       ✕ Quitar
-                    </span>
+                    </button>
                   </div>
                 )}
                 {!quitado && (
@@ -620,6 +634,10 @@ export default function Historico({
           lista={productosFiltrados.filter((p) => !quitados.has(claveGrupo(grupoDe(p))))}
           inicial={zoomProducto}
           onCerrar={() => setZoomProducto(null)}
+          grupoDe={(p) => {
+            const g = grupoDe(p);
+            return { ...g, clave: claveGrupo(g) };
+          }}
           onVer={(p) => {
             // La lista de fondo acompaña a la ficha: si el artículo aún no
             // estaba dibujado (más allá de "Ver más"), se amplía hasta él.

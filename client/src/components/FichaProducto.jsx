@@ -32,6 +32,9 @@ export default function FichaProducto({
   grupoSiguiente = null,
   onCambiarGrupo,
   avisoGrupo = null,
+  // Histórico: grupo (categoría/subcategoría) de cada artículo. Al pasar a
+  // un artículo de otro grupo se avisa primero (ver `pausa`).
+  grupoDe = null,
 }) {
   const [indice, setIndice] = useState(() => {
     const i = lista.indexOf(inicial);
@@ -52,42 +55,75 @@ export default function FichaProducto({
   const animandoRef = useRef(false);
   const SALIDA_MS = 170;
 
-  function irA(delta) {
-    const nuevo = indice + delta;
-    const saltaGrupo = !extra && ((nuevo >= lista.length && grupoSiguiente) || (nuevo < 0 && grupoAnterior));
-    if (saltaGrupo && !animandoRef.current && !avisoGrupo) {
-      // Fin de la subcategoría: la foto sale y el catálogo pasa a la vecina
-      // (enseñando el aviso con su nombre mientras carga).
-      const el = fotoRef.current;
-      if (el) {
-        el.style.transition = `transform ${SALIDA_MS}ms ease-in, opacity ${SALIDA_MS}ms ease-in`;
-        el.style.transform = `translateX(${delta > 0 ? -45 : 45}%)`;
-        el.style.opacity = '0';
-      }
-      onCambiarGrupo?.(delta);
-      return;
-    }
-    if (nuevo < 0 || nuevo >= lista.length || animandoRef.current) {
-      // En un extremo de la lista: la foto vuelve a su sitio.
-      if (fotoRef.current) {
-        fotoRef.current.style.transition = 'transform 0.2s ease';
-        fotoRef.current.style.transform = '';
-      }
-      return;
-    }
-    animandoRef.current = true;
+  // Aviso de cambio de categoría/subcategoría: NO pasa solo. Se queda hasta
+  // que se desliza (o se toca la flecha, o el propio aviso) otra vez en la
+  // misma dirección; hacia el otro lado se cancela y se sigue donde se estaba.
+  const [pausa, setPausa] = useState(null); // { dir, tipo: 'grupo'|'salto', etiqueta, nombre, sub }
+
+  function aSuSitio() {
+    if (!fotoRef.current) return;
+    fotoRef.current.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+    fotoRef.current.style.transform = '';
+    fotoRef.current.style.opacity = '';
+  }
+  function salirFoto(delta) {
     const el = fotoRef.current;
-    if (el) {
-      el.style.transition = `transform ${SALIDA_MS}ms ease-in, opacity ${SALIDA_MS}ms ease-in`;
-      el.style.transform = `translateX(${delta > 0 ? -45 : 45}%)`;
-      el.style.opacity = '0';
-    }
+    if (!el) return;
+    el.style.transition = `transform ${SALIDA_MS}ms ease-in, opacity ${SALIDA_MS}ms ease-in`;
+    el.style.transform = `translateX(${delta > 0 ? -45 : 45}%)`;
+    el.style.opacity = '0';
+  }
+  function moverA(nuevo, delta) {
+    animandoRef.current = true;
+    salirFoto(delta);
     setTimeout(() => {
       setEntrada(delta > 0 ? 'der' : 'izq');
       setExtra(null);
       setIndice(nuevo);
       animandoRef.current = false;
     }, SALIDA_MS);
+  }
+
+  function irA(delta) {
+    if (animandoRef.current || avisoGrupo) return aSuSitio();
+    if (pausa) {
+      const p = pausa;
+      setPausa(null);
+      if (p.dir !== delta) return aSuSitio(); // hacia el otro lado: se cancela
+      if (p.tipo === 'salto') {
+        salirFoto(delta);
+        onCambiarGrupo?.(delta);
+      } else {
+        moverA(indice + delta, delta);
+      }
+      return;
+    }
+    const nuevo = indice + delta;
+    // Fin de la subcategoría (catálogo): aviso con la vecina.
+    const vecina = delta > 0 ? grupoSiguiente : grupoAnterior;
+    if (!extra && vecina && (nuevo >= lista.length || nuevo < 0)) {
+      aSuSitio();
+      setPausa({ dir: delta, tipo: 'salto', etiqueta: delta > 0 ? 'Siguiente subcategoría' : 'Subcategoría anterior', nombre: vecina.nombre });
+      return;
+    }
+    if (nuevo < 0 || nuevo >= lista.length) return aSuSitio();
+    // Histórico: el siguiente artículo es de otro grupo → aviso primero.
+    if (grupoDe && !extra) {
+      const g1 = grupoDe(lista[indice]);
+      const g2 = grupoDe(lista[nuevo]);
+      if (g1.clave !== g2.clave) {
+        aSuSitio();
+        setPausa({
+          dir: delta,
+          tipo: 'grupo',
+          etiqueta: g1.categoria !== g2.categoria ? 'Cambio de categoría' : 'Cambio de subcategoría',
+          nombre: g1.categoria !== g2.categoria ? g2.categoria : g2.subcategoria,
+          sub: g1.categoria !== g2.categoria ? g2.subcategoria : g2.categoria,
+        });
+        return;
+      }
+    }
+    moverA(nuevo, delta);
   }
 
   // Al cambiar de producto: precarga las fotos vecinas (para que la
@@ -245,10 +281,25 @@ export default function FichaProducto({
         <div
           key={producto.articulo + '|' + indice}
           ref={fotoRef}
-          className={`ficha-foto-marco${entrada ? ` ficha-entra-${entrada}` : ''}`}
+          className={`ficha-foto-marco${entrada ? ` ficha-entra-${entrada}` : ''}${pausa ? ' ficha-foto-en-pausa' : ''}`}
         >
           {producto.imagen ? <img src={producto.imagen} alt="" draggable={false} /> : <span className="muted">Sin foto</span>}
         </div>
+        {pausa && !avisoGrupo && (
+          <button
+            className={`ficha-aviso-grupo ficha-aviso-manual ficha-aviso-${pausa.dir > 0 ? 'der' : 'izq'}`}
+            onClick={() => irA(pausa.dir)}
+          >
+            <span className="ficha-aviso-etiqueta">{pausa.etiqueta}</span>
+            <span className="ficha-aviso-nombre">
+              {pausa.dir < 0 && '← '}
+              {pausa.nombre}
+              {pausa.dir > 0 && ' →'}
+            </span>
+            {pausa.sub && <span className="ficha-aviso-sub">{pausa.sub}</span>}
+            <span className="ficha-aviso-pista">Desliza otra vez o toca aquí para continuar</span>
+          </button>
+        )}
         {avisoGrupo && (
           <div className={`ficha-aviso-grupo ficha-aviso-${avisoGrupo.dir > 0 ? 'der' : 'izq'}`}>
             <span className="ficha-aviso-etiqueta">{avisoGrupo.dir > 0 ? 'Siguiente subcategoría' : 'Subcategoría anterior'}</span>
