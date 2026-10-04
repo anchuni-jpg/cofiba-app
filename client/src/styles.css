@@ -360,7 +360,7 @@ input {
    genérico igual que el "-". Antes solo Estadísticas tenía un botón de
    añadir destacado ("+ Pedir"); esto lo hace uniforme en toda la app en
    vez de ser un caso especial de una sola pantalla. */
-.qty-stepper button:last-child {
+.qty-stepper button:last-of-type {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
@@ -1498,4 +1498,33 @@ button:disabled:active,
   border-radius: 999px;
   margin: 0;
   pointer-events: none;
+}
+
+/* Letras que coinciden con lo buscado. */
+mark.resaltado {
+  background: #ffe066;
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+:root[data-theme='dark'] mark.resaltado {
+  background: #ffd60a;
+  color: #111;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) mark.resaltado {
+    background: #ffd60a;
+    color: #111;
+  }
+}
+
+/* Carrito: cajas y unidades al lado del paso +/-. */
+.carrito-cajas {
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--text-secondary);
+}
+.carrito-cajas strong {
+  color: var(--text-primary);
 }

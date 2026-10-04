@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { getCache, setCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import FichaProducto from '../components/FichaProducto.jsx';
+import Resaltar from '../components/Resaltar.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
 import { productosRecordados } from '../compradosLocal.js';
 
@@ -474,10 +475,10 @@ export default function Historico({
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: grande ? 17 : 14, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {p.nombre || p.referencia || p.articulo}
+                  <Resaltar texto={p.nombre || p.referencia || p.articulo} termino={filtro} />
                 </p>
                 <p className="muted" style={grande ? { fontSize: 14, margin: '4px 0' } : { margin: '2px 0' }}>
-                  Ref. {p.referencia || p.articulo}
+                  Ref. <Resaltar texto={p.referencia || p.articulo} termino={filtro} />
                 </p>
                 <p style={{ fontSize: grande ? 17 : 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                   {p.precioFinal ? `${p.precioFinal}€` : '—'}
@@ -585,7 +586,7 @@ export default function Historico({
                   WebkitBoxOrient: 'vertical',
                 }}
               >
-                {p.nombre || p.referencia || p.articulo}
+                <Resaltar texto={p.nombre || p.referencia || p.articulo} termino={filtro} />
               </p>
               <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
@@ -676,6 +677,7 @@ export default function Historico({
           noDisponibles={noDisponibles}
           error={error}
           todosComprados
+          resaltar={filtro}
         />
       )}
     </div>

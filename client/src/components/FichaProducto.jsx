@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { estaComprado } from '../compradosLocal.js';
 import VisorFoto from './VisorFoto.jsx';
+import Resaltar from './Resaltar.jsx';
 
 // "Und. de venta" llega como texto con formato español ("12,00").
 function formatoCaja(undVenta) {
@@ -41,6 +42,8 @@ export default function FichaProducto({
   etiquetaGrupo = null,
   // Histórico: todo lo de la lista está comprado.
   todosComprados = false,
+  // Lo buscado, para colorearlo en el nombre.
+  resaltar = '',
 }) {
   const [indice, setIndice] = useState(() => {
     const i = lista.indexOf(inicial);
@@ -407,7 +410,7 @@ export default function FichaProducto({
         )}
         <div className="ficha-texto" key={'texto-' + producto.articulo}>
         <p style={{ fontSize: 14, fontWeight: 500, margin: '0 0 2px' }}>
-          {producto.nombre || producto.referencia || producto.articulo}
+          <Resaltar texto={producto.nombre || producto.referencia || producto.articulo} termino={sub ? '' : resaltar} />
           {comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
         </p>
         <p className="muted" style={{ margin: '0 0 8px' }}>

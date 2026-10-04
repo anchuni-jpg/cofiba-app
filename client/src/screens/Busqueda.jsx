@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, Suspense, lazy } from '
 import { api } from '../api.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import FichaProducto from '../components/FichaProducto.jsx';
+import Resaltar from '../components/Resaltar.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
 
 // Igual que en Categorias.jsx: solo se descarga si de verdad se usa.
@@ -385,10 +386,10 @@ export default function Busqueda({
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {p.nombre}
+                      <Resaltar texto={p.nombre} termino={terminoActivo} />
                     </p>
                     <p className="muted" style={grande ? { fontSize: 14, margin: '4px 0' } : { margin: '2px 0' }}>
-                      Ref. {p.referencia || p.articulo} · {p.categoriaNombre}
+                      Ref. <Resaltar texto={p.referencia || p.articulo} termino={terminoActivo} /> · {p.categoriaNombre}
                       {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
                     </p>
                     <p style={{ fontSize: grande ? 17 : 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
@@ -471,7 +472,7 @@ export default function Busqueda({
                       WebkitBoxOrient: 'vertical',
                     }}
                   >
-                    {p.nombre}
+                    <Resaltar texto={p.nombre} termino={terminoActivo} />
                   </p>
                   <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                     {p.precioFinal ? `${p.precioFinal}€` : '—'}
@@ -541,6 +542,7 @@ export default function Busqueda({
           noDisponibles={noDisponibles}
           error={error}
           grupoDe={grupoDe}
+          resaltar={terminoActivo}
         />
       )}
     </div>

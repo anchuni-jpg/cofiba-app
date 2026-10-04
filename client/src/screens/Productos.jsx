@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { getCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import FichaProducto from '../components/FichaProducto.jsx';
+import Resaltar from '../components/Resaltar.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
 
 // Entrada vacía para una subcategoría de la que aún no se sabe nada — se usa
@@ -703,10 +704,10 @@ export default function Productos({
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {p.nombre || p.referencia || p.articulo}
+                  <Resaltar texto={p.nombre || p.referencia || p.articulo} termino={busquedaCatActiva} />
                 </p>
                 <p className="muted" style={grande ? { fontSize: 14, margin: '4px 0' } : { margin: '2px 0' }}>
-                  Ref. {p.referencia || p.articulo}
+                  Ref. <Resaltar texto={p.referencia || p.articulo} termino={busquedaCatActiva} />
                   {p.comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
                 </p>
                 <p style={{ fontSize: grande ? 17 : 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
@@ -763,7 +764,7 @@ export default function Productos({
                   WebkitBoxOrient: 'vertical',
                 }}
               >
-                {p.nombre || p.referencia || p.articulo}
+                <Resaltar texto={p.nombre || p.referencia || p.articulo} termino={busquedaCatActiva} />
               </p>
               <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
@@ -862,6 +863,7 @@ export default function Productos({
       {zoomProducto && (
         <FichaProducto
           key={'ficha-' + fichaClave}
+          resaltar={busquedaCatActiva}
           lista={cambioFicha ? cambioFicha.lista : productosPorComprado}
           inicial={zoomProducto}
           onCerrar={() => {

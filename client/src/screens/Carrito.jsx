@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import FichaProducto from '../components/FichaProducto.jsx';
 
+// "Und. de venta" llega como texto con formato español ("12,00").
+function numeroCaja(undVenta) {
+  const n = parseFloat(String(undVenta ?? '').replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function formatoNumero(n) {
+  return n % 1 === 0 ? String(n) : n.toFixed(2).replace('.', ',');
+}
+
 export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
   const [carrito, setCarrito] = useState(null);
   const [error, setError] = useState(null);
@@ -198,6 +207,22 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
                     >
                       +
                     </button>
+                    {/* Cajas pedidas y cuántas unidades son en total. */}
+                    <span className="carrito-cajas">
+                      {(() => {
+                        const cajas = Number(l.cantidad) || 1;
+                        const porCaja = numeroCaja(l.undVenta);
+                        const txtCajas = `${cajas} ${cajas === 1 ? 'caja' : 'cajas'}`;
+                        if (!porCaja) return txtCajas;
+                        return (
+                          <>
+                            {txtCajas} de {formatoNumero(porCaja)} uds
+                            <br />
+                            <strong>{formatoNumero(cajas * porCaja)} unidades</strong>
+                          </>
+                        );
+                      })()}
+                    </span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
