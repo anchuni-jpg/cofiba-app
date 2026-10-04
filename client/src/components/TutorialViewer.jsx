@@ -106,7 +106,7 @@ export default function TutorialViewer({ onCerrar }) {
       onTouchEnd={onTouchEnd}
     >
       <div className="tutorial-cabecera">
-        <p style={{ margin: 0, fontWeight: 600, fontSize: 18 }}>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>
           Cómo funciona · {indice + 1} de {DIAPOSITIVAS.length}
         </p>
         <button className="danger" onClick={onCerrar}>
