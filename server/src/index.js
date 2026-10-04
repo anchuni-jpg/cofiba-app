@@ -36,6 +36,7 @@ import {
   sincronizarSubcategoria,
   indiceCompleto,
   buscarPorCodigo,
+  incorporarAlIndice,
 } from './indiceStore.js';
 import { comprasConocidas, resumenGlobal } from './compradosStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
@@ -635,6 +636,10 @@ app.get('/api/codigo', requireSession, (req, res) => {
   res.json({ resultados });
 });
 
+const sinAcentos = (x) => String(x).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const busquedasEnVivo = new Map(); // término -> cuándo se buscó en vivo
+const BUSQUEDA_EN_VIVO_MS = 10 * 60 * 1000;
+
 app.get('/api/buscar', requireSession, async (req, res) => {
   const termino = (req.query.q || '').toString().trim();
   if (!termino) return res.json({ construyendo: false, resultados: [] });
@@ -649,19 +654,38 @@ app.get('/api/buscar', requireSession, async (req, res) => {
   // categoría se recorre, sin esperar a que termine todo el catálogo.
   const delIndice = buscarEnIndice(termino);
 
-  // Además del índice (que solo se actualiza cada ~6h), se busca EN VIVO
-  // directamente en cofiba.es — por si hay artículos recién añadidos al
-  // catálogo que el rastreo de fondo todavía no ha alcanzado. Nunca debe
-  // poder tirar la búsqueda si cofiba.es tarda o falla: los resultados del
-  // índice ya son válidos por sí solos.
+  // Además del índice se busca EN VIVO en cofiba.es — por si hay artículos
+  // recién añadidos que el rastreo de fondo aún no ha alcanzado — y lo que
+  // salga nuevo se GUARDA en el índice (la próxima vez sale al momento).
+  //  - Si el índice ya tiene resultados, se responde YA con ellos y la
+  //    búsqueda en vivo sigue de fondo solo para guardar lo nuevo.
+  //  - Si el índice no encuentra nada, sí se espera a la web.
+  //  - La misma palabra no se vuelve a buscar en vivo en 10 minutos.
+  const clave = termino.toLowerCase();
+  const reciente = busquedasEnVivo.get(clave);
   let deLaWeb = [];
-  try {
-    deLaWeb = await buscarProductosEnVivo(req.cofiba, termino);
-  } catch (e) {
-    console.error('[buscar] fallo la búsqueda en vivo:', e.message);
+  if (!reciente || Date.now() - reciente > BUSQUEDA_EN_VIVO_MS) {
+    busquedasEnVivo.set(clave, Date.now());
+    const enVivo = buscarProductosEnVivo(req.cofiba, termino)
+      .then((lista) => {
+        const n = incorporarAlIndice(lista);
+        if (n) console.log(`[indice] ${n} artículos nuevos guardados desde la búsqueda en vivo ("${termino}")`);
+        return lista;
+      })
+      .catch((e) => {
+        console.error('[buscar] fallo la búsqueda en vivo:', e.message);
+        busquedasEnVivo.delete(clave);
+        return [];
+      });
+    if (!delIndice.length) deLaWeb = await enVivo;
   }
   const yaVistos = new Set(delIndice.map((p) => p.articulo));
-  const soloEnVivo = deLaWeb.filter((p) => !yaVistos.has(p.articulo));
+  // Ojo: con una palabra que no encuentra, cofiba.es devuelve artículos
+  // cualquiera — solo se enseña lo que de verdad coincide con lo buscado.
+  const t = sinAcentos(termino);
+  const coincide = (p) =>
+    [p.nombre, p.referencia, p.ean, p.articulo, p.marca].some((v) => v && sinAcentos(v).includes(t));
+  const soloEnVivo = deLaWeb.filter((p) => !yaVistos.has(p.articulo) && coincide(p));
 
   res.json({
     construyendo: st.estado === 'construyendo',

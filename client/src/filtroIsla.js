@@ -1,8 +1,10 @@
 // Filtro global de isla: se activa desde Categorías y afecta por igual a
 // Productos, Búsqueda e Histórico. cofiba.es no separa su catálogo por isla
 // (es un único catálogo balear) — se detecta mirando el propio nombre del
-// producto, que casi siempre ya incluye "MALLORCA"/"MCA" (abreviatura vista
-// en muchos artículos), "IBIZA" o "FORMENTERA".
+// producto, que casi siempre ya incluye la isla entera o abreviada:
+// "MALLORCA"/"MCA", "IBIZA"/"IBZ" o "FORMENTERA"/"FORM" (abreviaturas vistas
+// en el catálogo real). Siempre como palabra completa: "FORMENTOR" (que es
+// de Mallorca) o "FORMA" no cuentan como Formentera.
 // El icono de cada una es una silueta propia (ver components/IslaIcon.jsx),
 // no un emoji — no existe un emoji distinto por isla balear.
 export const ISLAS = [
@@ -13,8 +15,8 @@ export const ISLAS = [
 
 const PATRONES = {
   mallorca: /\bMALLORCA\b|\bMCA\b/i,
-  ibiza: /\bIBIZA\b|\bEIVISSA\b/i,
-  formentera: /\bFORMENTERA\b/i,
+  ibiza: /\bIBIZA\b|\bEIVISSA\b|\bIBZ\b/i,
+  formentera: /\bFORMENTERA\b|\bFORM\b/i,
 };
 
 // Un producto se oculta SOLO si su nombre menciona claramente OTRA isla

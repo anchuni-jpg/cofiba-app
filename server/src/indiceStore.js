@@ -294,6 +294,44 @@ export function sincronizarSubcategoria(categoria, subcategoria, reales) {
   return { quitados, nuevos };
 }
 
+// Artículos encontrados buscando EN VIVO en cofiba.es (búsqueda o escáner)
+// que aún no estaban en el índice: se añaden y se guardan, para que la
+// siguiente vez salgan al momento sin preguntar a cofiba.es. Si ya estaban,
+// se completan los datos que falten (p. ej. el nombre).
+let ultimoGuardadoNuevos = 0;
+export function incorporarAlIndice(productos) {
+  let nuevos = 0;
+  for (const lista of [indice, indiceParcial]) {
+    if (!lista.length && lista === indiceParcial) continue;
+    const porArticulo = new Map(lista.map((p, i) => [p.articulo, i]));
+    for (const p of productos) {
+      if (!p?.articulo) continue;
+      const i = porArticulo.get(p.articulo);
+      if (i == null) {
+        lista.push({ ...p, encontradoEnVivo: true });
+        porArticulo.set(p.articulo, lista.length - 1);
+        if (lista === indice) nuevos += 1;
+      } else {
+        const actual = lista[i];
+        const completado = { ...actual };
+        for (const [k, v] of Object.entries(p)) if (v != null && v !== '' && (actual[k] == null || actual[k] === '')) completado[k] = v;
+        lista[i] = completado;
+      }
+    }
+  }
+  // Solo con el índice completo: durante una reconstrucción, el fichero
+  // guarda el progreso de esa reconstrucción y no se debe pisar.
+  if (nuevos && estado === 'listo' && Date.now() - ultimoGuardadoNuevos > 10000) {
+    ultimoGuardadoNuevos = Date.now();
+    try {
+      guardarEnDisco();
+    } catch {
+      // nada
+    }
+  }
+  return nuevos;
+}
+
 // El índice está completo (último rastreo terminado): solo entonces se puede
 // fiar de que un artículo que NO está en él ya no lo vende Cofiba.
 export function indiceCompleto() {
