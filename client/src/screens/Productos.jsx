@@ -375,6 +375,11 @@ export default function Productos({
   // empieza sobre las filas de botones (que se desplazan solas a los lados)
   // ni sobre los +/-.
   const [entradaLista, setEntradaLista] = useState(null);
+  // Paso de subcategoría desde la ficha ampliada: mientras carga la nueva,
+  // la ficha enseña un aviso con su nombre; cuando llega, se abre en su
+  // primer artículo (o en el último, si se iba hacia atrás).
+  const [cambioFicha, setCambioFicha] = useState(null);
+  const [fichaClave, setFichaClave] = useState(0);
   const deslizarRef = useRef(null);
   function onTouchStartLista(e) {
     // Nada de esto si el dedo está en una ficha ampliada abierta encima:
@@ -498,6 +503,19 @@ export default function Productos({
   const productosPorIsla = filtrarPorIsla(productosDisponibles, islaFiltro);
   const productosPorComprado = soloComprados ? productosPorIsla.filter((p) => p.comprado) : productosPorIsla;
   const productosFiltrados = productosPorComprado.slice(0, visibles);
+  useEffect(() => {
+    if (!cambioFicha || grupoEfectivo !== cambioFicha.slug || !productosPorComprado.length) return;
+    // Hacia atrás hace falta la subcategoría entera (para abrir su último).
+    if (cambioFicha.dir < 0 && cargandoMas) return;
+    // El aviso se ve al menos un momento, aunque la lista ya estuviera.
+    const espera = Math.max(0, 900 - (Date.now() - cambioFicha.desde));
+    const t = setTimeout(() => {
+      setZoomProducto(cambioFicha.dir > 0 ? productosPorComprado[0] : productosPorComprado[productosPorComprado.length - 1]);
+      setFichaClave((k) => k + 1);
+      setCambioFicha(null);
+    }, espera);
+    return () => clearTimeout(t);
+  }, [cambioFicha, grupoEfectivo, productosPorComprado, cargandoMas]);
   const hayMasParaRevelar = visibles < productosPorComprado.length;
 
   return (
@@ -842,9 +860,22 @@ export default function Productos({
 
       {zoomProducto && (
         <FichaProducto
-          lista={productosPorComprado}
+          key={'ficha-' + fichaClave}
+          lista={cambioFicha ? cambioFicha.lista : productosPorComprado}
           inicial={zoomProducto}
-          onCerrar={() => setZoomProducto(null)}
+          onCerrar={() => {
+            setCambioFicha(null);
+            setZoomProducto(null);
+          }}
+          grupoAnterior={!busquedaCatActiva && idxSubcatActual > 0 ? subcategorias[idxSubcatActual - 1] : null}
+          grupoSiguiente={!busquedaCatActiva && idxSubcatActual >= 0 ? subcategorias[idxSubcatActual + 1] || null : null}
+          onCambiarGrupo={(dir) => {
+            const destino = subcategorias[idxSubcatActual + dir];
+            if (!destino) return;
+            setCambioFicha({ dir, slug: destino.slug, nombre: destino.nombre, desde: Date.now(), lista: productosPorComprado });
+            elegirSubcategoria(destino.slug, dir > 0 ? 'der' : 'izq');
+          }}
+          avisoGrupo={cambioFicha}
           onVer={(p) => {
             // La lista de fondo acompaña a la ficha: si el artículo aún no
             // estaba dibujado (más allá de "Ver más"), se amplía hasta él.

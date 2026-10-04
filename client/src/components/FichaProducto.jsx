@@ -17,7 +17,22 @@ function formatoCaja(undVenta) {
 //   con el botón/gesto "atrás" del móvil, que hace exactamente lo mismo:
 //   al abrir se añade una entrada al historial del navegador y "atrás" la
 //   consume cerrando la ficha en vez de salir de la pantalla.
-export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending, añadir, noDisponibles, error }) {
+export default function FichaProducto({
+  lista,
+  inicial,
+  onCerrar,
+  onVer,
+  pending,
+  añadir,
+  noDisponibles,
+  error,
+  // Catálogo: subcategorías vecinas ({ slug, nombre } o null). Al pasar del
+  // último artículo (o antes del primero) se salta a la vecina, con aviso.
+  grupoAnterior = null,
+  grupoSiguiente = null,
+  onCambiarGrupo,
+  avisoGrupo = null,
+}) {
   const [indice, setIndice] = useState(() => {
     const i = lista.indexOf(inicial);
     return i >= 0 ? i : lista.findIndex((p) => p.articulo === inicial.articulo);
@@ -26,8 +41,8 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
   // posición en la lista: las flechas siguen desde donde se estaba.
   const [extra, setExtra] = useState(indice < 0 ? inicial : null);
   const producto = extra || lista[indice] || inicial;
-  const hayAnterior = indice > 0;
-  const haySiguiente = indice >= 0 && indice < lista.length - 1;
+  const hayAnterior = indice > 0 || (indice === 0 && !!grupoAnterior);
+  const haySiguiente = (indice >= 0 && indice < lista.length - 1) || (indice === lista.length - 1 && !!grupoSiguiente);
 
   // Transición: la foto actual sale hacia un lado y la nueva entra por el
   // otro (clase .ficha-entra-*, ver styles.css). `entrada` recuerda por qué
@@ -39,6 +54,19 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
 
   function irA(delta) {
     const nuevo = indice + delta;
+    const saltaGrupo = !extra && ((nuevo >= lista.length && grupoSiguiente) || (nuevo < 0 && grupoAnterior));
+    if (saltaGrupo && !animandoRef.current && !avisoGrupo) {
+      // Fin de la subcategoría: la foto sale y el catálogo pasa a la vecina
+      // (enseñando el aviso con su nombre mientras carga).
+      const el = fotoRef.current;
+      if (el) {
+        el.style.transition = `transform ${SALIDA_MS}ms ease-in, opacity ${SALIDA_MS}ms ease-in`;
+        el.style.transform = `translateX(${delta > 0 ? -45 : 45}%)`;
+        el.style.opacity = '0';
+      }
+      onCambiarGrupo?.(delta);
+      return;
+    }
     if (nuevo < 0 || nuevo >= lista.length || animandoRef.current) {
       // En un extremo de la lista: la foto vuelve a su sitio.
       if (fotoRef.current) {
@@ -221,6 +249,17 @@ export default function FichaProducto({ lista, inicial, onCerrar, onVer, pending
         >
           {producto.imagen ? <img src={producto.imagen} alt="" draggable={false} /> : <span className="muted">Sin foto</span>}
         </div>
+        {avisoGrupo && (
+          <div className={`ficha-aviso-grupo ficha-aviso-${avisoGrupo.dir > 0 ? 'der' : 'izq'}`}>
+            <span className="ficha-aviso-etiqueta">{avisoGrupo.dir > 0 ? 'Siguiente subcategoría' : 'Subcategoría anterior'}</span>
+            <span className="ficha-aviso-nombre">
+              {avisoGrupo.dir < 0 && '← '}
+              {avisoGrupo.nombre}
+              {avisoGrupo.dir > 0 && ' →'}
+            </span>
+            <span className="ficha-aviso-cargando" />
+          </div>
+        )}
         {hayAnterior && (
           <button className="ficha-flecha ficha-flecha-izq" onClick={() => pulsarFlecha(-1)} aria-label="Producto anterior">
             <span className="ficha-flecha-visual">‹</span>

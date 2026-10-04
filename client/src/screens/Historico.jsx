@@ -25,6 +25,16 @@ function normalizar(s) {
     .toLowerCase();
 }
 
+// Lo que se estaba viendo en el Histórico (posición, cuántos artículos a la
+// vista, búsqueda, grupos quitados): se recuerda mientras la app esté
+// abierta, para que al ir a "Ver más" (u otra pestaña) y volver se siga por
+// donde se iba en vez de empezar arriba del todo. Caduca a los 30 minutos.
+let memoriaHistorico = null;
+const MEMORIA_MS = 30 * 60 * 1000;
+function memoriaVigente() {
+  return memoriaHistorico && Date.now() - memoriaHistorico.cuando < MEMORIA_MS ? memoriaHistorico : null;
+}
+
 export default function Historico({
   onCartChanged,
   codigosEnCarrito,
@@ -39,7 +49,8 @@ export default function Historico({
   const esFila = vista === 'lista' || vista === 'lista-grande';
   const grande = vista === 'lista-grande';
   const columnas = vista === 'grid3' ? 3 : 2;
-  const [filtro, setFiltro] = useState('');
+  const memoria = useRef(memoriaVigente()).current;
+  const [filtro, setFiltro] = useState(memoria?.filtro || '');
   // Cuántos artículos revelar de golpe (y cuántos más cada "Ver más") —
   // mismo control y misma clave de localStorage que Productos.jsx, para que
   // sea UNA sola preferencia de "cuánto me gusta ver de golpe" en toda la
@@ -59,7 +70,7 @@ export default function Historico({
   const [productosServidor, setProductos] = useState([]);
   const [progreso, setProgreso] = useState({ paginasCargadas: 0, totalPaginas: null, completo: false, corriendo: true });
   const cargandoTodo = !progreso.completo;
-  const [visibles, setVisibles] = useState(limite);
+  const [visibles, setVisibles] = useState(memoria?.visibles || limite);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState({});
@@ -75,11 +86,38 @@ export default function Historico({
   // Estado local (no localStorage): al salir de Histórico y volver a entrar
   // (el componente se desmonta/monta con cada cambio de pestaña) este set
   // se reinicia solo y todo vuelve a aparecer, listo para la próxima vez.
-  const [quitados, setQuitados] = useState(new Set());
+  const [quitados, setQuitados] = useState(() => new Set(memoria?.quitados || []));
   function quitarGrupo(clave) {
     setQuitados((prev) => new Set(prev).add(clave));
   }
   const [zoomProducto, setZoomProducto] = useState(null);
+
+  // Se va apuntando la posición mientras se desplaza (al desmontar ya sería
+  // tarde: la pantalla nueva puede haber cambiado el scroll).
+  const estadoRef = useRef({});
+  estadoRef.current = { filtro, visibles, quitados };
+  const scrollRef = useRef(memoria?.scrollY || 0);
+  const raizRef = useRef(null);
+  useEffect(() => {
+    const apuntar = () => {
+      // Solo mientras esta pantalla está de verdad montada y sin ficha
+      // encima (al cambiar de pantalla el navegador sube arriba del todo y
+      // eso no debe contar como "por dónde iba").
+      if (raizRef.current?.isConnected && !document.querySelector('.ficha-overlay')) scrollRef.current = window.scrollY;
+    };
+    window.addEventListener('scroll', apuntar, { passive: true });
+    // También al tocar (p. ej. "Ver más"), justo antes de irse: el aviso de
+    // scroll no siempre llega a tiempo.
+    document.addEventListener('pointerdown', apuntar, true);
+    return () => {
+      window.removeEventListener('scroll', apuntar);
+      document.removeEventListener('pointerdown', apuntar, true);
+      const e = estadoRef.current;
+      memoriaHistorico = { filtro: e.filtro, visibles: e.visibles, quitados: [...e.quitados], scrollY: scrollRef.current, cuando: Date.now() };
+    };
+  }, []);
+  // Al volver: en cuanto la lista está pintada, se baja a donde se estaba.
+  const restauradoRef = useRef(!memoria?.scrollY);
   // Cada bucle de consultas lleva su número; al salir de la pestaña o pulsar
   // "Actualizar" el anterior se da por superado y deja de preguntar.
   const bucleIdRef = useRef(0);
@@ -217,6 +255,17 @@ export default function Historico({
     return productosServidor.concat(productosRecordados().filter((p) => !yaEstan.has(p.articulo)));
   })();
   const productos = listaHistorico;
+  useEffect(() => {
+    if (restauradoRef.current || loading || !productos.length) return;
+    restauradoRef.current = true;
+    // Tras pintar la lista; y otra vez un poco después por si las fotos
+    // cambiaron la altura de la página mientras tanto.
+    setTimeout(() => window.scrollTo(0, memoria.scrollY), 30);
+    setTimeout(() => {
+      if (Math.abs(window.scrollY - memoria.scrollY) > 40) window.scrollTo(0, memoria.scrollY);
+    }, 400);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, productos.length]);
 
   const productosPorTexto = filtro.trim()
     ? productos.filter((p) => {
@@ -264,7 +313,7 @@ export default function Historico({
   }
 
   return (
-    <div className="content" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="content" ref={raizRef} style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <p style={{ fontWeight: 500, margin: 0, flex: 1 }}>Comprados recientemente</p>
         <button
@@ -364,37 +413,18 @@ export default function Historico({
                 {nuevaSubcategoria && !quitado && (
                   <div
                     onClick={() => quitarGrupo(clave)}
-                    style={{
-                      marginTop: idx === 0 ? 0 : 16,
-                      marginBottom: 6,
-                      background: 'var(--accent-bg)',
-                      borderLeft: '4px solid var(--accent)',
-                      borderRadius: 6,
-                      padding: '10px 12px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
+                    className="historico-cabecera"
+                    style={{ marginTop: idx === 0 ? 0 : 20 }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       {nuevaCategoria && (
-                        <p style={{ fontWeight: 700, fontSize: 16, margin: '0 0 3px' }}>{grupo.categoria}</p>
+                        <p className="historico-cabecera-cat">{grupo.categoria}</p>
                       )}
-                      <p
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 14,
-                          margin: 0,
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.4,
-                          color: 'var(--accent)',
-                        }}
-                      >
+                      <p className="historico-cabecera-sub">
                         {grupo.subcategoria}
                       </p>
                     </div>
-                    <span style={{ fontSize: 12, color: 'var(--accent)', flexShrink: 0, fontWeight: 700 }}>
+                    <span className="historico-cabecera-quitar">
                       ✕ Quitar
                     </span>
                   </div>
@@ -478,38 +508,18 @@ export default function Historico({
                 {nuevaSubcategoria && !quitado && (
                   <div
                     onClick={() => quitarGrupo(clave)}
-                    style={{
-                      gridColumn: '1 / -1',
-                      marginTop: idx === 0 ? 0 : 10,
-                      marginBottom: 4,
-                      background: 'var(--accent-bg)',
-                      borderLeft: '4px solid var(--accent)',
-                      borderRadius: 6,
-                      padding: '10px 12px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
+                    className="historico-cabecera"
+                    style={{ gridColumn: '1 / -1', marginTop: idx === 0 ? 0 : 14 }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       {nuevaCategoria && (
-                        <p style={{ fontWeight: 700, fontSize: 16, margin: '0 0 3px' }}>{grupo.categoria}</p>
+                        <p className="historico-cabecera-cat">{grupo.categoria}</p>
                       )}
-                      <p
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 14,
-                          margin: 0,
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.4,
-                          color: 'var(--accent)',
-                        }}
-                      >
+                      <p className="historico-cabecera-sub">
                         {grupo.subcategoria}
                       </p>
                     </div>
-                    <span style={{ fontSize: 12, color: 'var(--accent)', flexShrink: 0, fontWeight: 700 }}>
+                    <span className="historico-cabecera-quitar">
                       ✕ Quitar
                     </span>
                   </div>

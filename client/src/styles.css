@@ -1010,3 +1010,106 @@ input {
     opacity: 0;
   }
 }
+
+/* Cabeceras de categoría/subcategoría del Histórico: franjas anchas y bien
+   visibles; en modo oscuro casi blancas (antes eran verde oscuro sobre
+   fondo oscuro y el cambio de categoría apenas se notaba). */
+.historico-cabecera {
+  margin-bottom: 8px;
+  background: var(--accent-bg);
+  border-left: 7px solid var(--accent);
+  border-radius: 8px;
+  padding: 16px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.historico-cabecera-cat {
+  font-weight: 800;
+  font-size: 19px;
+  margin: 0 0 4px;
+  color: var(--text-primary);
+}
+.historico-cabecera-sub {
+  font-weight: 700;
+  font-size: 15px;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--accent);
+}
+.historico-cabecera-quitar {
+  font-size: 13px;
+  color: var(--accent);
+  flex-shrink: 0;
+  font-weight: 700;
+}
+:root[data-theme='dark'] .historico-cabecera {
+  background: #eef6f0;
+  border-left-color: #3ecb74;
+}
+:root[data-theme='dark'] .historico-cabecera-cat {
+  color: #12301d;
+}
+:root[data-theme='dark'] .historico-cabecera-sub,
+:root[data-theme='dark'] .historico-cabecera-quitar {
+  color: #1d7a42;
+}
+
+/* Aviso al pasar de subcategoría desde la ficha ampliada. */
+.ficha-aviso-grupo {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  pointer-events: none;
+}
+.ficha-aviso-der {
+  animation: ficha-aviso-der 0.35s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.ficha-aviso-izq {
+  animation: ficha-aviso-izq 0.35s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+@keyframes ficha-aviso-der {
+  from {
+    transform: translateX(30%);
+    opacity: 0;
+  }
+}
+@keyframes ficha-aviso-izq {
+  from {
+    transform: translateX(-30%);
+    opacity: 0;
+  }
+}
+.ficha-aviso-etiqueta {
+  color: #cfe9d8;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.ficha-aviso-nombre {
+  color: #fff;
+  background: #20944b;
+  font-size: 26px;
+  font-weight: 800;
+  padding: 14px 22px;
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  max-width: 90%;
+}
+.ficha-aviso-cargando {
+  width: 26px;
+  height: 26px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: envio-giro 0.9s linear infinite;
+}
