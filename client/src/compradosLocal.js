@@ -98,3 +98,8 @@ export function cuentaActiva(usuario) {
     // nada
   }
 }
+
+// ¿Está recordado como comprado? (para la marca de la ficha ampliada)
+export function estaComprado(articulo) {
+  return !!articulo && cargar().has(articulo);
+}

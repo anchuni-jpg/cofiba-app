@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Suspense, lazy } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, Suspense, lazy } from 'react';
 import { api } from '../api.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import FichaProducto from '../components/FichaProducto.jsx';
@@ -37,6 +37,28 @@ function combinarResultados(anteriores, frescos) {
 // donde se iba.
 let memoriaBusqueda = null;
 
+// Grupo (categoría/subcategoría) de cada resultado, para ordenarlos y poner
+// separadores como en el Histórico. Lo encontrado solo en la web de Cofiba
+// (aún sin categoría conocida) va al final.
+const SIN_CATEGORIA = 'Otros resultados';
+function grupoDe(p) {
+  const categoria = p.categoriaNombre || SIN_CATEGORIA;
+  const subcategoria = p.subcategoriaNombre || p.subcategoria || 'Encontrados en la web de Cofiba';
+  return { categoria, subcategoria, clave: categoria + '|' + subcategoria };
+}
+function ordenarPorGrupo(lista) {
+  return [...lista].sort((a, b) => {
+    const ga = grupoDe(a);
+    const gb = grupoDe(b);
+    if ((ga.categoria === SIN_CATEGORIA) !== (gb.categoria === SIN_CATEGORIA)) return ga.categoria === SIN_CATEGORIA ? 1 : -1;
+    return (
+      ga.categoria.localeCompare(gb.categoria) ||
+      ga.subcategoria.localeCompare(gb.subcategoria) ||
+      (a.nombre || '').localeCompare(b.nombre || '')
+    );
+  });
+}
+
 export default function Busqueda({
   termino,
   onBack,
@@ -74,7 +96,7 @@ export default function Busqueda({
   // simplemente ser larga) para pintar algo, se muestran los primeros 20 en
   // cuanto los haya, con un botón para ir revelando el resto de 20 en 20 —
   // así el cliente nunca se queda mirando una pantalla en blanco.
-  const TANDA = 20;
+  const TANDA = 100;
   const memoria = useRef(memoriaBusqueda && memoriaBusqueda.termino === termino && Date.now() - memoriaBusqueda.cuando < 30 * 60 * 1000 ? memoriaBusqueda : null).current;
   const [visibles, setVisibles] = useState(memoria?.visibles || TANDA);
   const [buscandoEnWeb, setBuscandoEnWeb] = useState(false);
@@ -227,8 +249,15 @@ export default function Busqueda({
   const resultadosDisponibles =
     resultados && noDisponibles.size ? resultados.filter((p) => !noDisponibles.has(p.articulo)) : resultados;
   const resultadosPorIsla = resultadosDisponibles ? filtrarPorIsla(resultadosDisponibles, islaFiltro) : resultadosDisponibles;
-  const resultadosFiltrados =
+  const resultadosSinOrden =
     resultadosPorIsla && soloComprados ? resultadosPorIsla.filter((p) => p.comprado) : resultadosPorIsla;
+  const resultadosFiltrados = useMemo(
+    () => (resultadosSinOrden ? ordenarPorGrupo(resultadosSinOrden) : resultadosSinOrden),
+    [resultadosSinOrden]
+  );
+  const nuevoGrupo = (idx) => idx === 0 || grupoDe(resultadosFiltrados[idx]).clave !== grupoDe(resultadosFiltrados[idx - 1]).clave;
+  const nuevaCategoria = (idx) =>
+    idx === 0 || grupoDe(resultadosFiltrados[idx]).categoria !== grupoDe(resultadosFiltrados[idx - 1]).categoria;
 
   return (
     <div className="content" ref={raizRef} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -320,7 +349,20 @@ export default function Busqueda({
         <>
           {esFila ? (
             <div>
-              {resultadosFiltrados.slice(0, visibles).map((p) => (
+              {resultadosFiltrados.slice(0, visibles).map((p, idx) => (
+                <Fragment key={p.articulo}>
+                {nuevoGrupo(idx) && (
+                  <div
+                    onClick={() => p.categoria && onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
+                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}`}
+                    style={{ marginTop: idx === 0 ? 0 : 20 }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {nuevaCategoria(idx) && <p className="historico-cabecera-cat">{grupoDe(p).categoria}</p>}
+                      <p className="historico-cabecera-sub">{grupoDe(p).subcategoria}</p>
+                    </div>
+                  </div>
+                )}
                 <div
                   className={`product-row${grande ? ' product-row-lg' : ''}${p.comprado ? ' product-row-comprado' : ''}${
                     enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
@@ -388,11 +430,25 @@ export default function Busqueda({
                     )}
                   </div>
                 </div>
+                </Fragment>
               ))}
             </div>
           ) : (
             <div className="producto-grid" style={{ gridTemplateColumns: `repeat(${columnas}, 1fr)` }}>
-              {resultadosFiltrados.slice(0, visibles).map((p) => (
+              {resultadosFiltrados.slice(0, visibles).map((p, idx) => (
+                <Fragment key={p.articulo}>
+                {nuevoGrupo(idx) && (
+                  <div
+                    onClick={() => p.categoria && onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria)}
+                    className={`historico-cabecera${p.categoria ? ' historico-cabecera-enlace' : ''}`}
+                    style={{ gridColumn: '1 / -1', marginTop: idx === 0 ? 0 : 14 }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {nuevaCategoria(idx) && <p className="historico-cabecera-cat">{grupoDe(p).categoria}</p>}
+                      <p className="historico-cabecera-sub">{grupoDe(p).subcategoria}</p>
+                    </div>
+                  </div>
+                )}
                 <div
                   className={`producto-card${p.comprado ? ' product-row-comprado' : ''}${
                     enCarritoOSesion(p.articulo) ? ' product-row-carrito' : ''
@@ -455,6 +511,7 @@ export default function Busqueda({
                     </span>
                   )}
                 </div>
+                </Fragment>
               ))}
             </div>
           )}
@@ -483,6 +540,7 @@ export default function Busqueda({
           añadir={añadir}
           noDisponibles={noDisponibles}
           error={error}
+          grupoDe={grupoDe}
         />
       )}
     </div>

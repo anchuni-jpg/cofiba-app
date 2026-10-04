@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import FichaProducto from '../components/FichaProducto.jsx';
 
 export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
   const [carrito, setCarrito] = useState(null);
@@ -12,7 +13,8 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
   // arriba del carrito pasaba desapercibido y la clienta no sabía si el
   // pedido había salido o no.
   const [envio, setEnvio] = useState(null);
-  const [zoomSrc, setZoomSrc] = useState(null);
+  // Ficha ampliada (la misma que en el resto de la app).
+  const [zoomCodigo, setZoomCodigo] = useState(null);
   const [pedidos, setPedidos] = useState([]);
   const [pedidosError, setPedidosError] = useState(null);
   const [descargando, setDescargando] = useState(null);
@@ -169,8 +171,8 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
               >
                 <div
                   className="cart-thumb"
-                  onClick={() => l.imagen && setZoomSrc(l.imagen)}
-                  style={{ cursor: l.imagen ? 'zoom-in' : 'default' }}
+                  onClick={() => setZoomCodigo(l.codigo)}
+                  style={{ cursor: 'zoom-in' }}
                 >
                   {l.imagen ? <img src={l.imagen} alt="" /> : '—'}
                 </div>
@@ -339,24 +341,37 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
         </div>
       )}
 
-      {zoomSrc && (
-        <div
-          onClick={() => setZoomSrc(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.85)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50,
-            cursor: 'zoom-out',
-            padding: 24,
-          }}
-        >
-          <img src={zoomSrc} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-        </div>
-      )}
+      {zoomCodigo && carrito && (() => {
+        // Las líneas del carrito con la forma de producto de la ficha.
+        const lista = carrito.lineas.map((l) => ({
+          ...l,
+          articulo: l.codigo,
+          nombre: l.descripcion || l.codigo,
+          referencia: l.codigo,
+          precioFinal: l.precio,
+        }));
+        const inicial = lista.find((p) => p.articulo === zoomCodigo);
+        if (!inicial) return null;
+        return (
+          <FichaProducto
+            lista={lista}
+            inicial={inicial}
+            onCerrar={() => setZoomCodigo(null)}
+            pending={Object.fromEntries(lista.map((p) => [p.articulo, Number(p.cantidad) || 1]))}
+            añadir={(p, delta) => {
+              const linea = carrito.lineas.find((l) => l.codigo === p.articulo);
+              if (linea) cambiarCantidad(p.articulo, (Number(linea.cantidad) || 1) + delta);
+              else if (delta > 0)
+                api
+                  .anadirAlCarrito({ categoria: p.categoria, articulo: p.articulo, cantidad: 1 })
+                  .then(() => cargar())
+                  .catch((e) => setError(e.message));
+            }}
+            noDisponibles={new Set()}
+            error={error}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -37,6 +37,7 @@ import {
   indiceCompleto,
   buscarPorCodigo,
   incorporarAlIndice,
+  coincideTermino,
 } from './indiceStore.js';
 import { comprasConocidas, resumenGlobal } from './compradosStore.js';
 import { registrarPedido, resumenFacturacion } from './pedidosStore.js';
@@ -346,7 +347,18 @@ app.get('/api/carrito', requireSession, async (req, res) => {
       // Stock de ahora mismo (del índice del catálogo, no de esta página —
       // mi-compra.html no lo trae) para poder avisar si algo del carrito se
       // ha quedado con poco antes de finalizar el pedido.
-      return { ...l, imagen, stock: indexado?.stock ?? null, undVenta: indexado?.undVenta ?? null };
+      return {
+        ...l,
+        imagen,
+        stock: indexado?.stock ?? null,
+        undVenta: indexado?.undVenta ?? null,
+        // Para la ficha ampliada (igual que en el resto de la app).
+        categoria: indexado?.categoria || null,
+        categoriaNombre: indexado?.categoriaNombre || null,
+        subcategoria: indexado?.subcategoria || null,
+        subcategoriaNombre: indexado?.subcategoriaNombre || null,
+        ean: indexado?.ean || null,
+      };
     });
     res.json(carrito);
   } catch (e) {
@@ -563,7 +575,7 @@ app.get('/api/relacionados', requireSession, (req, res) => {
     const j = i + Math.floor(Math.random() * (candidatos.length - i));
     [candidatos[i], candidatos[j]] = [candidatos[j], candidatos[i]];
   }
-  res.json({ productos: candidatos.slice(0, tope) });
+  res.json({ productos: marcarComprados(req.usuario, candidatos.slice(0, tope)) });
 });
 
 // "Conectado ahora" = ha hecho alguna petición autenticada en los últimos 15
@@ -636,7 +648,6 @@ app.get('/api/codigo', requireSession, (req, res) => {
   res.json({ resultados });
 });
 
-const sinAcentos = (x) => String(x).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const busquedasEnVivo = new Map(); // término -> cuándo se buscó en vivo
 const BUSQUEDA_EN_VIVO_MS = 10 * 60 * 1000;
 
@@ -662,7 +673,8 @@ app.get('/api/buscar', requireSession, async (req, res) => {
   //    y entonces se añaden los de la web;
   //  - si el índice no encuentra nada, se espera a la web directamente.
   //  - El resultado de la web se reutiliza 10 minutos para la misma palabra.
-  const clave = termino.toLowerCase();
+  // Misma búsqueda aunque cambien acentos, signos o mayúsculas.
+  const clave = termino.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   let enWeb = busquedasEnVivo.get(clave);
   if (!enWeb || Date.now() - enWeb.cuando > BUSQUEDA_EN_VIVO_MS) {
     enWeb = { cuando: Date.now(), resultados: null };
@@ -688,10 +700,7 @@ app.get('/api/buscar', requireSession, async (req, res) => {
   const yaVistos = new Set(delIndice.map((p) => p.articulo));
   // Ojo: con una palabra que no encuentra, cofiba.es devuelve artículos
   // cualquiera — solo se enseña lo que de verdad coincide con lo buscado.
-  const t = sinAcentos(termino);
-  const coincide = (p) =>
-    [p.nombre, p.referencia, p.ean, p.articulo, p.marca].some((v) => v && sinAcentos(v).includes(t));
-  const soloEnVivo = deLaWeb.filter((p) => !yaVistos.has(p.articulo) && coincide(p));
+  const soloEnVivo = deLaWeb.filter((p) => !yaVistos.has(p.articulo) && coincideTermino(p, termino));
 
   res.json({
     construyendo: st.estado === 'construyendo',

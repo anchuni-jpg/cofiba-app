@@ -193,12 +193,31 @@ export function iniciarConstruccion(session) {
   return promesaConstruccion;
 }
 
+// Para buscar da igual acentos, mayúsculas, signos y símbolos: todo queda
+// en letras y números separados por un espacio ("Bolígrafo-BIC (azul)" →
+// "boligrafo bic azul").
 function normalizar(s) {
   return (s || '')
     .toString()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// ¿Coincide el artículo con lo buscado? Cada palabra buscada tiene que
+// estar (en cualquier orden) en el nombre, referencia, EAN o marca; o bien
+// el término entero, sin espacios ni signos, dentro de alguno de ellos
+// (referencias tipo "AG00003_2" buscadas como "ag000032").
+export function coincideTermino(p, termino) {
+  const t = normalizar(termino);
+  if (!t) return false;
+  const campos = [p.nombre, p.referencia, p.ean, p.marca, p.articulo].map(normalizar);
+  const todo = ' ' + campos.join(' ') + ' ';
+  if (t.split(' ').every((palabra) => todo.includes(palabra))) return true;
+  const compacto = t.replace(/ /g, '');
+  return compacto.length >= 3 && campos.some((c) => c.replace(/ /g, '').includes(compacto));
 }
 
 // El carrito real de cofiba.es no trae fotos (mi-compra.html no las tiene en
@@ -349,8 +368,7 @@ export function buscarPorCodigo(codigo) {
 }
 
 export function buscarEnIndice(termino) {
-  const t = normalizar(termino);
-  if (!t) return [];
+  if (!normalizar(termino)) return [];
   // Se busca sobre lo que haya más completo: `indice` (el último rastreo
   // terminado del todo) o `indiceParcial` (el que está en marcha ahora
   // mismo, que arranca vacío y va creciendo). Antes esto se decidía por
@@ -367,12 +385,6 @@ export function buscarEnIndice(termino) {
   // aquí solo escondía coincidencias reales sin necesidad.
   const fuente = indiceParcial.length > indice.length ? indiceParcial : indice;
   return fuente
-    .filter(
-      (p) =>
-        normalizar(p.nombre).includes(t) ||
-        normalizar(p.referencia).includes(t) ||
-        normalizar(p.ean).includes(t) ||
-        normalizar(p.marca).includes(t)
-    )
+    .filter((p) => coincideTermino(p, termino))
     .sort((a, b) => normalizar(a.nombre).localeCompare(normalizar(b.nombre)));
 }

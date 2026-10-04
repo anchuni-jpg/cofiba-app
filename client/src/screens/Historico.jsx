@@ -31,7 +31,18 @@ function normalizar(s) {
 // donde se iba en vez de empezar arriba del todo. Caduca a los 30 minutos.
 let memoriaHistorico = null;
 const MEMORIA_MS = 30 * 60 * 1000;
+// Al pulsar el botón "Histórico" de abajo se empieza de cero: arriba del
+// todo, sin grupos quitados ni búsqueda.
+let reiniciar = false;
+export function reiniciarHistorico() {
+  reiniciar = true;
+}
 function memoriaVigente() {
+  if (reiniciar) {
+    reiniciar = false;
+    memoriaHistorico = null;
+    return null;
+  }
   return memoriaHistorico && Date.now() - memoriaHistorico.cuando < MEMORIA_MS ? memoriaHistorico : null;
 }
 
@@ -664,6 +675,7 @@ export default function Historico({
           añadir={añadir}
           noDisponibles={noDisponibles}
           error={error}
+          todosComprados
         />
       )}
     </div>

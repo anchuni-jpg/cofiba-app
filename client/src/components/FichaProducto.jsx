@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import { estaComprado } from '../compradosLocal.js';
+import VisorFoto from './VisorFoto.jsx';
 
 // "Und. de venta" llega como texto con formato español ("12,00").
 function formatoCaja(undVenta) {
@@ -37,22 +39,32 @@ export default function FichaProducto({
   grupoDe = null,
   // Nombre de la subcategoría cuando los artículos no lo traen (catálogo).
   etiquetaGrupo = null,
+  // Histórico: todo lo de la lista está comprado.
+  todosComprados = false,
 }) {
   const [indice, setIndice] = useState(() => {
     const i = lista.indexOf(inicial);
     return i >= 0 ? i : lista.findIndex((p) => p.articulo === inicial.articulo);
   });
-  // Un "También te puede interesar" pulsado se enseña encima sin perder la
-  // posición en la lista: las flechas siguen desde donde se estaba.
-  const [extra, setExtra] = useState(indice < 0 ? inicial : null);
-  const producto = extra || lista[indice] || inicial;
+  // Al tocar uno de "También te puede interesar" se pasa a recorrer ESA
+  // fila (con su contador, subcategoría y deslizar, igual que la ficha
+  // normal) sin perder la posición en la lista principal: "Volver a la
+  // lista" (o el "atrás" del móvil) regresa a donde se estaba.
+  const [sub, setSub] = useState(() => (indice < 0 ? { lista: [inicial], indice: 0, propia: true } : null));
+  const listaAct = sub ? sub.lista : lista;
+  const indiceAct = sub ? sub.indice : indice;
+  const producto = listaAct[indiceAct] || inicial;
   const subcategoriaActual =
-    (grupoDe && !extra ? grupoDe(producto)?.subcategoria : null) ||
+    (grupoDe && !sub ? grupoDe(producto)?.subcategoria : null) ||
     producto.subcategoriaNombre ||
-    (extra ? null : etiquetaGrupo) ||
+    (sub ? null : etiquetaGrupo) ||
     null;
-  const hayAnterior = indice > 0 || (indice === 0 && !!grupoAnterior);
-  const haySiguiente = (indice >= 0 && indice < lista.length - 1) || (indice === lista.length - 1 && !!grupoSiguiente);
+  const comprado = todosComprados && !sub ? true : !!producto.comprado || estaComprado(producto.articulo);
+  const hayAnterior = indiceAct > 0 || (!sub && indice === 0 && !!grupoAnterior);
+  const haySiguiente =
+    (indiceAct >= 0 && indiceAct < listaAct.length - 1) || (!sub && indice === lista.length - 1 && !!grupoSiguiente);
+  // Modo "solo foto" (pellizcar para ampliar).
+  const [verFoto, setVerFoto] = useState(false);
 
   // Transición: la foto actual sale hacia un lado y la nueva entra por el
   // otro (clase .ficha-entra-*, ver styles.css). `entrada` recuerda por qué
@@ -85,8 +97,8 @@ export default function FichaProducto({
     salirFoto(delta);
     setTimeout(() => {
       setEntrada(delta > 0 ? 'der' : 'izq');
-      setExtra(null);
-      setIndice(nuevo);
+      if (sub) setSub((s) => ({ ...s, indice: nuevo }));
+      else setIndice(nuevo);
       animandoRef.current = false;
     }, SALIDA_MS);
   }
@@ -101,21 +113,21 @@ export default function FichaProducto({
         salirFoto(delta);
         onCambiarGrupo?.(delta);
       } else {
-        moverA(indice + delta, delta);
+        moverA(indiceAct + delta, delta);
       }
       return;
     }
-    const nuevo = indice + delta;
+    const nuevo = indiceAct + delta;
     // Fin de la subcategoría (catálogo): aviso con la vecina.
     const vecina = delta > 0 ? grupoSiguiente : grupoAnterior;
-    if (!extra && vecina && (nuevo >= lista.length || nuevo < 0)) {
+    if (!sub && vecina && (nuevo >= lista.length || nuevo < 0)) {
       aSuSitio();
       setPausa({ dir: delta, tipo: 'salto', etiqueta: delta > 0 ? 'Siguiente subcategoría' : 'Subcategoría anterior', nombre: vecina.nombre });
       return;
     }
-    if (nuevo < 0 || nuevo >= lista.length) return aSuSitio();
+    if (nuevo < 0 || nuevo >= listaAct.length) return aSuSitio();
     // Histórico: el siguiente artículo es de otro grupo → aviso primero.
-    if (grupoDe && !extra) {
+    if (grupoDe && !sub) {
       const g1 = grupoDe(lista[indice]);
       const g2 = grupoDe(lista[nuevo]);
       if (g1.clave !== g2.clave) {
@@ -138,9 +150,10 @@ export default function FichaProducto({
   // su lista se coloque en este mismo artículo — al cerrar, se sigue por
   // donde se iba.
   useEffect(() => {
-    [lista[indice - 1], lista[indice + 1], lista[indice + 2]].forEach((p) => {
+    [listaAct[indiceAct - 1], listaAct[indiceAct + 1], listaAct[indiceAct + 2]].forEach((p) => {
       if (p?.imagen) new Image().src = p.imagen;
     });
+    if (sub) return;
     const actual = lista[indice];
     if (!actual) return;
     onVer?.(actual);
@@ -150,9 +163,11 @@ export default function FichaProducto({
     }, 80);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indice]);
+  }, [indice, sub]);
 
-  // Botón "atrás" del sistema = botón rojo.
+  // Botón "atrás" del sistema: cierra lo último que se abrió (la foto sola,
+  // luego la fila de "También te puede interesar", luego la ficha entera,
+  // igual que el botón rojo). Cada nivel deja su entrada en el historial.
   const onCerrarRef = useRef(onCerrar);
   onCerrarRef.current = onCerrar;
   useEffect(() => {
@@ -160,6 +175,13 @@ export default function FichaProducto({
     // (el "if" evita duplicar la entrada si React monta el efecto dos veces)
     if (!window.history.state?.ficha) window.history.pushState({ ...(window.history.state || {}), ficha: true }, '');
     function onPop() {
+      const st = window.history.state || {};
+      if (st.ficha) {
+        // Aún dentro de la ficha: se baja un nivel.
+        if (!st.foto) setVerFoto(false);
+        if (!st.rel) setSub((s) => (s && !s.propia ? null : s));
+        return;
+      }
       window.__cofibaFichaAbierta = false;
       onCerrarRef.current();
     }
@@ -170,9 +192,34 @@ export default function FichaProducto({
     };
   }, []);
   function cerrar() {
-    // Consume la entrada añadida al abrir; el popstate resultante cierra.
-    if (window.history.state?.ficha) window.history.back();
+    // Consume las entradas añadidas (ficha, fila, foto); el popstate
+    // resultante cierra.
+    const st = window.history.state || {};
+    if (st.ficha) window.history.go(-(1 + (st.rel ? 1 : 0) + (st.foto ? 1 : 0)));
     else onCerrar();
+  }
+  function abrirFoto() {
+    if (!producto.imagen) return;
+    window.history.pushState({ ...(window.history.state || {}), foto: true }, '');
+    setVerFoto(true);
+  }
+  function abrirRelacionado(i) {
+    if (animandoRef.current) return;
+    const filaRel = relacionados || [];
+    if (!filaRel[i]) return;
+    if (!window.history.state?.rel) window.history.pushState({ ...(window.history.state || {}), rel: true }, '');
+    setPausa(null);
+    animandoRef.current = true;
+    salirFoto(1);
+    setTimeout(() => {
+      setEntrada('der');
+      setSub({ lista: filaRel, indice: i });
+      animandoRef.current = false;
+    }, SALIDA_MS);
+  }
+  function volverALista() {
+    if (window.history.state?.rel) window.history.back();
+    else setSub(null);
   }
 
   // Teclado (ordenador): flechas para moverse, Escape = Cerrar.
@@ -182,7 +229,10 @@ export default function FichaProducto({
     function onKey(e) {
       if (e.key === 'ArrowLeft') irARef.current(-1);
       else if (e.key === 'ArrowRight') irARef.current(1);
-      else if (e.key === 'Escape') cerrar();
+      else if (e.key === 'Escape') {
+        if (window.history.state?.foto || window.history.state?.rel) window.history.back();
+        else cerrar();
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -286,9 +336,11 @@ export default function FichaProducto({
     >
       <div className="ficha-foto">
         <div
-          key={producto.articulo + '|' + indice}
+          key={producto.articulo + '|' + indiceAct + (sub ? '|r' : '')}
           ref={fotoRef}
           className={`ficha-foto-marco${entrada ? ` ficha-entra-${entrada}` : ''}${pausa ? ' ficha-foto-en-pausa' : ''}`}
+          onClick={abrirFoto}
+          style={{ cursor: producto.imagen ? 'zoom-in' : 'default' }}
         >
           {producto.imagen ? <img src={producto.imagen} alt="" draggable={false} /> : <span className="muted">Sin foto</span>}
         </div>
@@ -328,12 +380,14 @@ export default function FichaProducto({
             <span className="ficha-flecha-visual">›</span>
           </button>
         )}
+        {comprado && <span className="ficha-comprado">✓ Comprado</span>}
         {/* Contador y, debajo, la subcategoría en la que se está. */}
-        {((indice >= 0 && lista.length > 1 && !extra) || subcategoriaActual) && (
+        {((indiceAct >= 0 && listaAct.length > 1) || subcategoriaActual) && (
           <div className="ficha-cabeza">
-            {indice >= 0 && lista.length > 1 && !extra && (
+            {indiceAct >= 0 && listaAct.length > 1 && (
               <span className="ficha-contador">
-                {indice + 1} / {lista.length}
+                {sub && !sub.propia ? 'Te puede interesar · ' : ''}
+                {indiceAct + 1} / {listaAct.length}
               </span>
             )}
             {subcategoriaActual && (
@@ -346,9 +400,15 @@ export default function FichaProducto({
       </div>
 
       <div className="ficha-panel">
+        {sub && !sub.propia && (
+          <button className="ficha-volver" onClick={volverALista}>
+            ‹ Volver a la lista
+          </button>
+        )}
         <div className="ficha-texto" key={'texto-' + producto.articulo}>
         <p style={{ fontSize: 14, fontWeight: 500, margin: '0 0 2px' }}>
           {producto.nombre || producto.referencia || producto.articulo}
+          {comprado && <strong style={{ color: 'var(--accent)' }}> · Comprado</strong>}
         </p>
         <p className="muted" style={{ margin: '0 0 8px' }}>
           Ref. {producto.referencia || producto.articulo}
@@ -378,14 +438,15 @@ export default function FichaProducto({
             <div className="ficha-rel-fila" key={'rel-' + relDe} style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
               {relacionados === null &&
                 [0, 1, 2, 3].map((i) => <div key={i} className="ficha-rel-hueco" />)}
-              {(relacionados || []).map((r) => (
+              {(relacionados || []).map((r, i) => (
                 <div
                   key={r.articulo}
                   style={{ flexShrink: 0, width: 84, textAlign: 'center', cursor: 'pointer' }}
-                  onClick={() => setExtra(r)}
+                  onClick={() => abrirRelacionado(i)}
                 >
-                  <div className="product-thumb" style={{ width: 84, height: 84, margin: '0 auto' }}>
+                  <div className="product-thumb" style={{ width: 84, height: 84, margin: '0 auto', position: 'relative' }}>
                     {r.imagen ? <img src={r.imagen} alt="" /> : '—'}
+                    {(r.comprado || estaComprado(r.articulo)) && <span className="ficha-rel-comprado">✓</span>}
                   </div>
                   <p
                     style={{
@@ -418,6 +479,7 @@ export default function FichaProducto({
           </div>
         </div>
       </div>
+      {verFoto && producto.imagen && <VisorFoto src={producto.imagen} onCerrar={() => window.history.back()} />}
     </div>
   );
 }

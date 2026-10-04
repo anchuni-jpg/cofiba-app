@@ -14,7 +14,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-02-busqueda.jpg',
     titulo: 'Busca cualquier producto',
-    texto: 'Escribe el nombre o la referencia: busca en la app y también en la web de Cofiba. «Ver más» te lleva a su categoría. El botón «Comprados» deja solo lo que ya has comprado.',
+    texto: 'Escribe el nombre o la referencia (da igual acentos, signos o el orden de las palabras): busca en la app y en la web de Cofiba. Salen ordenados por subcategoría, con franjas como en el Histórico. «Ver más» te lleva a su categoría; «Comprados» deja solo lo ya comprado.',
   },
   {
     archivo: '/tutorial/slide-03-categoria.jpg',
@@ -24,7 +24,12 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-04-ficha-producto.jpg',
     titulo: 'Ficha ampliada',
-    texto: 'Toca un producto para verlo en grande. Desliza o toca ‹ › para pasar al siguiente. Al cambiar de categoría sale un aviso: desliza otra vez para seguir. Para salir: Cerrar o «atrás».',
+    texto: 'Toca un producto para verlo en grande; arriba ves el contador, la subcategoría y ✓ Comprado si ya lo compraste. Desliza o toca ‹ › para pasar al siguiente. Toca la foto para verla sola y ampliarla con dos dedos. Para salir: Cerrar o «atrás».',
+  },
+  {
+    archivo: '/tutorial/slide-04-ficha-producto.jpg',
+    titulo: 'También te puede interesar',
+    texto: 'Debajo de la ficha salen artículos parecidos. Toca uno para recorrerlos igual, con su contador y subcategoría; «‹ Volver a la lista» (o «atrás») te devuelve a donde estabas.',
   },
   {
     archivo: '/tutorial/slide-05-escaner.jpg',
@@ -59,7 +64,7 @@ const DIAPOSITIVAS = [
   {
     archivo: '/tutorial/slide-04-ficha-producto.jpg',
     titulo: 'Repasa en grande',
-    texto: 'Toca un artículo para verlo en grande y desliza para pasar al siguiente. Bajo el contador ves la subcategoría; al cambiar de subcategoría sale un aviso con su nombre: desliza otra vez para seguir. Al cerrar, el listado queda a la altura del último que viste.',
+    texto: 'Toca un artículo para verlo en grande y desliza para pasar al siguiente. Bajo el contador ves la subcategoría; al cambiar de subcategoría sale un aviso con su nombre: desliza otra vez para seguir. Al cerrar, el listado queda a la altura del último que viste. Pulsar el botón de abajo te lleva otra vez arriba, actualizado.',
   },
   {
     archivo: '/tutorial/slide-07-carrito.jpg',

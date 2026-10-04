@@ -4,7 +4,7 @@ import Login from './screens/Login.jsx';
 import Categorias from './screens/Categorias.jsx';
 import Productos from './screens/Productos.jsx';
 import Carrito from './screens/Carrito.jsx';
-import Historico from './screens/Historico.jsx';
+import Historico, { reiniciarHistorico } from './screens/Historico.jsx';
 import Busqueda from './screens/Busqueda.jsx';
 import InstalarApp from './components/InstalarApp.jsx';
 
@@ -31,6 +31,19 @@ export default function App() {
   const [tab, setTab] = useState('categorias'); // categorias | productos | busqueda | carrito | historico
   // Dirección de la animación al cambiar de pantalla: hacia dentro (de
   // derecha), hacia atrás (de izquierda) o entre pestañas (sube suave).
+  // Pulsar un botón de abajo siempre lleva al principio de esa sección y
+  // la vuelve a cargar (la pantalla se monta de nuevo con otra `key`).
+  const [navNonce, setNavNonce] = useState(0);
+  function pulsarBoton(destino) {
+    if (destino === 'historico') reiniciarHistorico();
+    setVinoDeHistorico(false);
+    setVinoDeBusqueda(false);
+    setNavNonce((n) => n + 1);
+    setTab(destino);
+    window.scrollTo(0, 0);
+    setTimeout(() => window.scrollTo(0, 0), 60);
+    if (destino === 'carrito') refreshCartCount();
+  }
   const tabPrevRef = useRef(tab);
   const animPantallaRef = useRef('sube');
   if (tabPrevRef.current !== tab) {
@@ -308,13 +321,13 @@ export default function App() {
           tocando una categoría desde Catálogo (o "Ver más" en Histórico) —
           por eso no aparece aquí abajo, aunque su ruta siga existiendo. */}
       <div className="bottomnav">
-        <button className={seccion === 'categorias' ? 'active' : ''} onClick={() => setTab('categorias')}>
+        <button className={seccion === 'categorias' ? 'active' : ''} onClick={() => pulsarBoton('categorias')}>
           Catálogo
         </button>
-        <button className={seccion === 'historico' ? 'active' : ''} onClick={() => setTab('historico')}>
+        <button className={seccion === 'historico' ? 'active' : ''} onClick={() => pulsarBoton('historico')}>
           Histórico
         </button>
-        <button className={tab === 'carrito' ? 'active' : ''} onClick={() => setTab('carrito')}>
+        <button className={tab === 'carrito' ? 'active' : ''} onClick={() => pulsarBoton('carrito')}>
           Carrito{cartCount > 0 ? <span className="badge badge-pop" key={cartCount}>{cartCount}</span> : null}
         </button>
       </div>
@@ -356,6 +369,7 @@ export default function App() {
 
         {tab === 'categorias' && (
           <Categorias
+            key={'cat' + navNonce}
             onOpenCategoria={(c) => {
               setCategoria(c);
               setSubcategoriaInicial(null);
@@ -406,9 +420,10 @@ export default function App() {
             }}
           />
         )}
-        {tab === 'carrito' && <Carrito onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
+        {tab === 'carrito' && <Carrito key={'car' + navNonce} onCartChanged={refreshCartCount} onPedidoFinalizado={marcarCompradosSesion} />}
         {tab === 'historico' && (
           <Historico
+            key={'his' + navNonce}
             onCartChanged={refreshCartCount}
             codigosEnCarrito={codigosEnCarrito}
             codigosSesion={codigosSesion}
