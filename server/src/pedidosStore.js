@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 // Esto es específicamente "lo que factura la app" para el panel de
 // escritorio: solo pedidos que pasaron por /api/carrito/finalizar.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '..', '.data');
+// Carpeta de datos: por defecto server/.data; en un hosting se puede
+// apuntar a un disco que no se borre con la variable DATA_DIR.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'pedidos.json');
 const LIMITE = 2000; // de sobra para el panel; evita que el fichero crezca sin límite
 

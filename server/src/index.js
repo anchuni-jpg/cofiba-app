@@ -1,7 +1,9 @@
+import './cargarEnv.js'; // primero: el resto ya lee process.env al cargarse
 import express from 'express';
 import compression from 'compression';
 import cors from 'cors';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -718,9 +720,10 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 // In production there's no separate Vite dev server — this same process
 // serves the client's built static files too, so the whole app is one
 // deployable service on one origin (no CORS/rewrite setup needed on the host).
-if (process.env.NODE_ENV === 'production') {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+// También si la carpeta client/dist está presente (paquete para hosting):
+// así funciona aunque el panel del hosting no deje poner NODE_ENV.
+const clientDist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist');
+if (process.env.NODE_ENV === 'production' || fs.existsSync(path.join(clientDist, 'index.html'))) {
   app.use(express.static(clientDist));
   app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 }

@@ -13,7 +13,9 @@ import { fileURLToPath } from 'node:url';
 // plazo, se le vuelve a dar el beneficio de la duda solo; si de verdad sigue
 // de baja, el próximo intento de compra lo volverá a marcar sin más.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '..', '.data');
+// Carpeta de datos: por defecto server/.data; en un hosting se puede
+// apuntar a un disco que no se borre con la variable DATA_DIR.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'no-disponibles.json');
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 

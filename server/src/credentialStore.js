@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 // retype their password. Credentials are kept at rest encrypted with a key
 // that itself lives outside the repo, in the same data directory.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '..', '.data');
+// Carpeta de datos: por defecto server/.data; en un hosting se puede
+// apuntar a un disco que no se borre con la variable DATA_DIR.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '.data');
 const KEY_FILE = path.join(DATA_DIR, 'key.bin');
 const STORE_FILE = path.join(DATA_DIR, 'credentials.json');
 

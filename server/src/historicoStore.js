@@ -38,7 +38,9 @@ const LECTORES = 1;
 const GUARDADO_MIN_MS = 5000;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '..', '.data');
+// Carpeta de datos: por defecto server/.data; en un hosting se puede
+// apuntar a un disco que no se borre con la variable DATA_DIR.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'historico.json');
 
 const estados = new Map(); // usuario -> estado

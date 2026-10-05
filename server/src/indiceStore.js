@@ -12,7 +12,9 @@ import { crawlCatalogo } from './cofibaClient.js';
 // sus páginas normales una vez, se guarda un índice plano, y las búsquedas
 // filtran ese índice en memoria — instantáneas, con nombres siempre buenos.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '..', '.data');
+// Carpeta de datos: por defecto server/.data; en un hosting se puede
+// apuntar a un disco que no se borre con la variable DATA_DIR.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '.data');
 const STORE_FILE = path.join(DATA_DIR, 'indice-busqueda.json');
 // El plan gratuito de Render no tiene disco persistente: .data/ se borra
 // entero en cada despliegue, así que sin más el índice arrancaba vacío del
