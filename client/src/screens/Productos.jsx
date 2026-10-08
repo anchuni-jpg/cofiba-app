@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { getCache } from '../localCache.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import FichaProducto from '../components/FichaProducto.jsx';
+import useCabeceraFlotante from '../useCabeceraFlotante.js';
 import Resaltar from '../components/Resaltar.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
 
@@ -519,29 +520,8 @@ export default function Productos({
   }, [cambioFicha, grupoEfectivo, productosPorComprado, cargandoMas]);
   const hayMasParaRevelar = visibles < productosPorComprado.length;
 
-  // Cabecera que se esconde al bajar y aparece al subir.
-  const [cabeceraOculta, setCabeceraOculta] = useState(false);
-  const [altoTopbar, setAltoTopbar] = useState(0);
-  useEffect(() => {
-    const medir = () => setAltoTopbar(document.querySelector('.topbar')?.offsetHeight || 0);
-    medir();
-    window.addEventListener('resize', medir);
-    let ultimoY = window.scrollY;
-    function alDesplazar() {
-      if (document.querySelector('.ficha-overlay')) return; // la ficha mueve el fondo sola
-      const y = window.scrollY;
-      const d = y - ultimoY;
-      if (y < 80) setCabeceraOculta(false);
-      else if (d > 10) setCabeceraOculta(true);
-      else if (d < -10) setCabeceraOculta(false);
-      if (Math.abs(d) > 10 || y < 80) ultimoY = y;
-    }
-    window.addEventListener('scroll', alDesplazar, { passive: true });
-    return () => {
-      window.removeEventListener('resize', medir);
-      window.removeEventListener('scroll', alDesplazar);
-    };
-  }, []);
+  // Cabecera que se esconde al bajar y aparece al subir (ver useCabeceraFlotante.js).
+  const { oculta: cabeceraOculta, altoTopbar } = useCabeceraFlotante();
 
   return (
     <div

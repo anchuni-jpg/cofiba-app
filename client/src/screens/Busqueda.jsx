@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, Suspense, lazy } from '
 import { api } from '../api.js';
 import CarritoIcon from '../components/CarritoIcon.jsx';
 import FichaProducto from '../components/FichaProducto.jsx';
+import useCabeceraFlotante from '../useCabeceraFlotante.js';
 import Resaltar from '../components/Resaltar.jsx';
 import { filtrarPorIsla } from '../filtroIsla.js';
 
@@ -71,6 +72,7 @@ export default function Busqueda({
   onCambiarVista,
   onIrACategoria,
   onBuscar,
+  onBuscarEnVivo,
 }) {
   // Mismo criterio que Productos.jsx: 'lista'/'lista-grande' son de fila,
   // 'grid2'/'grid3' de rejilla; `grande` solo agranda la fila.
@@ -115,19 +117,54 @@ export default function Busqueda({
   const [nonce, setNonce] = useState(0);
   const pollRef = useRef(null);
 
+  // Cómo se lanza la próxima consulta: 'nueva' (al pulsar buscar),
+  // 'rapido' (mientras se escribe: solo lo que ya tiene la app, al momento)
+  // o 'completo' (al parar de escribir: también en la web de Cofiba). En
+  // las dos últimas no se vacía la lista: se va afinando sin parpadeos.
+  const modoRef = useRef('nueva');
+  const tecleoRef = useRef({});
+  function cancelarTecleo() {
+    clearTimeout(tecleoRef.current.rapido);
+    clearTimeout(tecleoRef.current.completo);
+  }
+  useEffect(() => cancelarTecleo, []);
+
   function buscarDeNuevo() {
     const q = campo.trim();
     if (!q) return;
+    cancelarTecleo();
     document.activeElement?.blur?.(); // fuera el teclado: ya se van a ver los resultados
     onBuscar?.(q);
+    modoRef.current = q === terminoActivo ? 'completo' : 'nueva';
     setTerminoActivo(q);
     setNonce((n) => n + 1);
+  }
+
+  // A medida que se escribe van saliendo los artículos.
+  function alEscribir(valor) {
+    setCampo(valor);
+    cancelarTecleo();
+    const q = valor.trim();
+    if (q.length < 2) return;
+    tecleoRef.current.rapido = setTimeout(() => {
+      modoRef.current = 'rapido';
+      setTerminoActivo(q);
+      setNonce((n) => n + 1);
+      onBuscarEnVivo?.(q);
+    }, 300);
+    tecleoRef.current.completo = setTimeout(() => {
+      modoRef.current = 'completo';
+      setTerminoActivo(q);
+      setNonce((n) => n + 1);
+    }, 1500);
   }
 
   useEffect(() => {
     let cancelado = false;
     let huboCache = false;
-    setResultados(null);
+    const modo = modoRef.current;
+    modoRef.current = 'nueva';
+    if (modo === 'nueva') setResultados(null);
     setError(null);
     setConstruyendo(false);
     setProgreso(null);
@@ -141,7 +178,9 @@ export default function Busqueda({
       // se buscó antes en este dispositivo); los reintentos mientras el
       // índice se sigue construyendo van directos al servidor, que es quien
       // manda a partir de ahí.
-      const promesa = primera
+      const promesa = modo === 'rapido'
+        ? api.buscar(terminoActivo, { web: false })
+        : primera
         ? api.buscarCached(terminoActivo, (cacheado) => {
             huboCache = true;
             if (!cancelado) setResultados((prev) => combinarResultados(prev, cacheado.resultados || []));
@@ -247,6 +286,8 @@ export default function Busqueda({
       });
   }
 
+  const { oculta: cabeceraOculta, altoTopbar } = useCabeceraFlotante();
+
   const resultadosDisponibles =
     resultados && noDisponibles.size ? resultados.filter((p) => !noDisponibles.has(p.articulo)) : resultados;
   const resultadosPorIsla = resultadosDisponibles ? filtrarPorIsla(resultadosDisponibles, islaFiltro) : resultadosDisponibles;
@@ -261,7 +302,10 @@ export default function Busqueda({
     idx === 0 || grupoDe(resultadosFiltrados[idx]).categoria !== grupoDe(resultadosFiltrados[idx - 1]).categoria;
 
   return (
-    <div className="content" ref={raizRef} style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="content" ref={raizRef} style={{ display: 'flex', flexDirection: 'column', overflow: 'visible' }}>
+      {/* Cabecera (volver, filtros y buscador) aparte del listado: se esconde
+          al bajar y vuelve al subir un buen trecho (useCabeceraFlotante). */}
+      <div className={`cabecera-lista${cabeceraOculta ? ' oculta' : ''}`} style={{ top: altoTopbar }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button onClick={onBack} aria-label="Volver" style={{ padding: '6px 10px' }}>
           ←
@@ -299,7 +343,8 @@ export default function Busqueda({
         <input
           placeholder="Producto, referencia, código..."
           value={campo}
-          onChange={(e) => setCampo(e.target.value)}
+          onChange={(e) => alEscribir(e.target.value)}
+          enterKeyHint="search"
         />
         <button type="submit" aria-label="Buscar">
           🔍
@@ -308,6 +353,7 @@ export default function Busqueda({
           📷
         </button>
       </form>
+      </div>
 
       {escaneando && (
         <Suspense fallback={null}>

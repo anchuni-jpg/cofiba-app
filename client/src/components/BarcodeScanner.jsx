@@ -564,7 +564,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
           }}
         >
           <p style={{ margin: 0, fontWeight: 500 }}>
-            Capturado{capturados.length === 1 ? '' : 's'} ({totalUnidades} caja{totalUnidades === 1 ? '' : 's'})
+            Capturado{capturados.length === 1 ? '' : 's'} (<span className="cuenta-pop" key={'t' + totalUnidades}>{totalUnidades}</span> caja{totalUnidades === 1 ? '' : 's'})
           </p>
           <button className="danger" onClick={onCerrar}>
             Cerrar
@@ -609,7 +609,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
                   >
                     <div className="qty-stepper">
                       <button onClick={() => cambiarCantidad(c.articulo, -1)}>-</button>
-                      <span style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{c.cantidad}</span>
+                      <span className="cuenta-pop" key={'c' + c.cantidad} style={{ minWidth: 14, textAlign: 'center', fontSize: 13 }}>{c.cantidad}</span>
                       <button onClick={() => cambiarCantidad(c.articulo, 1)}>+</button>
                     </div>
                     {c.undVenta && (
@@ -867,7 +867,7 @@ export default function BarcodeScanner({ onCerrar, onCartChanged }) {
                 <div className="product-thumb" style={{ width: tamThumb, height: tamThumb }}>
                   {c.imagen ? <img src={c.imagen} alt="" /> : '—'}
                 </div>
-                <span style={{ fontSize: esUltima ? 13 : 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                <span className="cuenta-pop" key={'x' + c.cantidad} style={{ fontSize: esUltima ? 13 : 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   ×{c.cantidad}
                 </span>
               </div>

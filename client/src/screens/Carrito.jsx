@@ -155,7 +155,13 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
   return (
     <div className="content">
       <p style={{ fontWeight: 500, marginBottom: 10 }}>
-        Tu pedido{carrito ? ` · ${carrito.numProductos} productos` : ''}
+        Tu pedido
+        {carrito && (
+          <>
+            {' · '}
+            <span className="cuenta-pop" key={'n' + carrito.numProductos}>{carrito.numProductos}</span> productos
+          </>
+        )}
       </p>
 
       {error && <div className="error-banner">{error}</div>}
@@ -218,7 +224,7 @@ export default function Carrito({ onCartChanged, onPedidoFinalizado }) {
                           <>
                             {txtCajas} de {formatoNumero(porCaja)} uds
                             <br />
-                            <strong>{formatoNumero(cajas * porCaja)} unidades</strong>
+                            <strong className="cuenta-pop" key={'u' + cajas}>{formatoNumero(cajas * porCaja)} unidades</strong>
                           </>
                         );
                       })()}

@@ -677,8 +677,12 @@ app.get('/api/buscar', requireSession, async (req, res) => {
   //  - El resultado de la web se reutiliza 10 minutos para la misma palabra.
   // Misma búsqueda aunque cambien acentos, signos o mayúsculas.
   const clave = termino.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  // web=0: búsqueda rápida mientras se escribe (solo el índice; la de la
+  // web de Cofiba se lanza cuando se deja de escribir o se pulsa buscar).
+  const conWeb = req.query.web !== '0';
   let enWeb = busquedasEnVivo.get(clave);
-  if (!enWeb || Date.now() - enWeb.cuando > BUSQUEDA_EN_VIVO_MS) {
+  if (!conWeb && (!enWeb || Date.now() - enWeb.cuando > BUSQUEDA_EN_VIVO_MS)) enWeb = { resultados: [] };
+  else if (!enWeb || Date.now() - enWeb.cuando > BUSQUEDA_EN_VIVO_MS) {
     enWeb = { cuando: Date.now(), resultados: null };
     busquedasEnVivo.set(clave, enWeb);
     const entrada = enWeb;

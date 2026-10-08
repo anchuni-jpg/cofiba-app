@@ -159,8 +159,9 @@ export const api = {
   porCodigo(c) {
     return request(`/codigo?c=${encodeURIComponent(c)}`).then((d) => conMarcas(d, 'resultados'));
   },
-  buscar(q) {
-    return request(`/buscar?q=${encodeURIComponent(q)}`).then((d) => conMarcas(d, 'resultados'));
+  // { web: false } = búsqueda rápida mientras se escribe (sin la web de Cofiba).
+  buscar(q, { web = true } = {}) {
+    return request(`/buscar?q=${encodeURIComponent(q)}${web ? '' : '&web=0'}`).then((d) => conMarcas(d, 'resultados'));
   },
   // Solo tiene sentido cachear por término exacto — cambiar una letra ya es
   // una búsqueda distinta. Rellena el hueco antes de la primera respuesta

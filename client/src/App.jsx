@@ -411,6 +411,14 @@ export default function App() {
             vista={vista}
             onCambiarVista={cambiarVista}
             onBuscar={(q) => setBusqueda(q)}
+            onBuscarEnVivo={(q) => {
+              if (q === busqueda) return;
+              // Mientras se escribe no se llena el historial de "atrás" con
+              // cada letra: se actualiza la entrada actual.
+              restaurandoRef.current = true;
+              setBusqueda(q);
+              window.history.replaceState({ ...(window.history.state || {}), busqueda: q }, '');
+            }}
             onIrACategoria={(categoriaSlug, categoriaNombre, subcategoriaSlug) => {
               setCategoria({ slug: categoriaSlug, nombre: categoriaNombre || categoriaSlug });
               setSubcategoriaInicial(subcategoriaSlug || null);

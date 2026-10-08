@@ -425,7 +425,7 @@ export default function FichaProducto({
           ) : (
             <div className="qty-stepper qty-stepper-lg">
               <button onClick={() => añadir(producto, -1)}>-</button>
-              <span style={{ minWidth: 24, textAlign: 'center', fontSize: 16 }}>{pending[producto.articulo] ?? 0}</span>
+              <span className={(pending[producto.articulo] ?? 0) > 0 ? 'cuenta-pop' : undefined} key={producto.articulo + ':' + (pending[producto.articulo] ?? 0)} style={{ minWidth: 24, textAlign: 'center', fontSize: 16 }}>{pending[producto.articulo] ?? 0}</span>
               <button onClick={() => añadir(producto, 1)}>+</button>
             </div>
           )}
@@ -474,7 +474,11 @@ export default function FichaProducto({
                     }}
                     style={{ fontSize: 10, padding: '2px 6px', marginTop: 2 }}
                   >
-                    {pending[r.articulo] ? `✓ ${pending[r.articulo]}` : '+ Añadir'}
+                    {pending[r.articulo] ? (
+                      <span className="cuenta-pop" key={'r' + pending[r.articulo]}>✓ {pending[r.articulo]}</span>
+                    ) : (
+                      '+ Añadir'
+                    )}
                   </button>
                 </div>
               ))}
