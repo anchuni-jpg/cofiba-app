@@ -1559,3 +1559,40 @@ mark.resaltado {
   border-radius: 999px;
   line-height: 1.1;
 }
+
+/* ───────── Tablet / pantalla grande: estilo app, sin estirar ─────────
+   La app llena la pantalla repartiendo en MÁS columnas (categorías y
+   rejilla de productos), mientras que lo que es de una sola columna
+   (listas en fila y formularios) usa un ancho cómodo centrado en vez de
+   estirarse de lado a lado. */
+@media (min-width: 700px) {
+  .cat-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .producto-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+  }
+  .lista-filas {
+    max-width: 760px;
+    margin-inline: auto;
+  }
+  .login form,
+  .login > p,
+  .login > div {
+    max-width: 460px;
+    margin-inline: auto;
+  }
+}
+@media (min-width: 1100px) {
+  .cat-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .producto-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
+  }
+}
+@media (min-width: 1500px) {
+  .cat-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}

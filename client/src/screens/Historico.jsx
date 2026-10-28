@@ -422,7 +422,7 @@ export default function Historico({
       )}
 
       {esFila ? (
-        <div>
+        <div className="lista-filas">
           {visiblesLista.map((p, idx) => {
             const grupo = grupoDe(p);
             const grupoAnterior = idx > 0 ? grupoDe(visiblesLista[idx - 1]) : null;

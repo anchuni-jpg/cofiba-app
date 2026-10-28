@@ -686,7 +686,7 @@ export default function Productos({
 
       <div key={'lista-' + grupoEfectivo} className={`lista-entra-${entradaLista || 'fade'}`}>
       {esFila ? (
-        <div>
+        <div className="lista-filas">
           {productosFiltrados.map((p) => (
             <div
               className={`product-row${grande ? ' product-row-lg' : ''}${p.comprado ? ' product-row-comprado' : ''}${

@@ -395,7 +395,7 @@ export default function Busqueda({
       {resultadosFiltrados && resultadosFiltrados.length > 0 && (
         <>
           {esFila ? (
-            <div>
+            <div className="lista-filas">
               {resultadosFiltrados.slice(0, visibles).map((p, idx) => (
                 <Fragment key={p.articulo}>
                 {nuevoGrupo(idx) && (

@@ -23,7 +23,7 @@ export default function Login({ onLoggedIn, expiredNotice }) {
   }
 
   return (
-    <div className="content" style={{ paddingTop: 40 }}>
+    <div className="content login" style={{ paddingTop: 40 }}>
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <img src="/logo/cofiba-logo.jpg" alt="Cofiba" style={{ height: 64 }} />
       </div>
