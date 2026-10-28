@@ -1565,7 +1565,7 @@ mark.resaltado {
    rejilla de productos), mientras que lo que es de una sola columna
    (listas en fila y formularios) usa un ancho cómodo centrado en vez de
    estirarse de lado a lado. */
-@media (min-width: 700px) {
+@media (min-width: 600px) {
   .cat-grid {
     grid-template-columns: repeat(3, 1fr);
   }
