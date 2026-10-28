@@ -401,7 +401,7 @@ export default function Productos({
     const t = e.changedTouches[0];
     const dx = t.clientX - ini.x;
     const dy = t.clientY - ini.y;
-    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - ini.t > 900) return;
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.2 || Date.now() - ini.t > 1300) return;
     const idx = subcategorias.findIndex((s) => s.slug === grupoEfectivo);
     const destino = subcategorias[idx + (dx < 0 ? 1 : -1)];
     if (idx < 0 || !destino) return;
@@ -775,6 +775,7 @@ export default function Productos({
               >
                 <Resaltar texto={p.nombre || p.referencia || p.articulo} termino={busquedaCatActiva} />
               </p>
+              <p className="muted" style={{ fontSize: 11, margin: '2px 0 0' }}>Ref. <Resaltar texto={p.referencia || p.articulo} termino={busquedaCatActiva} /></p>
               <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
                 {enCarritoOSesion(p.articulo) && (

@@ -490,12 +490,12 @@ export default function Historico({
                 </p>
                 {p.categoria && (
                   <button
-                    className="primary"
+                    className="primary ver-mas-cat"
                     onClick={(e) => {
                       e.stopPropagation();
                       onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
                     }}
-                    style={{ fontSize: grande ? 13 : 11, padding: grande ? '5px 10px' : '3px 8px', marginTop: 3 }}
+                    className="ver-mas-cat"
                   >
                     Ver más
                   </button>
@@ -588,6 +588,7 @@ export default function Historico({
               >
                 <Resaltar texto={p.nombre || p.referencia || p.articulo} termino={filtro} />
               </p>
+              <p className="muted" style={{ fontSize: 11, margin: '2px 0 0' }}>Ref. <Resaltar texto={p.referencia || p.articulo} termino={filtro} /></p>
               <p style={{ fontSize: 14, fontWeight: 500, margin: 0, color: 'var(--accent)' }}>
                 {p.precioFinal ? `${p.precioFinal}€` : '—'}
                 {enCarritoOSesion(p.articulo) && (
@@ -598,12 +599,12 @@ export default function Historico({
               </p>
               {p.categoria && (
                 <button
-                  className="primary"
+                  className="primary ver-mas-cat"
                   onClick={(e) => {
                     e.stopPropagation();
                     onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
                   }}
-                  style={{ fontSize: 10, padding: '3px 8px', marginTop: 3 }}
+                  className="ver-mas-cat"
                 >
                   Ver más
                 </button>

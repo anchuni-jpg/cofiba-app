@@ -72,17 +72,17 @@ body {
    de quedarse encogida en el centro. */
 @media (min-width: 640px) {
   #root {
-    max-width: min(96vw, 900px);
+    max-width: min(98vw, 1024px);
   }
 }
 @media (min-width: 1000px) {
   #root {
-    max-width: min(92vw, 1200px);
+    max-width: min(96vw, 1400px);
   }
 }
 @media (min-width: 1300px) {
   #root {
-    max-width: min(90vw, 1400px);
+    max-width: min(94vw, 1800px);
   }
 }
 
@@ -1547,4 +1547,15 @@ mark.resaltado {
 .cabecera-lista.oculta {
   transform: translateY(calc(-100% - 2px));
   box-shadow: none;
+}
+
+/* Botón "Ver más" por artículo (Búsqueda/Histórico): lleva a la categoría.
+   Legible también en pantallas grandes — antes quedaba diminuto. */
+.ver-mas-cat {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  margin-top: 5px;
+  border-radius: 999px;
+  line-height: 1.1;
 }
