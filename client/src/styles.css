@@ -1560,20 +1560,64 @@ mark.resaltado {
   line-height: 1.1;
 }
 
-/* ───────── Tablet / pantalla grande: estilo app, sin estirar ─────────
-   La app llena la pantalla repartiendo en MÁS columnas (categorías y
-   rejilla de productos), mientras que lo que es de una sola columna
-   (listas en fila y formularios) usa un ancho cómodo centrado en vez de
-   estirarse de lado a lado. */
-@media (min-width: 600px) {
-  .cat-grid {
-    grid-template-columns: repeat(3, 1fr);
+/* ───────── Tablet: ampliar TODO para llenar la pantalla ─────────
+   El contenido ya no se estira a lo ancho (se mantiene el diseño de una
+   columna cómoda, estilo móvil) y en su lugar se AMPLÍA el conjunto entero
+   —fuentes, botones y fotos— con `zoom`, para que llene bien la pantalla y
+   se vea proporcionado, como una app grande. El escalado va por tramos de
+   ancho (siempre por debajo de ancho/480 para que nunca se salga). */
+@media (min-width: 540px) and (max-width: 1024px) {
+  #root {
+    max-width: 480px !important;
   }
+  /* Nav siempre abajo en tablet (no barra lateral). */
+  .app-shell {
+    flex-direction: column !important;
+  }
+  .app-main {
+    order: 1 !important;
+  }
+  .bottomnav {
+    order: 2 !important;
+    flex-direction: row !important;
+    width: auto !important;
+    position: sticky !important;
+    border-right: none !important;
+    border-top: 1px solid var(--border) !important;
+    padding-top: 0 !important;
+  }
+  .bottomnav button {
+    flex: 1 !important;
+    text-align: center !important;
+    border-left: none !important;
+    border-top: 2px solid transparent !important;
+    padding: 14px 0 !important;
+  }
+  .bottomnav button.active {
+    border-left-color: transparent !important;
+    border-top-color: var(--accent) !important;
+    background: none !important;
+  }
+  /* Categorías en 2 columnas (ya ampliadas por el zoom). */
+  .cat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+@media (min-width: 540px) and (max-width: 599px) { #root { zoom: 1.1; } }
+@media (min-width: 600px) and (max-width: 679px) { #root { zoom: 1.2; } }
+@media (min-width: 680px) and (max-width: 759px) { #root { zoom: 1.4; } }
+@media (min-width: 760px) and (max-width: 839px) { #root { zoom: 1.55; } }
+@media (min-width: 840px) and (max-width: 919px) { #root { zoom: 1.7; } }
+@media (min-width: 920px) and (max-width: 999px) { #root { zoom: 1.9; } }
+@media (min-width: 1000px) and (max-width: 1024px) { #root { zoom: 2.05; } }
+
+/* Escritorio ancho (> tablet): reparto en columnas que llenan. */
+@media (min-width: 1025px) {
   .producto-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)) !important;
   }
   .lista-filas {
-    max-width: 760px;
+    max-width: 820px;
     margin-inline: auto;
   }
   .login form,
@@ -1581,18 +1625,5 @@ mark.resaltado {
   .login > div {
     max-width: 460px;
     margin-inline: auto;
-  }
-}
-@media (min-width: 1100px) {
-  .cat-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-  .producto-grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
-  }
-}
-@media (min-width: 1500px) {
-  .cat-grid {
-    grid-template-columns: repeat(5, 1fr);
   }
 }
