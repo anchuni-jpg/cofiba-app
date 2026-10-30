@@ -571,7 +571,7 @@ input {
 .ficha-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.97);
+  background: #050505; /* opaco: que no se transparente la lista de detrás */
   display: flex;
   flex-direction: column;
   align-items: center;
