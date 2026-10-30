@@ -3,6 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <!-- Tablets (pantalla táctil grande): la app está pensada para ~480px de
+         ancho. En vez de estirarla o dejarla pequeña, se le dice al navegador
+         que la pinte a 480px de ancho y la escale a toda la pantalla, como una
+         app nativa: llena el ancho exacto, todo (letras, botones, fotos y
+         ventanas como la ficha) crece en proporción y la altura es la real,
+         así que no aparece scroll donde no hace falta. En apaisado se usa el
+         mismo aumento, con más ancho útil. Móviles y ordenadores, sin cambios. -->
+    <script>
+      (function () {
+        var BASE = 480;
+        function ajustar() {
+          try {
+            var meta = document.querySelector('meta[name="viewport"]');
+            var tactil = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+            var corto = Math.min(screen.width, screen.height);
+            var largo = Math.max(screen.width, screen.height);
+            if (!meta || !tactil || corto < 600) return;
+            var apaisado = window.matchMedia('(orientation: landscape)').matches;
+            var escala = corto / BASE;
+            var ancho = Math.round((apaisado ? largo : corto) / escala);
+            var e = escala.toFixed(3);
+            meta.setAttribute(
+              'content',
+              'width=' + ancho + ', initial-scale=' + e + ', minimum-scale=' + e + ', maximum-scale=' + e + ', user-scalable=no, viewport-fit=cover'
+            );
+          } catch (err) {
+            // Si algo falla, se queda el viewport normal.
+          }
+        }
+        ajustar();
+        window.addEventListener('orientationchange', function () { setTimeout(ajustar, 150); });
+        try { window.matchMedia('(orientation: landscape)').addEventListener('change', ajustar); } catch (err) {}
+      })();
+    </script>
     <meta name="theme-color" content="#20944b" id="meta-theme-color" />
     <!-- Bloqueante y a propósito lo primero del <head>: decide el tema
          ANTES de que se pinte nada, para no enseñar un parpadeo claro→oscuro
