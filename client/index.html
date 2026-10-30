@@ -16,10 +16,15 @@
         function ajustar() {
           try {
             var meta = document.querySelector('meta[name="viewport"]');
+            if (!meta) return;
             var tactil = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
             var corto = Math.min(screen.width, screen.height);
             var largo = Math.max(screen.width, screen.height);
-            if (!meta || !tactil || corto < 600) return;
+            if (!tactil || corto < 600) {
+              // Móvil u ordenador: el ajuste normal de siempre.
+              meta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+              return;
+            }
             var apaisado = window.matchMedia('(orientation: landscape)').matches;
             var escala = corto / BASE;
             var ancho = Math.round((apaisado ? largo : corto) / escala);

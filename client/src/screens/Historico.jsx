@@ -495,7 +495,6 @@ export default function Historico({
                       e.stopPropagation();
                       onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
                     }}
-                    className="ver-mas-cat"
                   >
                     Ver más
                   </button>
@@ -604,7 +603,6 @@ export default function Historico({
                     e.stopPropagation();
                     onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
                   }}
-                  className="ver-mas-cat"
                 >
                   Ver más
                 </button>

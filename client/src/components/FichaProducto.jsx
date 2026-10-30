@@ -20,6 +20,19 @@ function formatoCaja(undVenta) {
 //   con el botón/gesto "atrás" del móvil, que hace exactamente lo mismo:
 //   al abrir se añade una entrada al historial del navegador y "atrás" la
 //   consume cerrando la ficha en vez de salir de la pantalla.
+// Tras cerrar, deja la lista de fondo a la altura del artículo que se veía
+// (dos intentos: justo después de quitar la ficha y cuando ya se ha pintado
+// todo, por si la lista se reajusta al cerrarse).
+function volverAlArticulo(articulo) {
+  if (!articulo) return;
+  [60, 350].forEach((ms) =>
+    setTimeout(() => {
+      const fila = document.querySelector(`[data-articulo="${CSS.escape(articulo)}"]`);
+      fila?.scrollIntoView({ block: 'center' });
+    }, ms)
+  );
+}
+
 export default function FichaProducto({
   lista,
   inicial,
@@ -57,6 +70,10 @@ export default function FichaProducto({
   const listaAct = sub ? sub.lista : lista;
   const indiceAct = sub ? sub.indice : indice;
   const producto = listaAct[indiceAct] || inicial;
+  // Artículo de la lista de fondo que corresponde a lo que se está viendo:
+  // al cerrar, la lista se recoloca en él.
+  const principalRef = useRef(null);
+  principalRef.current = lista[indice]?.articulo || inicial?.articulo || null;
   const subcategoriaActual =
     (grupoDe && !sub ? grupoDe(producto)?.subcategoria : null) ||
     producto.subcategoriaNombre ||
@@ -185,8 +202,10 @@ export default function FichaProducto({
         if (!st.rel) setSub((s) => (s && !s.propia ? null : s));
         return;
       }
+      const articulo = principalRef.current;
       window.__cofibaFichaAbierta = false;
       onCerrarRef.current();
+      volverAlArticulo(articulo);
     }
     window.addEventListener('popstate', onPop);
     return () => {
@@ -199,7 +218,11 @@ export default function FichaProducto({
     // resultante cierra.
     const st = window.history.state || {};
     if (st.ficha) window.history.go(-(1 + (st.rel ? 1 : 0) + (st.foto ? 1 : 0)));
-    else onCerrar();
+    else {
+      const articulo = principalRef.current;
+      onCerrar();
+      volverAlArticulo(articulo);
+    }
   }
   function abrirFoto() {
     if (!producto.imagen) return;

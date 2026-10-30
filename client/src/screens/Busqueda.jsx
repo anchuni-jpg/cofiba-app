@@ -453,7 +453,6 @@ export default function Busqueda({
                           e.stopPropagation();
                           onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
                         }}
-                        className="ver-mas-cat"
                       >
                         Ver más
                       </button>
@@ -536,7 +535,6 @@ export default function Busqueda({
                         e.stopPropagation();
                         onIrACategoria?.(p.categoria, p.categoriaNombre, p.subcategoria);
                       }}
-                      className="ver-mas-cat"
                     >
                       Ver más
                     </button>
